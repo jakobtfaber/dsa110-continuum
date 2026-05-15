@@ -27,7 +27,9 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+from dsa110_continuum.calibration.field_directions import (
+    extract_field_ra_dec as _extract_field_ra_dec,
+)
 
 logger = logging.getLogger(__name__)
 

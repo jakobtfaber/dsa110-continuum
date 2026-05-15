@@ -167,7 +167,9 @@ def _check_calibrator_transit(
         t_end = Time(t_end_mjd, format="mjd")
 
         # Get phase center RA
-        from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+        from dsa110_continuum.calibration.field_directions import (
+            extract_field_ra_dec as _extract_field_ra_dec,
+        )
 
         with ct.table(f"{ms_path}::FIELD", readonly=True, ack=False) as tb:
             phase_dir = tb.getcol("PHASE_DIR")
@@ -274,7 +276,9 @@ def _check_coherent_phasing(
         else:
             field_indices = None  # All fields
 
-        from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+        from dsa110_continuum.calibration.field_directions import (
+            extract_field_ra_dec as _extract_field_ra_dec,
+        )
 
         with ct.table(f"{ms_path}::FIELD", readonly=True, ack=False) as tb:
             phase_dir = tb.getcol("PHASE_DIR")

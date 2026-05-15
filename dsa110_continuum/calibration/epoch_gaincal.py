@@ -30,7 +30,10 @@ from dsa110_continuum.calibration.mosaic_constants import (
     SKYMODEL_MIN_FLUX_MJY,
     SOURCE_QUERY_RADIUS_DEG,
 )
-from dsa110_continuum.calibration.runner import _extract_field_ra_dec, phaseshift_ms
+from dsa110_continuum.calibration.field_directions import (
+    extract_field_ra_dec as _extract_field_ra_dec,
+)
+from dsa110_continuum.calibration.runner import phaseshift_ms
 from dsa110_continuum.calibration.skymodels import (
     make_unified_skymodel,
     predict_from_skymodel_wsclean,

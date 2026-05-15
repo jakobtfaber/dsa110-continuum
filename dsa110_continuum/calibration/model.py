@@ -127,8 +127,9 @@ def _ensure_imaging_columns(ms_path: str) -> None:
 
     # Double-check with casatools for consistency (optional, for debugging)
     try:
-        from casatools import table as tb_tool
+        from dsa110_continuum.calibration.casa_service import get_casa_tool
 
+        tb_tool = get_casa_tool("table")
         tb = tb_tool()
         tb.open(ms_path, nomodify=True)
         cols = set(tb.colnames())
@@ -388,7 +389,9 @@ def _calculate_manual_model_data(
     # Shape-tolerant per-field RA/Dec extraction. Handles cached metadata
     # (any supported shape) AND direct getcol output, which can be rows-first
     # (nfields, 1, 2) or CASA column-major (nfields, 2, 1).
-    from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+    from dsa110_continuum.calibration.field_directions import (
+        extract_field_ra_dec as _extract_field_ra_dec,
+    )
     phase_ra_rad_all, phase_dec_rad_all = _extract_field_ra_dec(phase_dir)
 
     # Log field selection
@@ -711,14 +714,11 @@ def write_point_model_with_ft(
         )
         return
 
-    from dsa110_continuum.calibration.casa_service import CASAService
+    from dsa110_continuum.calibration.casa_service import CASAService, get_casa_tool
 
     service = CASAService()
 
-    try:
-        from casatools import componentlist as cltool
-    except ImportError:
-        from casatools import componentlist as cltool
+    cltool = get_casa_tool("componentlist")
 
     logger.info(
         "Writing point model using ft() (use_manual=False). "
@@ -1267,7 +1267,9 @@ def populate_model_from_catalog(
                     # Let's assume the phaseshift has put the source at the phase center.
                     # So we can use the phase center of the first field.
                     phase_dir = t.getcol("PHASE_DIR")
-                    from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+                    from dsa110_continuum.calibration.field_directions import (
+                        extract_field_ra_dec as _extract_field_ra_dec,
+                    )
                     # Shape-tolerant: handles (nfields, 1, 2) and (nfields, 2, 1).
                     # field argument might be "0~23" or "0"; use field 0 (assumed phaseshifted).
                     ra_all, dec_all = _extract_field_ra_dec(phase_dir)
@@ -1279,7 +1281,9 @@ def populate_model_from_catalog(
             # No name, no coords -> use MS field center
             with tb.table(f"{ms_path}::FIELD", readonly=True) as t:
                 phase_dir = t.getcol("PHASE_DIR")
-                from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+                from dsa110_continuum.calibration.field_directions import (
+                    extract_field_ra_dec as _extract_field_ra_dec,
+                )
                 # Shape-tolerant: handles (nfields, 1, 2) and (nfields, 2, 1).
                 ra_all, dec_all = _extract_field_ra_dec(phase_dir)
                 ra_rad = ra_all[0]

@@ -98,7 +98,9 @@ def evaluate_beam_docker(
     # Extract pointing center from MS FIELD table
     try:
         from dsa110_continuum.adapters.casa_tables import table
-        from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+        from dsa110_continuum.calibration.field_directions import (
+            extract_field_ra_dec as _extract_field_ra_dec,
+        )
 
         with table(ms_path + "::FIELD") as tf:
             phase_dir = tf.getcol("PHASE_DIR")

@@ -37,7 +37,9 @@ def read_ms_dec(ms_path: str | Path, fits_fallback: str | Path | None = None) ->
         log.debug("read_ms_dec: casacore not available, trying FITS fallback")
     else:
         try:
-            from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+            from dsa110_continuum.calibration.field_directions import (
+                extract_field_ra_dec as _extract_field_ra_dec,
+            )
 
             with ct.table(str(ms_path) + "::FIELD", readonly=True, ack=False) as t:
                 phase_dir = t.getcol("PHASE_DIR")
