@@ -166,16 +166,21 @@ The `__init__.py` re-export layers intentionally still reference old paths. Do N
 
 Use `--dry-run` before real compute to verify MS discovery, calibration-table resolution, checkpoint state, quarantine state, and rebuild/skip decisions:
 
-    /opt/miniforge/envs/casa6/bin/python scripts/batch_pipeline.py \
-      --date 2026-01-25 --start-hour 22 --end-hour 23 \
-      --dry-run --quarantine-after-failures 3
+```bash
+/opt/miniforge/envs/casa6/bin/python scripts/batch_pipeline.py \
+  --date 2026-01-25 --start-hour 22 --end-hour 23 \
+  --dry-run --quarantine-after-failures 3
+```
 
 Production smoke-test pattern (default-strict QA, bounded runtime, retry, parallel photometry):
 
-    --quarantine-after-failures 3 --tile-timeout 1800 --retry-failed \
-    --photometry-workers 4 --photometry-chunk-size 0
+```text
+--quarantine-after-failures 3 --tile-timeout 1800 --retry-failed \
+--photometry-workers 4 --photometry-chunk-size 0
+```
 
 Operational flags:
+
 - `--dry-run` prints execution plan, exits before writing run products.
 - `--quarantine-after-failures N` skips MS entries whose checkpoint failure count reaches N. `--clear-quarantine` resets counts.
 - QA gating is strict by default: QA-FAIL epochs do NOT run forced photometry or archive mosaics. `--lenient-qa` is a diagnostic override only.
@@ -191,6 +196,7 @@ Validated H17 result: `2026-01-25` hour 22 rebuilt 11 tiles → `/stage/dsa110-c
 <important if="you are working on calibration: bandpass, gain, applycal, or table discovery">
 
 BP/G table acquisition order (must match implementation; update both this section and code in the same PR):
+
 1. Same-date tables if valid.
 2. Generate from primary flux calibrator transit (preferred).
 3. Generate from bright-source VLA catalog fallback.
@@ -208,10 +214,12 @@ See `CONTEXT.md` `## Calibration` for vocabulary (table conventions, borrowing s
 <important if="you are implementing or modifying any pipeline subsystem (flagging, calibration, conversion/QA, imaging, mosaicking, photometry, ESE)">
 
 Read both layers BEFORE touching code:
+
 - `docs/skills/` — verified notes on how this repo's code actually works.
 - `docs/reference/` — distilled analysis of the OLD dsa110-contimg + ASKAP VAST pipelines: validated numerical parameters, known failure modes, instrument-specific constraints not visible in the current code.
 
 Reference files:
+
 - `flagging.md` — AOFlagger Lua strategy, OVRO RFI, validated fractions, two-stage flagging contract (do NOT omit Stage 2).
 - `calibration.md` — K/B/G params, DEFAULT_PRESET, SelfCalConfig, `bp_minsnr=5.0`.
 - `conversion-and-qa.md` — UVH5 ingest workarounds, PyUVData float64/`run_check`, TELESCOPE_NAME dual-identity, post-conversion QA gates.
@@ -257,6 +265,7 @@ Save under `/data/dsa110-continuum/outputs/` (organize by topic or date). Do NOT
 <important if="you are touching FastAPI services: dsa110_continuum/mosaic/api.py, scripts/qa_server.py, or scripts/monitor_server.py">
 
 Three FastAPI services exist; their statuses differ:
+
 - `dsa110_continuum/mosaic/api.py` — **dormant**. Defines a router but no caller currently mounts it. Do NOT assume users hit this path; verify the mount before changing behavior.
 - `scripts/qa_server.py` — **live**. The QA dashboard users currently rely on. Treat as production: changes need the same care as pipeline code.
 - `scripts/monitor_server.py` — **live, host-ops**. Exposes a `POST /exec` shell hook; any change to that endpoint is a security-relevant edit and must be flagged.
@@ -309,7 +318,7 @@ The plan was written before a full filesystem audit. Several files it describes 
 | --- | --- |
 | Create `photometry/metrics.py` | Already exists (170 lines). Contains `calculate_eta_metric`, `calculate_v_metric`, `calculate_sigma_deviation`, `calculate_weighted_mean/variance/chi_squared`. The VAST-canonical η formula (`(N/(N-1)) * [mean(w·f²) − mean(w·f)²/mean(w)]`) is already implemented correctly at line 112. Do NOT recreate — extend or consolidate. |
 | Create `photometry/association.py` | Does NOT exist. This is a genuine gap. |
-| "All-pairs Vs/m absent" (G4) | `multi_epoch.py::calc_two_epoch_pair_metrics()` (line 548) already computes all N(N-1)/2 pairs using a double loop, and `get_most_significant_pair()` (line 618) selects the max-|Vs| pair above a threshold. This matches VAST's `pairs.py` + `finalise.py` logic. G4 is already solved — do NOT re-implement. |
+| "All-pairs Vs/m absent" (G4) | `multi_epoch.py::calc_two_epoch_pair_metrics()` (line 548) already computes all N(N-1)/2 pairs using a double loop, and `get_most_significant_pair()` (line 618) selects the max-\|Vs\| pair above a threshold. This matches VAST's `pairs.py` + `finalise.py` logic. G4 is already solved — do NOT re-implement. |
 | Two duplicate metric definitions (G2) | Three independent definitions exist: `photometry/metrics.py`, `photometry/variability.py`, and `lightcurves/metrics.py`. The plan is correct that consolidation is needed, but it underestimated the count. The canonical formulas in `photometry/metrics.py` are correct; the task is to make `variability.py` and `lightcurves/metrics.py` import from there. |
 
 ### Correct phase 1 scope
