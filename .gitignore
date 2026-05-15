@@ -52,3 +52,9 @@ outputs/photometry-bench/
 
 # Playwright CLI cache (skill scratch state)
 .playwright-cli/
+
+# Codacy CLI local config + logs
+.codacy/
+
+# /graphify skill output (regenerable knowledge-graph artifacts)
+graphify-out/
