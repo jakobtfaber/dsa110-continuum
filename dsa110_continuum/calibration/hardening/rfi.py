@@ -47,8 +47,8 @@ def preflag_rfi(
     aoflagger_strategy : Optional[str], optional
         Path to AOFlagger Lua strategy file, by default None
     """
-    from dsa110_continuum.adapters import casa_tables as casatables
     import numpy as np
+    from dsa110_continuum.adapters import casa_tables as casatables
 
     start_time = time.time()
 
@@ -98,31 +98,15 @@ def preflag_rfi(
             backend = "casa"
 
     if backend == "casa":
-        # Use CASA flagdata modes
-        # Import flagdata with CASA log environment protection
-        try:
-            from dsa110_contimg.common.utils.casa_init import casa_log_environment
+        from dsa110_continuum.calibration.casa_service import CASAService
 
-            with casa_log_environment():
-                from casatasks import flagdata
-        except ImportError:
-            from casatasks import flagdata
-
-        def _call_flagdata(**kwargs):
-            """Call flagdata with CASA log environment protection."""
-            try:
-                from dsa110_contimg.common.utils.casa_init import casa_log_environment
-
-                with casa_log_environment():
-                    return flagdata(**kwargs)
-            except ImportError:
-                return flagdata(**kwargs)
+        service = CASAService()
 
         # Apply flagging based on strategy
         if strategy == "tfcrop":
             # Time-frequency crop: good for broadband RFI
             threshold = 3.0 if aggressive else 4.0
-            _call_flagdata(
+            service.flagdata(
                 vis=ms_path,
                 mode="tfcrop",
                 datacolumn="DATA",
@@ -134,7 +118,7 @@ def preflag_rfi(
         elif strategy == "rflag":
             # R-flag: statistical outlier detection
             threshold = 4.0 if aggressive else 5.0
-            _call_flagdata(
+            service.flagdata(
                 vis=ms_path,
                 mode="rflag",
                 datacolumn="DATA",
@@ -197,9 +181,8 @@ def preflag_rfi_adaptive(
     try:
         # Import adaptive RFI modules
         # Get initial flag state
-        from dsa110_continuum.adapters import casa_tables as casatables
         import numpy as np
-
+        from dsa110_continuum.adapters import casa_tables as casatables
         from dsa110_continuum.calibration.rfi_adaptive_enhanced import (
             AdaptiveRFIConfig,
             RFIQAThresholds,

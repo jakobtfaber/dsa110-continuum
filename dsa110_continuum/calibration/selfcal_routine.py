@@ -182,18 +182,7 @@ def _remove_existing_caltable(caltable: str) -> None:
 
 
 def _call_gaincal_guarded(**kwargs: Any) -> None:
-    """Call CASA gaincal with guarded import.
-
-    Prefer direct casatasks import when available. Fall back to CASAService.
-    """
-    try:
-        from casatasks import gaincal  # type: ignore
-
-        gaincal(**kwargs)
-        return
-    except ImportError:
-        logger.debug("casatasks.gaincal unavailable; falling back to CASAService")
-
+    """Call CASA gaincal through the shared runtime guard."""
     try:
         from dsa110_continuum.calibration.casa_service import CASAService
 
@@ -203,18 +192,7 @@ def _call_gaincal_guarded(**kwargs: Any) -> None:
 
 
 def _call_applycal_guarded(**kwargs: Any) -> None:
-    """Call CASA applycal with guarded import.
-
-    Prefer direct casatasks import when available. Fall back to CASAService.
-    """
-    try:
-        from casatasks import applycal  # type: ignore
-
-        applycal(**kwargs)
-        return
-    except ImportError:
-        logger.debug("casatasks.applycal unavailable; falling back to CASAService")
-
+    """Call CASA applycal through the shared runtime guard."""
     try:
         from dsa110_continuum.calibration.casa_service import CASAService
 

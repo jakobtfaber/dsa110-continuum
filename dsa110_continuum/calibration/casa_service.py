@@ -21,23 +21,153 @@ Usage:
     )
 """
 
+import importlib
 import logging
 import os
+import sys
+import threading
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-try:
-    from dsa110_contimg.common.utils.casa_init import (
-        casa_log_environment,
-        get_casa_task,
-    )
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
-
-
 logger = logging.getLogger(__name__)
+
+
+_casa_runtime_lock = threading.RLock()
+_casa_task_cache: dict[str, Any] = {}
+
+
+def _default_casa_log_dir() -> Path:
+    """Resolve the centralized CASA log directory without importing CASA."""
+    if casa_log_dir := os.environ.get("CASA_LOG_DIR"):
+        return Path(casa_log_dir)
+    if casa_log_dir := os.environ.get("CONTIMG_PATHS__CASA_LOGS_DIR"):
+        return Path(casa_log_dir)
+    base_dir = os.environ.get("CONTIMG_BASE_DIR", "/data/dsa110-contimg")
+    return Path(base_dir) / "state" / "logs" / "casa"
+
+
+def setup_casa_runtime_environment(log_dir: str | os.PathLike[str] | None = None) -> Path:
+    """Prepare environment variables CASA reads during task/tool imports."""
+    resolved_log_dir = Path(log_dir) if log_dir is not None else _default_casa_log_dir()
+    resolved_log_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["CASALOGFILE"] = str(resolved_log_dir / "casa.log")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    os.environ.setdefault("CASA_NO_X", "1")
+
+    try:
+        from casaconfig import config as casa_config  # type: ignore[import]
+
+        casa_config.auto_update_rules = False
+        casa_config.measures_auto_update = False
+        casa_config.data_auto_update = False
+    except (ImportError, AttributeError):
+        pass
+
+    return resolved_log_dir
+
+
+@contextmanager
+def casa_runtime(log_dir: str | os.PathLike[str] | None = None):
+    """Redirect CASA imports/tasks into the shared log directory.
+
+    CASA creates logs relative to the current working directory when some tasks
+    and tools are imported. This guard centralizes the CWD/env handling so
+    calibration, applycal, and imaging code do not each carry local variants.
+    """
+    with _casa_runtime_lock:
+        old_cwd = Path.cwd()
+        old_casalog = os.environ.get("CASALOGFILE")
+        resolved_log_dir = setup_casa_runtime_environment(log_dir)
+        try:
+            os.chdir(resolved_log_dir)
+            yield resolved_log_dir
+        finally:
+            try:
+                os.chdir(old_cwd)
+            except (OSError, PermissionError):
+                logger.debug("Could not restore CWD after CASA runtime context", exc_info=True)
+            if old_casalog is None:
+                os.environ.pop("CASALOGFILE", None)
+            else:
+                os.environ["CASALOGFILE"] = old_casalog
+
+
+def setup_casa_environment(log_dir: str | os.PathLike[str] | None = None) -> Path:
+    """Back-compatible process-level CASA setup for CLI entry points."""
+    resolved_log_dir = setup_casa_runtime_environment(log_dir)
+    os.chdir(resolved_log_dir)
+    return resolved_log_dir
+
+
+def get_casa_task(task_name: str) -> Any:
+    """Import and cache a CASA task under the shared runtime guard."""
+    if task_name in _casa_task_cache:
+        return _casa_task_cache[task_name]
+
+    with casa_runtime():
+        try:
+            casatasks = importlib.import_module("casatasks")
+        except ImportError as exc:
+            raise RuntimeError(
+                f"CASA task '{task_name}' unavailable. "
+                "Run with the CASA runtime environment installed."
+            ) from exc
+
+        try:
+            task = getattr(casatasks, task_name)
+        except AttributeError as exc:
+            raise ImportError(f"CASA task '{task_name}' could not be imported.") from exc
+
+    _casa_task_cache[task_name] = task
+    return task
+
+
+def get_casa_tool(tool_name: str) -> Any:
+    """Return a casatools factory imported under the shared runtime guard."""
+    with casa_runtime():
+        try:
+            casatools = importlib.import_module("casatools")
+        except ImportError as exc:
+            raise RuntimeError(
+                f"CASA tool '{tool_name}' unavailable. "
+                "Run with the CASA runtime environment installed."
+            ) from exc
+
+        try:
+            return getattr(casatools, tool_name)
+        except AttributeError as exc:
+            raise ImportError(f"CASA tool '{tool_name}' could not be imported.") from exc
+
+
+@contextmanager
+def suppress_subprocess_stderr():
+    """Suppress file-descriptor stderr noise from CASA helper subprocesses."""
+    devnull_fd = None
+    old_stderr = None
+    old_stderr_fd = None
+    try:
+        old_stderr_fd = sys.stderr.fileno()
+        old_stderr = os.dup(old_stderr_fd)
+        devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull_fd, old_stderr_fd)
+        yield
+    except (AttributeError, OSError):
+        yield
+    finally:
+        if old_stderr is not None and old_stderr_fd is not None:
+            try:
+                os.dup2(old_stderr, old_stderr_fd)
+                os.close(old_stderr)
+            except OSError:
+                pass
+        if devnull_fd is not None:
+            try:
+                os.close(devnull_fd)
+            except OSError:
+                pass
 
 
 class CalibrationProtectionError(Exception):
@@ -149,9 +279,9 @@ class CASAService:
     def log_environment(self):
         """Context manager for CASA operations that need log directory.
 
-        This delegates to the utility function but provides it through the service.
+        This delegates to the shared CASA runtime guard but provides it through the service.
         """
-        with casa_log_environment() as log_dir:
+        with casa_runtime() as log_dir:
             yield log_dir
 
     def run_task(self, task_name: str, **kwargs) -> Any:
@@ -184,7 +314,7 @@ class CASAService:
         logger.info(f"Running CASA task: {cmd_str}")
 
         # Run task in protected logging environment
-        with casa_log_environment():
+        with casa_runtime():
             return task(**kwargs)
 
     def gaincal(self, **kwargs) -> Any:
@@ -340,7 +470,8 @@ class CASAService:
             CASA version string (e.g., "6.7.2"), or None if unavailable
         """
         try:
-            import casatools  # type: ignore
+            with casa_runtime():
+                casatools = importlib.import_module("casatools")
 
             if hasattr(casatools, "version"):
                 version = casatools.version()
@@ -352,7 +483,8 @@ class CASAService:
                     return str(version)
 
             # Fallback
-            import casatasks  # type: ignore
+            with casa_runtime():
+                casatasks = importlib.import_module("casatasks")
 
             if hasattr(casatasks, "version"):
                 version = casatasks.version()

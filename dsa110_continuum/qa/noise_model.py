@@ -114,8 +114,9 @@ def _extract_integration_time(ms_path: str | None) -> float:
 
     try:
         # Try using casatools if available
-        from casatools import table as tbtool
+        from dsa110_continuum.calibration.casa_service import get_casa_tool
 
+        tbtool = get_casa_tool("table")
         tb = tbtool()
         tb.open(str(ms_path_obj))
 
@@ -133,7 +134,7 @@ def _extract_integration_time(ms_path: str | None) -> float:
 
         return float(total_time)
 
-    except ImportError:
+    except (ImportError, RuntimeError):
         # Fallback: estimate from file timestamps or default
         # For DSA-110, typical snapshot is ~10 seconds
         return 10.0

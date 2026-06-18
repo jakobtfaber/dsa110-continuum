@@ -26,46 +26,16 @@ import shutil
 from pathlib import Path
 
 import numpy as np
+from dsa110_continuum.calibration.field_directions import (
+    extract_field_ra_dec as _extract_field_ra_dec,
+)
+from dsa110_continuum.calibration.field_directions import (
+    set_field_ra_dec as _set_field_ra_dec,
+)
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["run_calibrator", "phaseshift_ms", "sync_reference_dir_with_phase_dir"]
-
-
-def _extract_field_ra_dec(phase_dir: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Extract per-field RA/Dec radians from FIELD direction columns.
-
-    CASA table backends may expose direction columns as either rows-first
-    ``(nfields, 1, 2)`` or CASA column-major ``(nfields, 2, 1)`` arrays.
-    Both encode the same two numbers per field: RA and Dec in radians.
-    """
-    arr = np.asarray(phase_dir)
-    if arr.ndim == 3 and arr.shape[1:] == (1, 2):
-        return arr[:, 0, 0], arr[:, 0, 1]
-    if arr.ndim == 3 and arr.shape[1:] == (2, 1):
-        return arr[:, 0, 0], arr[:, 1, 0]
-    if arr.ndim == 2 and arr.shape[1] == 2:
-        return arr[:, 0], arr[:, 1]
-    raise ValueError(f"Unsupported FIELD direction column shape: {arr.shape}")
-
-
-def _set_field_ra_dec(phase_dir: np.ndarray, ra_rad: float, dec_rad: float) -> np.ndarray:
-    """Return ``phase_dir`` with every field set to ``ra_rad``/``dec_rad``."""
-    arr = np.array(phase_dir, copy=True)
-    if arr.ndim == 3 and arr.shape[1:] == (1, 2):
-        arr[:, 0, 0] = ra_rad
-        arr[:, 0, 1] = dec_rad
-        return arr
-    if arr.ndim == 3 and arr.shape[1:] == (2, 1):
-        arr[:, 0, 0] = ra_rad
-        arr[:, 1, 0] = dec_rad
-        return arr
-    if arr.ndim == 2 and arr.shape[1] == 2:
-        arr[:, 0] = ra_rad
-        arr[:, 1] = dec_rad
-        return arr
-    raise ValueError(f"Unsupported FIELD direction column shape: {arr.shape}")
-
 
 def _compute_median_meridian_position(ms_path: str, field: str = "") -> tuple:
     """Compute the median meridian RA/Dec across all fields in the MS.
@@ -190,8 +160,8 @@ def update_phase_dir_to_target(ms_path: str, ra_deg: float, dec_deg: float) -> N
     dec_deg : float
         Target Dec in degrees
     """
-    from dsa110_continuum.adapters import casa_tables as ct
     import numpy as np
+    from dsa110_continuum.adapters import casa_tables as ct
 
     field_table_path = f"{ms_path}::FIELD"
 
@@ -356,9 +326,9 @@ def _validate_calibrator_transit(
     ValueError
         If calibrator RA is outside the observation meridian range.
     """
+    import astropy.units as u
     from astropy.coordinates import EarthLocation
     from astropy.time import Time
-    import astropy.units as u
     from dsa110_contimg.common.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
@@ -524,7 +494,6 @@ def phaseshift_ms(
     """
     import astropy.units as u
     from astropy.coordinates import SkyCoord
-
     from dsa110_continuum.calibration.casa_service import CASAService
 
     service = CASAService()
@@ -846,8 +815,9 @@ def phaseshift_ms(
 
             if len(temp_ms_list) > 1:
                 try:
-                    from casatools import ms as mstool
+                    from dsa110_continuum.calibration.casa_service import get_casa_tool
 
+                    mstool = get_casa_tool("ms")
                     m = mstool()
                     m.open(output_ms, nomodify=False)
                     for ms_to_concat in temp_ms_list[1:]:
@@ -860,13 +830,13 @@ def phaseshift_ms(
                             handling=2,  # copypointing=False equivalent
                         )
                     m.done()
-                except ImportError:
+                except (ImportError, RuntimeError):
                     logger.error(
                         "Could not import casatools.ms for concatenation. Falling back to casatasks.concat (RISKY)."
                     )
-                    from casatasks import concat
+                    from dsa110_continuum.calibration.casa_service import CASAService
 
-                    concat(vis=temp_ms_list, concatvis=output_ms)
+                    CASAService().concat(vis=temp_ms_list, concatvis=output_ms)
         finally:
             # Cleanup temp files
 

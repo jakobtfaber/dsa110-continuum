@@ -7,10 +7,14 @@ import shutil
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-# Prefer module import so mocks on dsa110_continuum.adapters.casa_tables.table are respected at call time
-from dsa110_continuum.adapters import casa_tables as casatables  # noqa: E402
+from dsa110_continuum.calibration.casa_service import casa_runtime, get_casa_tool
+
+with casa_runtime():
+    # Prefer module import so mocks on dsa110_continuum.adapters.casa_tables.table are respected at call time
+    from dsa110_continuum.adapters import casa_tables as casatables  # noqa: E402
+
 import numpy as np  # noqa: E402
 
 # Back-compat symbol for tests that patch dsa110_continuum.imaging.cli_imaging.table
@@ -18,8 +22,7 @@ table = casatables.table if casatables is not None else None  # noqa: N816
 
 # DEFERRED IMPORTS: casatasks imports are deferred to avoid CASA log file creation
 # at module import time. CASA writes log files to CWD when casatasks is imported.
-# Import these inside functions that need them, wrapped in casa_log_environment().
-# from casatasks import exportfits, tclean  # MOVED TO _get_casatasks()
+# Import these inside functions that need them via CASAService/get_casa_task.
 
 if TYPE_CHECKING:
     pass
@@ -66,22 +69,18 @@ def tclean(*args, **kwargs):
 
 
 try:
-    from casatools import msmetadata as _msmd  # type: ignore[import]
-    from casatools import vpmanager as _vpmanager  # type: ignore[import]
-except ImportError:  # pragma: no cover
-    _vpmanager = None
-    _msmd = None
-
-try:
     from dsa110_contimg.common.utils.run_isolation import prepare_temp_environment  # noqa: E402
 except ImportError:  # pragma: no cover - defensive import
     prepare_temp_environment = None  # type: ignore
 
 from dsa110_continuum.imaging.cli_utils import default_cell_arcsec, detect_datacolumn  # noqa: E402
 from dsa110_continuum.imaging.fov import derive_extent_deg  # noqa: E402
+
 try:
     from dsa110_contimg.common.unified_config import settings  # noqa: E402
-    from dsa110_contimg.common.utils.error_context import format_ms_error_with_suggestions  # noqa: E402
+    from dsa110_contimg.common.utils.error_context import (
+        format_ms_error_with_suggestions,  # noqa: E402
+    )
     from dsa110_contimg.common.utils.gpu_utils import (  # noqa: E402
         build_docker_command,
         get_gpu_config,
@@ -91,11 +90,11 @@ try:
     from dsa110_contimg.common.utils.validation import ValidationError, validate_ms  # noqa: E402
 except ImportError:
     from dsa110_continuum._compat import (  # fallback stubs
-        track_performance,
-        get_gpu_config,
         ValidationError,
-        validate_ms,
+        get_gpu_config,
         require_casa6_python,
+        track_performance,
+        validate_ms,
     )
     settings = None  # type: ignore[assignment]
     format_ms_error_with_suggestions = None  # type: ignore[assignment]
@@ -511,7 +510,8 @@ def run_wsclean(
 
     # Use progress monitoring if available
     try:
-        from dsa110_contimg.common.utils.progress import StageProgressMonitor, estimate_imaging_time as _eit
+        from dsa110_contimg.common.utils.progress import StageProgressMonitor
+        from dsa110_contimg.common.utils.progress import estimate_imaging_time as _eit
         estimated_seconds = _eit(n_rows, imsize, niter)
         monitor: Any = StageProgressMonitor(
             "WSClean imaging",
@@ -1403,16 +1403,18 @@ def image_ms(
 
     # If a VP table is supplied, proactively register it as user default for the
     # telescope reported by the MS (and for DSA_110) to satisfy AWProject.
-    if vptable and _vpmanager is not None and _msmd is not None:
+    if vptable:
         try:
+            msmetadata_tool = get_casa_tool("msmetadata")
+            vpmanager_tool = get_casa_tool("vpmanager")
             telname = None
-            md = _msmd()
+            md = msmetadata_tool()
             md.open(ms_path)
             try:
                 telname = md.telescope()  # pylint: disable=no-member
             finally:
                 md.close()
-            vp = _vpmanager()
+            vp = vpmanager_tool()
             vp.loadfromtable(vptable)
             for tname in filter(None, [telname, "DSA_110"]):
                 try:
@@ -1578,13 +1580,9 @@ def image_ms(
             # Actually, tclean documentation says 'mask' can be an image name.
             # FITS might work if CASA can read it on the fly, but importfits is safer.
             try:
-                try:
-                    from dsa110_contimg.common.utils.casa_init import casa_log_environment
+                from dsa110_continuum.calibration.casa_service import get_casa_task
 
-                    with casa_log_environment():
-                        from casatasks import importfits
-                except ImportError:
-                    from casatasks import importfits
+                importfits = get_casa_task("importfits")
 
                 casa_mask = mask_path.replace(".fits", ".mask.image")
                 if not os.path.exists(casa_mask):

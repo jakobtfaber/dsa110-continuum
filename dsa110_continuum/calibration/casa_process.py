@@ -46,27 +46,28 @@ def _casa_worker(
         Path to the temporary directory to use as CWD.
     """
     try:
-        # Change CWD to the temporary directory to isolate casalog
-        os.chdir(temp_dir)
+        from dsa110_continuum.calibration.casa_service import casa_runtime
 
         # Import casatasks here, inside the process
         # This ensures a fresh initialization if possible, though mostly
         # we rely on the process boundary for isolation.
         try:
-            import casatasks
+            with casa_runtime(log_dir=temp_dir):
+                import casatasks
+
+                task_func = getattr(casatasks, task_name, None)
+                if task_func is None:
+                    result_queue.put(
+                        ("error", (AttributeError(f"Task '{task_name}' not found in casatasks"), None))
+                    )
+                    return
+
+                # Run the task
+                result = task_func(**kwargs)
         except ImportError:
             result_queue.put(("error", (ImportError("Could not import casatasks"), None)))
             return
 
-        task_func = getattr(casatasks, task_name, None)
-        if task_func is None:
-            result_queue.put(
-                ("error", (AttributeError(f"Task '{task_name}' not found in casatasks"), None))
-            )
-            return
-
-        # Run the task
-        result = task_func(**kwargs)
         result_queue.put(("success", result))
 
     except Exception as e:

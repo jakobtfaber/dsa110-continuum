@@ -8,42 +8,38 @@ Performs primary-beam correction and exports FITS products.
 Supports hybrid workflow: CASA ft() for model seeding + WSClean for fast imaging.
 """
 
-try:
-    from dsa110_contimg.common.utils.cli_helpers import (
-        configure_logging_from_args,
-        ensure_scratch_dirs,
-        setup_casa_environment,
-    )
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
-
-from .cli_imaging import image_ms
-
-from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore[import]
-
-table = casatables.table  # noqa: N816
 import argparse
 import logging
 import os
 
-from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore[import]
+from dsa110_continuum.calibration.casa_service import casa_runtime
+
+with casa_runtime():
+    from dsa110_continuum.adapters import (
+        casa_tables as casatables,  # type: ignore[import]  # noqa: E402
+    )
+
+from .cli_imaging import image_ms
 
 table = casatables.table  # noqa: N816
 
+try:
+    from dsa110_contimg.common.utils.cli_helpers import (
+        configure_logging_from_args,
+        ensure_scratch_dirs,
+    )
+except ImportError:
+    def configure_logging_from_args(args) -> None:
+        """Configure basic logging when legacy CLI helpers are unavailable."""
+        level = logging.DEBUG if getattr(args, "verbose", False) else logging.INFO
+        logging.basicConfig(level=level, format="%(levelname)s:%(name)s:%(message)s")
+
+    def ensure_scratch_dirs() -> None:
+        """Skip scratch setup when legacy CLI helpers are unavailable."""
+        return None
+
 
 logger = logging.getLogger(__name__)
-
-# Use shared CLI utilities
-
-# Set CASA log directory BEFORE any CASA imports - CASA writes logs to CWD
-setup_casa_environment()
-
-try:
-    from casatools import msmetadata as _msmd  # type: ignore[import]
-    from casatools import vpmanager as _vpmanager  # type: ignore[import]
-except ImportError:  # pragma: no cover
-    _vpmanager = None
-    _msmd = None
 
 LOG = logging.getLogger(__name__)
 
@@ -327,11 +323,12 @@ def main(argv: list | None = None) -> None:
 
         # Provenance Injection for Manual CLI Runs
         try:
-            from dsa110_continuum.conversion.ms_utils import inject_provenance_metadata
-            from dsa110_contimg.infrastructure.tracking.provenance import ProvenanceTracker
-            import uuid
             import time
-            
+            import uuid
+
+            from dsa110_contimg.infrastructure.tracking.provenance import ProvenanceTracker
+            from dsa110_continuum.conversion.ms_utils import inject_provenance_metadata
+
             job_id = str(uuid.uuid4())
             tracker = ProvenanceTracker(job_id=job_id)
             tracker.set_config({
@@ -345,7 +342,7 @@ def main(argv: list | None = None) -> None:
                 },
                 "timestamp": time.time()
             })
-            
+
             if tracker.provenance.config_hash:
                 inject_provenance_metadata(args.ms, job_id, tracker.provenance.config_hash)
                 tracker.save()
