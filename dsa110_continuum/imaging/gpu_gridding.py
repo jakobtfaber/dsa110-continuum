@@ -382,7 +382,7 @@ void degrid_w_projection(
     float w_min = w_values[0];
     float w_max = w_values[n_w_planes - 1];
     float w_clamped = fminf(fmaxf(w, w_min), w_max);
-    
+
     // Find interpolation indices and weight
     float w_frac_idx = (w_clamped - w_min) / (w_max - w_min) * (n_w_planes - 1);
     int w_idx_lo = (int)floorf(w_frac_idx);
@@ -659,10 +659,10 @@ def _compute_w_kernel(
     for j in range(width):
         for i in range(width):
             # Position in l,m (relative to center)
-            l = (i - support) * cell_size_rad
+            l_coord = (i - support) * cell_size_rad
             m = (j - support) * cell_size_rad
 
-            l2m2 = l * l + m * m
+            l2m2 = l_coord * l_coord + m * m
 
             # Check if within field of view (unit sphere constraint)
             if l2m2 < 1.0:
@@ -1035,38 +1035,38 @@ if HAVE_NUMBA:
         grid, weight_grid
     ):
         """Numba-accelerated convolutional gridding kernel.
-        
+
         This replaces the slow Python loop for CPU-based gridding.
         """
         n_vis = len(u_pix_int)
-        
+
         # Iterate over visibilities (serial for safety)
         for i in range(n_vis):
             ui = u_pix_int[i]
             vi = v_pix_int[i]
-            
+
             # Bounds check (kernel footprint)
             if (ui - support < 0 or ui + support >= image_size or
                 vi - support < 0 or vi + support >= image_size):
                 continue
-                
+
             w = w_valid[i]
             val = vis_valid[i] * w
-            
+
             u_o = u_off[i]
             v_o = v_off[i]
-            
+
             # Convolve (inner loops)
             for dv in range(-support, support + 1):
                 vv = vi + dv
                 gcf_v = gcf[v_o, dv + support]
-                
+
                 for du in range(-support, support + 1):
                     uu = ui + du
                     gcf_u = gcf[u_o, du + support]
-                    
+
                     conv_weight = gcf_u * gcf_v
-                    
+
                     grid[vv, uu] += val * conv_weight
                     weight_grid[vv, uu] += w * conv_weight
 else:
@@ -1104,13 +1104,6 @@ def _grid_visibilities_cpu(
         Tuple of (image, grid, weight_sum, n_flagged)
 
     """
-    # Import numba lazily
-    try:
-        import numba
-        HAVE_NUMBA = True
-    except ImportError:
-        HAVE_NUMBA = False
-
     n_vis = len(vis)
     image_size = config.image_size
     cell_size = config.cell_size_rad
@@ -1163,17 +1156,17 @@ def _grid_visibilities_cpu(
         # Calculate integer and fractional parts
         u_pix_int = np.floor(u_pix_f).astype(np.int64)
         v_pix_int = np.floor(v_pix_f).astype(np.int64)
-        
+
         u_frac = u_pix_f - u_pix_int
         v_frac = v_pix_f - v_pix_int
-        
+
         # Calculate oversampling offsets
         u_off = (u_frac * oversampling).astype(np.int64)
         v_off = (v_frac * oversampling).astype(np.int64)
-        
+
         # Pre-compute GCF
         gcf = _compute_spheroidal_gcf(support, oversampling)
-        
+
         if HAVE_NUMBA:
             # Use JIT compiled kernel (defined locally to capture numba import)
             # We define it outside if possible, but here we do it dynamically if needed
@@ -1188,20 +1181,19 @@ def _grid_visibilities_cpu(
             )
         else:
             # Slow pure Python fallback
-            gcf_width = 2 * support + 1
             for i in range(len(u_pix_int)):
                 ui = u_pix_int[i]
                 vi = v_pix_int[i]
-                
+
                 if (ui - support < 0 or ui + support >= image_size or
                     vi - support < 0 or vi + support >= image_size):
                     continue
-                    
+
                 w = w_valid[i]
                 val = vis_valid[i] * w
                 u_o = u_off[i]
                 v_o = v_off[i]
-                
+
                 for dv in range(-support, support + 1):
                     vv = vi + dv
                     gcf_v = gcf[v_o, dv + support]
@@ -1548,8 +1540,10 @@ def grid_ms(
         )
 
     try:
-        from casatools import table as tb
-    except ImportError:
+        from dsa110_continuum.calibration.casa_service import get_casa_tool
+
+        tb = get_casa_tool("table")
+    except (ImportError, RuntimeError):
         return GriddingResult(
             error="casatools not available for MS reading",
         )
@@ -1706,7 +1700,6 @@ def _degrid_visibilities_cupy(
             gcf_gpu = cp.asarray(gcf)
 
             # Stack W-kernels into contiguous array
-            kernel_size = 2 * config.support + 1
             n_w_planes = config.w_planes
 
             # If w_kernels are already on GPU, stack them
@@ -1877,7 +1870,6 @@ def _degrid_visibilities_cpu(
 
         # Accumulate
         acc = 0.0 + 0.0j
-        gcf_width = 2 * support + 1
 
         for dv in range(-support, support + 1):
             vv = v_pix + dv
