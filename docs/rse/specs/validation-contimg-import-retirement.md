@@ -11,8 +11,10 @@
 
 **Verdict: ✅ PASS** — every automated success criterion met with fresh
 evidence; zero regressions (the 8 Mac-baseline failures reproduce identically
-on `main` @ `82e3d96`); manual verification items remain for the human
-(operational sign-offs, merge decision).
+on `main` @ `82e3d96`). Manual items 1, 2, and 4 were subsequently executed
+live on H17 by the validator at the user's request (2026-07-03; evidence in
+§4a) — all three pass. Remaining for the human: `.pth` shim approval and the
+merge decision on PR #93.
 
 ## 1. Implementation Status
 
@@ -116,25 +118,82 @@ documented in CLAUDE.md.
 
 ## 4. Manual Testing Required
 
-- [ ] Confirm no live H17 service submits batch photometry via
+- [x] Confirm no live H17 service submits batch photometry via
   `PhotometryManager.submit_batch` / `PhotometryBatchWorker` (both now raise;
   `scripts/qa_server.py` and `scripts/monitor_server.py` untouched).
-- [ ] Confirm `dsa110 index add …` on H17 still works via the old install
+  **Executed on H17 2026-07-03 — PASS (see §4a).**
+- [x] Confirm `dsa110 index add …` on H17 still works via the old install
   (this repo no longer ships the `dsa110` entry point).
+  **Executed on H17 2026-07-03 — PASS (see §4a).**
 - [ ] Approve deleting the obsolete `.pth` shim from cloud-VM images
   (`~/.local/lib/python3.12/site-packages/dsa110_contimg_shim.py` + loader).
-- [ ] Check no deploy tooling pins the old dist name `dsa110_contimg`.
+- [x] Check no deploy tooling pins the old dist name `dsa110_contimg`.
+  **Executed on H17 2026-07-03 — PASS (see §4a).**
 - [ ] Merge decision on PR #93; after merge, remove the H17 review worktree:
   `cd /data/dsa110-continuum && git worktree remove /tmp/contimg-migration-validate`.
+
+### 4a. H17 execution evidence (items 1, 2, 4 — run 2026-07-03)
+
+**Item 1 — no live service uses the retired batch-photometry API: PASS.**
+
+- Process table (`ps aux`): every running pipeline service is the **old**
+  `dsa110_contimg` package — API (`dsa110_contimg.interfaces.api.app` :8000),
+  GraphQL (`dsa110_contimg.graphql.app` :8001), Dagster code-server + gRPC
+  (`dsa110_contimg.workflow.dagster`), Dagster subgraph (:3211), plus
+  `gallery_watch.sh` inotify watchers. The only process touching the new repo
+  is a static `python -m http.server 8765` serving
+  `/data/dsa110-continuum/products/lightcurves` — no Python imports.
+- systemd units (`dsa110-api`, `dsa110-dagster-webserver`, `dsa110-webui`,
+  `dsa110-dagster-mux`, `dsa110-frontend`, `contimg-pointing-monitor`): all
+  `ExecStart` old-package modules with
+  `PYTHONPATH=/data/dsa110-contimg/backend/src` — none load `dsa110_continuum`.
+- Grep of `/data/dsa110-continuum/{scripts,dsa110_continuum}` for
+  `submit_batch|PhotometryBatchWorker` outside `photometry/{manager,worker}.py`
+  and tests: **zero hits**.
+- Grep of `/data/dsa110-contimg/backend/src` for `dsa110_continuum` imports:
+  **zero hits** — the old package never calls into the new one.
+- Crontabs (ubuntu + root): only a **disabled** old-package maintenance job and
+  an unrelated hippo sync — no photometry submission.
+
+**Item 2 — `dsa110 index add` works via the old install: PASS.**
+
+- `/opt/miniforge/envs/casa6/bin/dsa110` exists; shebang wrapper imports
+  `dsa110_contimg.interfaces.cli.main:cli` — owned by dist `dsa110_contimg
+  0.1.0` (editable install from `/data/dsa110-contimg/backend`), confirming
+  the entry point comes from the old install, not this repo.
+- Live handshake, read-only: `dsa110 index status` → exit 0, 37 561 indexed
+  files, per-date table.
+- Live run: `dsa110 index add --start 2026-01-25 --end 2026-01-25 --directory
+  /data/incoming` → exit 0; normalized 2894 files into 181 groups, "Indexed 0
+  files successfully" — correct idempotent no-op on an already-indexed date.
+
+**Item 4 — no deploy tooling pins the old dist name: PASS.**
+
+- New repo (`/data/dsa110-continuum`): grep of all deploy-shaped files
+  (`*.txt|toml|cfg|yml|yaml|sh|Dockerfile*|*.service`) for `dsa110_contimg` /
+  `dsa110-contimg` pins or `pip install` references — only hit is a **comment**
+  in `.github/workflows/python-tests.yml:33` naming the data path
+  `/stage/dsa110-contimg/images` (filesystem path, intentionally unchanged;
+  not a dist pin).
+- `/etc/systemd/system/*.service`: no `pip install` anywhere; old-package
+  units reference module paths/PYTHONPATH (their own package, expected).
+- Old-repo deploy tooling (`ops/docker/*/Dockerfile*`, `scripts/ops`): all
+  pip installs are third-party deps or **path-based editable installs**
+  (`pip install -e ./backend`, `pip install -e .`) — never the dist name.
+- casa6 env `pip list`: `dsa110_contimg 0.1.0` (editable, old repo — its own
+  install) and `dsacamera-monitor 0.1.0` (from
+  `/data/dsa110-continuum/tools/dsacamera-monitor`; its `pyproject.toml` has
+  no `dsa110_contimg` reference). No index-based pin of the old dist exists.
 
 ## 5. Recommendations
 
 **Critical:** none — all automated criteria pass.
 
 **Important:**
-- Complete the operational sign-off (manual items 1–2) before merging: the
-  retirement RuntimeErrors convert any surviving legacy batch-photometry
-  caller from silent-legacy behavior to a loud failure.
+- ~~Complete the operational sign-off (manual items 1–2) before merging~~
+  **Done 2026-07-03 (§4a): no live consumer of the retired batch-photometry
+  API exists on H17, and the `dsa110` CLI works via the old install.** No
+  operational blocker to merging remains.
 
 **Nice to Have:**
 - Dependency-diet pass on `pyproject.toml` (drop Dagster/Django-era deps;
