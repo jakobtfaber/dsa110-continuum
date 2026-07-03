@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from dsa110_continuum.qa.calibration_quality import validate_caltable_quality
-
 logger = logging.getLogger(__name__)
 
 
@@ -17,6 +15,13 @@ def compare_caltables(caltable_a: str, caltable_b: str) -> dict[str, object]:
     Returns a dictionary with per-table metrics and simple deltas to drive
     plotting/reporting (e.g., gain comparison overlays).
     """
+    # Function-scope import: qa/__init__ -> qa.calibration_quality ->
+    # calibration/__init__ -> qa_compare would otherwise re-enter the
+    # still-partial qa.calibration_quality (circular import; the package
+    # guard swallows the ImportError and compare_caltables silently
+    # vanishes from dsa110_continuum.calibration when qa is imported first).
+    from dsa110_continuum.qa.calibration_quality import validate_caltable_quality
+
     caltable_a = str(Path(caltable_a))
     caltable_b = str(Path(caltable_b))
 

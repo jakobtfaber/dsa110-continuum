@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dsa110_contimg"
+name = "dsa110-continuum"
 version = "0.1.0"
 description = "DSA-110 Continuum Imaging Pipeline for radio astronomy data processing"
 authors = [
@@ -33,7 +33,6 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Operating System :: POSIX :: Linux",
     "Environment :: Console",
-    "Framework :: Dagster",
 ]
 
 dependencies = [
@@ -149,9 +148,8 @@ qa = [
 ]
 
 [project.scripts]
-dsa110 = "dsa110_contimg.interfaces.cli.main:cli"
-dsa110-health = "dsa110_contimg.validation.package_health:main"
-dsa110-validate = "dsa110_contimg.validation.package_health:main"
+dsa110-health = "dsa110_continuum.validation.package_health:main"
+dsa110-validate = "dsa110_continuum.validation.package_health:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -250,10 +248,7 @@ convention = "numpy"  # Enforce NumPy-style docstrings
 ban-relative-imports = "parents"
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
-# Encourage use of public_api for external users
-# Note: These are soft warnings - internal code can still use direct imports
-"dsa110_contimg.execution.convert_group_unified".msg = "Use dsa110_contimg.public_api.convert_uvh5_to_ms instead"
-"dsa110_contimg.execution.adapter.convert_group_unified".msg = "Use dsa110_contimg.public_api.convert_uvh5_to_ms instead"
+"dsa110_contimg".msg = "dsa110_contimg is retired; import from dsa110_continuum"
 
 [tool.ruff.format]
 quote-style = "double"
@@ -265,9 +260,3 @@ indent-style = "space"
 reportMissingModuleSource = false
 reportMissingTypeStubs = false
 
-[tool.dg]
-# Dagster project configuration for dg MCP tools
-directory_type = "project"
-
-[tool.dg.project]
-root_module = "dsa110_contimg.workflow.dagster"

@@ -2,13 +2,6 @@
 """
 DSA-110 Continuum Imaging Pipeline - Calibration Module.
 
-.. note::
-    For new code, prefer using the public API which provides a simpler interface:
-
-        from dsa110_contimg.interfaces.public_api import calibrate_ms
-
-    This module is primarily for internal use and advanced customization.
-
 This module provides calibration functionality including:
 - Bandpass and gain calibration
 - Self-calibration

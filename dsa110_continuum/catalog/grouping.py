@@ -2,7 +2,7 @@
 
 .. deprecated::
     Use ``parse_subband_filename`` from
-    :mod:`dsa110_contimg.infrastructure.database.hdf5_index` instead.
+    :mod:`dsa110_continuum.database.hdf5_index` instead.
     ``group_id_from_path(p)`` is equivalent to ``parse_subband_filename(os.path.basename(p))[0]``.
 """
 

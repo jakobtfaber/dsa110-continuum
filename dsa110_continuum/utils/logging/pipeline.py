@@ -274,12 +274,11 @@ def _setup_category_loggers(
     """
     # Mapping of logger name prefix to log file
     category_mapping = {
-        "dsa110_contimg.conversion": "conversion",
-        "dsa110_contimg.streaming": "streaming",
-        "dsa110_contimg.core.calibration": "calibration",
-        "dsa110_contimg.core.imaging": "imaging",
-        "dsa110_contimg.interfaces.api": "api",
-        "dsa110_contimg.infrastructure.database": "database",
+        "dsa110_continuum.conversion": "conversion",
+        "dsa110_continuum.streaming": "streaming",
+        "dsa110_continuum.calibration": "calibration",
+        "dsa110_continuum.imaging": "imaging",
+        "dsa110_continuum.database": "database",
     }
 
     for logger_prefix, category in category_mapping.items():

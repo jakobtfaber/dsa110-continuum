@@ -1,24 +1,12 @@
-# backend/src/dsa110_contimg/conversion/__init__.py
-
 """
 DSA-110 Continuum Imaging Pipeline - Conversion Module.
-
-.. note::
-    For new code, prefer using the public API which provides a simpler interface:
-
-        from dsa110_contimg.interfaces.public_api import convert_uvh5_to_ms
-
-    This module is primarily for internal use and advanced customization.
 
 This module provides functionality for converting UVH5 subband files to
 Measurement Sets (MS).
 
 Entry Points:
     Batch conversion:
-        from dsa110_contimg.core.conversion import convert_subband_groups_to_ms
-
-    Dagster-based ingestion (replaces old streaming pipeline):
-        # See docs/guides/ingestion.md for Dagster asset setup
+        from dsa110_continuum.conversion import convert_subband_groups_to_ms
 
 Writers:
     DirectSubbandWriter - Main MS writer for production use
@@ -26,7 +14,7 @@ Writers:
     For explicit file-list conversion (bypassing auto-discovery), use
     DirectSubbandWriter directly::
 
-        from dsa110_contimg.core.conversion.writers import get_writer
+        from dsa110_continuum.conversion.writers import get_writer
         import pyuvdata
 
         writer_cls = get_writer("direct-subband")

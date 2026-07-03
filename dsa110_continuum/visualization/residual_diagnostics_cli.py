@@ -8,19 +8,19 @@ Examples
 --------
 Generate all residual diagnostic plots::
 
-    python -m dsa110_contimg.visualization.residual_diagnostics_cli observation.ms --output-dir /data/dsa110-contimg/tmp/qa/
+    python -m dsa110_continuum.visualization.residual_diagnostics_cli observation.ms --output-dir /data/dsa110-contimg/tmp/qa/
 
 Generate interactive Vega-Lite specs for dashboard::
 
-    python -m dsa110_contimg.visualization.residual_diagnostics_cli observation.ms --output-dir /data/dsa110-contimg/tmp/qa/ --interactive
+    python -m dsa110_continuum.visualization.residual_diagnostics_cli observation.ms --output-dir /data/dsa110-contimg/tmp/qa/ --interactive
 
 Use specific data columns::
 
-    python -m dsa110_contimg.visualization.residual_diagnostics_cli observation.ms --data-column DATA --model-column MODEL_DATA
+    python -m dsa110_continuum.visualization.residual_diagnostics_cli observation.ms --data-column DATA --model-column MODEL_DATA
 
 After calibration, check residual quality::
 
-    python -m dsa110_contimg.visualization.residual_diagnostics_cli \\
+    python -m dsa110_continuum.visualization.residual_diagnostics_cli \\
         /stage/dsa110-contimg/ms/2025-01-15_12h00m00s.ms \\
         --output-dir /dev/shm/qa/residuals/
 

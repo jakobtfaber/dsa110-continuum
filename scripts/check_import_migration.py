@@ -179,7 +179,10 @@ def main() -> None:
     parser.add_argument(
         "--fail-on-any",
         action="store_true",
-        help="Exit 1 if any stale import exists (CI gate mode)",
+        help=(
+            "Exit 1 if any stale import exists. This is already the default "
+            "behavior; the flag is kept for CI-invocation compatibility."
+        ),
     )
     args = parser.parse_args()
 

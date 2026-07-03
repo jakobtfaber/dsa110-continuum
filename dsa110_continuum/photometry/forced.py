@@ -389,7 +389,7 @@ def _weighted_convolution(
         None
     """
     # Resolve GPU defaults from settings when available; fall back to CPU
-    # (prefer_gpu=False, min_elements=large) when dsa110_contimg is absent.
+    # (prefer_gpu=False, min_elements=large) when GPU settings are absent.
     if prefer_gpu is None:
         prefer_gpu = settings.gpu.prefer_gpu if settings is not None else False
     if min_elements is None:

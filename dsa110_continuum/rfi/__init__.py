@@ -13,7 +13,7 @@ Main Components:
     - flagging: Apply flags to measurement sets
 
 Usage:
-    from dsa110_contimg.core.rfi import gpu_rfi_detection, RFIDetectionResult
+    from dsa110_continuum.rfi import gpu_rfi_detection, RFIDetectionResult
 
     result = gpu_rfi_detection(
         ms_path="/path/to/data.ms",
