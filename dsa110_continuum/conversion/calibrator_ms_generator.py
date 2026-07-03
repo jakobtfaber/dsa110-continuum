@@ -357,12 +357,17 @@ class CalibratorMSGenerator:
             select_hdf5_groups_by_position,
         )
 
+        # The legacy selector caps to n_groups BEFORE we can time-scope, so
+        # wrong-date candidates could crowd out the requested date. When
+        # time-scoping, fetch effectively uncapped and re-apply n_groups after.
+        uncapped_n_groups = 1_000_000
+
         groups = select_hdf5_groups_by_position(
             db_path=str(self.db_path),
             source_ra_deg=source_ra_deg,
             source_dec_deg=source_dec_deg,
             beam_radius_deg=beam_radius_deg,
-            n_groups=n_groups,
+            n_groups=n_groups if transit_time is None else uncapped_n_groups,
         )
 
         if transit_time is None:
@@ -389,7 +394,7 @@ class CalibratorMSGenerator:
                 transit_time.iso,
             )
 
-        return scoped
+        return scoped[:n_groups]
 
     def convert_groups(
         self,

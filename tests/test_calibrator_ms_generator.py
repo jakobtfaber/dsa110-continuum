@@ -58,6 +58,33 @@ class TestSelectGroupsByPosition:
             )
         assert groups == [D2_GROUP, D1_GROUP]
 
+    def test_n_groups_cap_applied_after_time_scoping(self, generator):
+        """A wrong-date closest candidate must not crowd out the requested date.
+
+        The legacy selector caps to n_groups before this wrapper can
+        time-scope, so with n_groups=1 a positionally closer D2 group would
+        be the only candidate returned. The wrapper must fetch uncapped,
+        filter by transit_time, then re-apply the caller's n_groups.
+        """
+        with patch(LEGACY_SELECTOR, return_value=[D2_GROUP, D1_GROUP]) as legacy:
+            groups = generator.select_groups_by_position(
+                source_ra_deg=CAL.ra_deg,
+                source_dec_deg=CAL.dec_deg,
+                n_groups=1,
+                transit_time=TRANSIT_D1,
+            )
+        assert legacy.call_args.kwargs["n_groups"] > 1000
+        assert groups == [D1_GROUP]
+
+    def test_no_transit_time_passes_caller_n_groups(self, generator):
+        with patch(LEGACY_SELECTOR, return_value=[D2_GROUP]) as legacy:
+            generator.select_groups_by_position(
+                source_ra_deg=CAL.ra_deg,
+                source_dec_deg=CAL.dec_deg,
+                n_groups=1,
+            )
+        assert legacy.call_args.kwargs["n_groups"] == 1
+
     def test_raises_when_no_group_near_transit(self, generator):
         with patch(LEGACY_SELECTOR, return_value=[D2_GROUP]):
             with pytest.raises(ValueError, match="transit"):
