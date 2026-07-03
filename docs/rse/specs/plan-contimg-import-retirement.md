@@ -646,7 +646,10 @@ keep with its sole consumer's import style).
 **Objective:** no `_compat.py`, no `_lazy_init.py` legacy branches, no shim dependence.
 
 **Tasks:**
-- [ ] **Failing test first** — `tests/test_no_compat_layer.py` (new):
+- [x] **Failing test first** — `tests/test_no_compat_layer.py` (new). *Deviation:* the
+      reference scan uses a word-boundary regex (`\b_compat\b`) instead of the plain
+      substring below — `_validate_strip_compatibility` and friends contain `_compat`
+      as a substring and would false-positive forever. Original sketch:
 
   ```python
   from pathlib import Path
@@ -660,17 +663,22 @@ keep with its sole consumer's import style).
       assert hits == []
   ```
 
-- [ ] **Run, watch fail.**
-- [ ] **Implement:** delete `dsa110_continuum/_compat.py`; in `_lazy_init.py`, keep
+- [x] **Run, watch fail.** (2/3 failed; the no-references scan already passed —
+      consumers were collapsed in Phases 2–5.)
+- [x] **Implement:** delete `dsa110_continuum/_compat.py`; in `_lazy_init.py`, keep
       `require_headless()` (`:73`, no legacy dep) and repoint `require_casa()`/
       `require_gpu_safety()` at the vendored `utils.casa_init`/`utils.gpu_safety`; every
       remaining `try: from dsa110_contimg... except ImportError: from dsa110_continuum._compat import ...`
       pattern was already collapsed in Phases 2–5 — this phase greps to prove it:
       `rtk grep -rn '_compat' dsa110_continuum/` → only `_lazy_init` history remains, then none.
-- [ ] **Run, watch pass; commit.**
+- [x] **Run, watch pass; commit.** (`64fb4ee`. Also swept the seven remaining
+      stub-fallback guards targeting vendored modules — mosaic/{builder,orchestrator,qa},
+      conversion/{helpers_telescope,file_validator,conversion_orchestrator},
+      photometry/forced — and deleted `tests/test_compat.py`, the shim's
+      signature-pin suite, not in the CI file list.)
 
 **Verification:**
-- [ ] `pytest tests/ -q` full local suite green with zero shim (`python -c "import sys; assert not any('dsa110_contimg_shim' in str(p) for p in sys.path)"` guard in the test run env is optional but cheap).
+- [x] `pytest tests/ -q` full local suite green with zero shim (`python -c "import sys; assert not any('dsa110_contimg_shim' in str(p) for p in sys.path)"` guard in the test run env is optional but cheap). Result: no-shim guard OK; 8 failed = pre-existing baseline, 1070 passed (1078 − 11 deleted pin tests + 3 new).
 
 ### Phase 8: Packaging, docs, CI gate, H17 validation
 
