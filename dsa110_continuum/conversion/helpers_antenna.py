@@ -5,7 +5,7 @@ import logging
 import numpy as np
 
 try:
-    from dsa110_contimg.common.utils.antpos_local import get_itrf
+    from dsa110_continuum.utils.antpos_local import get_itrf
 except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)
 

@@ -74,7 +74,7 @@ __all__ = [
 ]
 
 try:
-    from dsa110_contimg.common.utils.error_context import format_ms_error_with_suggestions
+    from dsa110_continuum.utils.error_context import format_ms_error_with_suggestions
 except ImportError:
     def format_ms_error_with_suggestions(
         error: Exception, ms: str, operation: str, suggestions: list[str]

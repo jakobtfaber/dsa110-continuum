@@ -16,7 +16,7 @@ table = casatables.table  # noqa: N816
 
 
 try:
-    from dsa110_contimg.common.utils.runtime_safeguards import require_casa6_python
+    from dsa110_continuum.utils.runtime_safeguards import require_casa6_python
 except ImportError:
     from dsa110_continuum._compat import require_casa6_python
 

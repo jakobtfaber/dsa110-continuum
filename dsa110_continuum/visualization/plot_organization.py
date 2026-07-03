@@ -573,7 +573,7 @@ def get_plot_organizer_from_env() -> PlotOrganizer:
     - QA_PLOT_ARCHIVE_RETENTION_DAYS (default: 90)
 
     """
-    from dsa110_contimg.common.utils import get_env_int
+    from dsa110_continuum.utils import get_env_int
 
     contimg_base = str(get_env_path("CONTIMG_BASE_DIR", default="/data/dsa110-contimg"))
     base_dir = Path(os.environ.get("QA_PLOT_BASE_DIR", f"{contimg_base}/products/qa/plots"))

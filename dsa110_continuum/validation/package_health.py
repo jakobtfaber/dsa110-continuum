@@ -147,7 +147,7 @@ def check_critical_modules() -> tuple[int, list[str]]:
         "dsa110_contimg.workflow.pipeline",
         "dsa110_contimg.workflow.dagster",
         "dsa110_contimg.infrastructure.database",
-        "dsa110_contimg.common.utils",
+        "dsa110_continuum.utils",
     ]
 
     passed = 0

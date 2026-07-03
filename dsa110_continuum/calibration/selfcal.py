@@ -698,7 +698,7 @@ def _predict_model_wsclean(
     try:
         # Prefer explicit path; otherwise always use Docker wsclean
         if wsclean_path:
-            from dsa110_contimg.common.utils.wsclean_utils import build_wsclean_native_env
+            from dsa110_continuum.utils.wsclean_utils import build_wsclean_native_env
 
             env = build_wsclean_native_env()
             cmd = [
@@ -710,7 +710,7 @@ def _predict_model_wsclean(
                 ms_path,
             ]
         else:
-            from dsa110_contimg.common.utils.gpu_utils import build_docker_command
+            from dsa110_continuum.utils.gpu_utils import build_docker_command
 
             docker_user_flags = None
             if os.getenv("WSCLEAN_DOCKER_USER", "").lower() == "host":
@@ -1012,7 +1012,7 @@ def _run_imaging(
 
             require_casa()
 
-            from dsa110_contimg.common.utils.ms_permissions import (
+            from dsa110_continuum.utils.ms_permissions import (
                 ensure_dir_writable,
                 ensure_ms_writable,
             )

@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DSA-110 Pipeline Dashboard</title>
+    <style>
+      {shared_css}
+
+      /* Template-specific overrides for pipeline dashboard */
+      body {{
+        min-height: 100vh;
+      }}
+
+      .header {{
+        background: var(--dsa-bg-paper);
+        padding: var(--dsa-spacing-lg) var(--dsa-spacing-xl);
+        box-shadow: var(--dsa-shadow);
+        border-bottom: 3px solid var(--dsa-primary);
+      }}
+
+      .header h1 {{
+        font-size: 1.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin: 0;
+        padding: 0;
+        border: none;
+      }}
+
+      .header p {{
+        color: var(--dsa-text-secondary);
+        margin-top: var(--dsa-spacing-xs);
+      }}
+
+      .feature-status {{
+        display: flex;
+        gap: var(--dsa-spacing-md);
+        font-size: 0.75rem;
+        margin-top: var(--dsa-spacing-md);
+        flex-wrap: wrap;
+      }}
+
+      .feature-item {{
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        background: var(--dsa-bg-surface);
+        padding: var(--dsa-spacing-xs) var(--dsa-spacing-sm);
+        border-radius: var(--dsa-radius-sm);
+        color: var(--dsa-text-secondary);
+        border: 1px solid var(--dsa-border);
+      }}
+
+      .status-dot {{
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--dsa-text-muted);
+      }}
+
+      .status-dot.enabled {{
+        background: var(--dsa-success);
+        box-shadow: 0 0 8px rgba(40, 167, 69, 0.5);
+      }}
+
+      .status-dot.disabled {{
+        background: var(--dsa-error);
+      }}
+
+      .container {{
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: var(--dsa-spacing-xl);
+      }}
+
+      .grid {{
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--dsa-spacing-xl);
+      }}
+
+      @media (max-width: 1024px) {{
+        .grid {{
+          grid-template-columns: 1fr;
+        }}
+      }}
+
+      .panel {{
+        background: var(--dsa-bg-default);
+        border: 1px solid var(--dsa-border);
+        border-radius: var(--dsa-radius-xl);
+        padding: var(--dsa-spacing-lg);
+        box-shadow: var(--dsa-shadow);
+      }}
+
+      .panel-title {{
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: var(--dsa-spacing-md);
+        display: flex;
+        align-items: center;
+        gap: var(--dsa-spacing-sm);
+        color: var(--dsa-primary);
+      }}
+
+      .form-group {{
+        margin-bottom: var(--dsa-spacing-md);
+      }}
+
+      .form-group label {{
+        display: block;
+        font-size: 0.875rem;
+        color: var(--dsa-text-secondary);
+        margin-bottom: var(--dsa-spacing-sm);
+      }}
+
+      .form-group input,
+      .form-group select {{
+        width: 100%;
+        padding: 0.75rem 1rem;
+        background: var(--dsa-bg-paper);
+        border: 1px solid var(--dsa-border);
+        border-radius: var(--dsa-radius-lg);
+        color: var(--dsa-text-primary);
+        font-size: 1rem;
+      }}
+
+      .form-group input:focus,
+      .form-group select:focus {{
+        outline: none;
+        border-color: var(--dsa-secondary);
+        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+      }}
+
+      .btn {{
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: var(--dsa-radius-lg);
+        font-size: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+      }}
+
+      .btn-primary {{
+        background: var(--dsa-secondary);
+        color: white;
+      }}
+
+      .btn-primary:hover {{
+        background: var(--dsa-secondary-light);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(52, 152, 219, 0.4);
+      }}
+
+      .btn-primary:disabled {{
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }}
+
+      .btn-secondary {{
+        background: var(--dsa-bg-paper);
+        color: var(--dsa-text-primary);
+        border: 1px solid var(--dsa-border);
+      }}
+
+      .btn-secondary:hover {{
+        background: var(--dsa-bg-surface);
+      }}
+
+      .status-grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: var(--dsa-spacing-md);
+        margin-bottom: var(--dsa-spacing-lg);
+      }}
+
+      .status-card {{
+        background: var(--dsa-bg-paper);
+        padding: var(--dsa-spacing-md);
+        border-radius: var(--dsa-radius-lg);
+        text-align: center;
+        border: 1px solid var(--dsa-border);
+      }}
+
+      .status-value {{
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--dsa-primary);
+      }}
+
+      .status-label {{
+        font-size: 0.75rem;
+        color: var(--dsa-text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }}
+
+      .status-pending {{
+        color: #d97706;
+      }}
+      .status-running {{
+        color: var(--dsa-secondary);
+      }}
+      .status-completed {{
+        color: var(--dsa-success);
+      }}
+      .status-failed {{
+        color: var(--dsa-error);
+      }}
+
+      .task-list {{
+        max-height: 400px;
+        overflow-y: auto;
+      }}
+
+      .task-item {{
+        background: var(--dsa-bg-paper);
+        padding: var(--dsa-spacing-md);
+        border-radius: var(--dsa-radius-lg);
+        margin-bottom: var(--dsa-spacing-sm);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border: 1px solid var(--dsa-border);
+      }}
+
+      .task-name {{
+        font-weight: 500;
+        color: var(--dsa-text-primary);
+      }}
+
+      .task-id {{
+        font-size: 0.75rem;
+        color: var(--dsa-text-muted);
+        font-family: var(--dsa-font-mono);
+      }}
+
+      .badge {{
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        text-transform: uppercase;
+      }}
+
+      .badge-pending {{
+        background: var(--dsa-warning-bg);
+        color: #d97706;
+        border: 1px solid var(--dsa-warning-border);
+      }}
+
+      .badge-claimed {{
+        background: var(--dsa-info-bg);
+        color: #0369a1;
+        border: 1px solid var(--dsa-info-border);
+      }}
+
+      .badge-completed {{
+        background: var(--dsa-success-bg);
+        color: #166534;
+        border: 1px solid var(--dsa-success-border);
+      }}
+
+      .badge-failed {{
+        background: var(--dsa-error-bg);
+        color: #991b1b;
+        border: 1px solid var(--dsa-error-border);
+      }}
+
+      .log-panel {{
+        background: var(--dsa-bg-paper);
+        border: 1px solid var(--dsa-border);
+        border-radius: var(--dsa-radius-lg);
+        padding: var(--dsa-spacing-md);
+        font-family: var(--dsa-font-mono);
+        font-size: 0.875rem;
+        max-height: 300px;
+        overflow-y: auto;
+      }}
+
+      .log-entry {{
+        padding: var(--dsa-spacing-xs) 0;
+        border-bottom: 1px solid var(--dsa-border-light);
+      }}
+
+      .log-time {{
+        color: var(--dsa-text-muted);
+        margin-right: var(--dsa-spacing-md);
+      }}
+
+      .log-info {{
+        color: var(--dsa-info);
+      }}
+
+      .log-success {{
+        color: var(--dsa-success);
+      }}
+
+      .log-error {{
+        color: var(--dsa-error);
+      }}
+
+      .quick-actions {{
+        display: flex;
+        gap: var(--dsa-spacing-sm);
+        flex-wrap: wrap;
+        margin-top: var(--dsa-spacing-md);
+      }}
+
+      .quick-btn {{
+        padding: var(--dsa-spacing-sm) var(--dsa-spacing-md);
+        background: var(--dsa-bg-paper);
+        border: 1px solid var(--dsa-border);
+        border-radius: var(--dsa-radius);
+        color: var(--dsa-text-primary);
+        font-size: 0.875rem;
+        cursor: pointer;
+        transition: all 0.15s;
+      }}
+
+      .quick-btn:hover {{
+        background: var(--dsa-bg-surface);
+        border-color: var(--dsa-secondary);
+      }}
+
+      .loading {{
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid var(--dsa-secondary);
+        border-radius: 50%;
+        border-top-color: transparent;
+        animation: spin 1s linear infinite;
+        margin-right: var(--dsa-spacing-sm);
+      }}
+
+      @keyframes spin {{
+        to {{
+          transform: rotate(360deg);
+        }}
+      }}
+
+      .alert {{
+        padding: var(--dsa-spacing-md);
+        border-radius: var(--dsa-radius-lg);
+        margin-bottom: var(--dsa-spacing-md);
+      }}
+
+      .alert-success {{
+        background: var(--dsa-success-bg);
+        border: 1px solid var(--dsa-success-border);
+        color: #155724;
+      }}
+
+      .alert-error {{
+        background: var(--dsa-error-bg);
+        border: 1px solid var(--dsa-error-border);
+        color: #721c24;
+      }}
+
+      .nav-back {{
+        display: inline-flex;
+        align-items: center;
+        gap: var(--dsa-spacing-sm);
+        color: var(--dsa-text-secondary);
+        text-decoration: none;
+        font-size: 0.875rem;
+        margin-bottom: var(--dsa-spacing-md);
+      }}
+
+      .nav-back:hover {{
+        color: var(--dsa-secondary);
+      }}
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <a href="/dev/" class="nav-back">← Back to Developer Portal</a>
+      <h1>Pipeline Dashboard</h1>
+      <p>Run and monitor DSA-110 imaging pipelines</p>
+      <div class="feature-status" id="feature-status">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+
+    <div class="container">
+      <div id="alert-container"></div>
+
+      <div class="grid">
+        <!-- Run Pipeline Panel -->
+        <div class="panel">
+          <div class="panel-title">▶ Run 5-Minute Pipeline</div>
+
+          <form id="pipeline-form">
+            <div class="form-group">
+              <label>Observation Start Time</label>
+              <input type="datetime-local" id="start-time" required />
+            </div>
+
+            <div class="form-group">
+              <label>End Time (optional, defaults to +5min)</label>
+              <input type="datetime-local" id="end-time" />
+            </div>
+
+            <div class="form-group">
+              <label>Calibrator Source</label>
+              <select id="calibrator">
+                <option value="0834+555">0834+555</option>
+                <option value="3C286">3C286</option>
+                <option value="3C48">3C48</option>
+                <option value="3C147">3C147</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Output Directory</label>
+              <input type="text" id="output-dir" value="/data/output" />
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="submit-btn">Start Pipeline</button>
+          </form>
+
+          <div class="quick-actions">
+            <button class="quick-btn" onclick="setQuickTime(-60)">1 hour ago</button>
+            <button class="quick-btn" onclick="setQuickTime(-180)">3 hours ago</button>
+            <button class="quick-btn" onclick="setOct2Test()">Oct 2 Test Data</button>
+          </div>
+        </div>
+
+        <!-- Queue Status Panel -->
+        <div class="panel">
+          <div class="panel-title">Queue Status</div>
+
+          <div class="status-grid">
+            <div class="status-card">
+              <div class="status-value status-pending" id="stat-pending">-</div>
+              <div class="status-label">Pending</div>
+            </div>
+            <div class="status-card">
+              <div class="status-value status-running" id="stat-running">-</div>
+              <div class="status-label">Running</div>
+            </div>
+            <div class="status-card">
+              <div class="status-value status-completed" id="stat-completed">-</div>
+              <div class="status-label">Completed</div>
+            </div>
+            <div class="status-card">
+              <div class="status-value status-failed" id="stat-failed">-</div>
+              <div class="status-label">Failed</div>
+            </div>
+          </div>
+
+          <button class="btn btn-secondary" onclick="refreshStats()">Refresh Status</button>
+        </div>
+
+        <!-- Recent Tasks Panel -->
+        <div class="panel">
+          <div class="panel-title">Recent Tasks</div>
+          <div class="task-list" id="task-list">
+            <div style="color: #64748b; text-align: center; padding: 2rem">Loading tasks...</div>
+          </div>
+        </div>
+
+        <!-- Activity Log Panel -->
+        <div class="panel">
+          <div class="panel-title">Activity Log</div>
+          <div class="log-panel" id="log-panel">
+            <div class="log-entry">
+              <span class="log-time">[--:--:--]</span>
+              <span class="log-info">Dashboard initialized</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Initialize with default time
+      const startInput = document.getElementById('start-time');
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - 60); // Default to 1 hour ago
+      startInput.value = now.toISOString().slice(0, 16);
+
+      // Quick time setters
+      function setQuickTime(minutesAgo) {{
+        const date = new Date();
+        date.setMinutes(date.getMinutes() + minutesAgo);
+        startInput.value = date.toISOString().slice(0, 16);
+        addLog('info', `Set start time to ${{minutesAgo > 0 ? '+' : ''}}${{minutesAgo}} minutes`);
+      }}
+
+      function setOct2Test() {{
+        startInput.value = '2025-10-02T15:40';
+        document.getElementById('end-time').value = '2025-10-02T15:45';
+        addLog('info', 'Set to October 2 test data (15:40-15:45)');
+      }}
+
+      // Activity log
+      function addLog(level, message) {{
+        const logPanel = document.getElementById('log-panel');
+        const time = new Date().toLocaleTimeString();
+        const entry = document.createElement('div');
+        entry.className = 'log-entry';
+        entry.innerHTML = `<span class="log-time">[${{time}}]</span><span class="log-${{level}}">${{message}}</span>`;
+        logPanel.insertBefore(entry, logPanel.firstChild);
+
+        // Keep only last 50 entries
+        while (logPanel.children.length > 50) {{
+          logPanel.removeChild(logPanel.lastChild);
+        }}
+      }}
+
+      // Show alert
+      function showAlert(type, message) {{
+        const container = document.getElementById('alert-container');
+        const alert = document.createElement('div');
+        alert.className = `alert alert-${{type}}`;
+        alert.textContent = message;
+        container.appendChild(alert);
+        setTimeout(() => alert.remove(), 5000);
+      }}
+
+      // Submit pipeline
+      document.getElementById('pipeline-form').addEventListener('submit', async (e) => {{
+        e.preventDefault();
+
+        const submitBtn = document.getElementById('submit-btn');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="loading"></span>Starting...';
+
+        const startTime = document.getElementById('start-time').value;
+        let endTime = document.getElementById('end-time').value;
+
+        // Default end time to start + 5 minutes
+        if (!endTime) {{
+          const endDate = new Date(startTime);
+          endDate.setMinutes(endDate.getMinutes() + 5);
+          endTime = endDate.toISOString().slice(0, 19);
+        }}
+
+        addLog('info', `Submitting pipeline: ${{startTime}} to ${{endTime}}`);
+
+        try {{
+          const response = await fetch('/api/v1/pipeline-dashboard/run', {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }},
+            body: JSON.stringify({{
+              start_time: startTime.replace('T', ' ') + ':00',
+              end_time: endTime.replace('T', ' ') + ':00',
+              calibrator_name: document.getElementById('calibrator').value,
+              output_dir: document.getElementById('output-dir').value,
+            }}),
+          }});
+
+          const data = await response.json();
+
+          if (response.ok) {{
+            showAlert('success', `Pipeline started! Task ID: ${{data.task_id}}`);
+            addLog('success', `Pipeline queued: ${{data.task_id}}`);
+            refreshTasks();
+            refreshStats();
+          }} else {{
+            throw new Error(data.detail || 'Failed to start pipeline');
+          }}
+        }} catch (error) {{
+          showAlert('error', error.message);
+          addLog('error', `Failed: ${{error.message}}`);
+        }} finally {{
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = ' Start Pipeline';
+        }}
+      }});
+
+      // Refresh stats
+      async function refreshStats() {{
+        try {{
+          const response = await fetch('/api/v1/deprecated/stats/dsa110-pipeline');  // DEPRECATED
+          if (response.ok) {{
+            const data = await response.json();
+            document.getElementById('stat-pending').textContent = data.pending || 0;
+            document.getElementById('stat-running').textContent = data.claimed || 0;
+            document.getElementById('stat-completed').textContent = data.completed || 0;
+            document.getElementById('stat-failed').textContent = data.failed || 0;
+            addLog('info', 'Queue stats refreshed');
+          }}
+        }} catch (error) {{
+          addLog('error', `Failed to refresh stats: ${{error.message}}`);
+        }}
+      }}
+
+      // Refresh tasks
+      async function refreshTasks() {{
+        const taskList = document.getElementById('task-list');
+
+        try {{
+          const response = await fetch('/api/v1/deprecated/tasks?limit=10');  // DEPRECATED
+          if (response.ok) {{
+            const data = await response.json();
+
+            if (data.tasks.length === 0) {{
+              taskList.innerHTML =
+                '<div style="color: #64748b; text-align: center; padding: 2rem;">No tasks found</div>';
+              return;
+            }}
+
+            taskList.innerHTML = data.tasks
+              .map(
+                (task) => `
+                        <div class="task-item">
+                            <div>
+                                <div class="task-name">${{task.task_name}}</div>
+                                <div class="task-id">${{task.task_id.slice(0, 8)}}...</div>
+                            </div>
+                            <span class="badge badge-${{task.status}}">${{task.status}}</span>
+                        </div>
+                    `
+              )
+              .join('');
+          }
+        } catch (error) {{
+          taskList.innerHTML = `<div style="color: #f87171; text-align: center; padding: 2rem;">Error: ${{error.message}}</div>`;
+        }}
+      }}
+
+      // Feature Status Refresh
+      async function refreshFeatures() {{
+        const container = document.getElementById('feature-status');
+        try {{
+          const response = await fetch('/api/v1/features/status');
+          if (response.ok) {{
+            const data = await response.json();
+            container.innerHTML = Object.entries(data).map(([key, info]) => `
+              <div class="feature-item" title="${{info.description || ''}}">
+                <div class="status-dot ${{info.status === 'enabled' ? 'enabled' : 'disabled'}}"></div>
+                ${{info.name}}
+              </div>
+            `).join('');
+          }
+        } catch (error) {{
+          console.error('Failed to refresh features:', error);
+        }}
+      }}
+
+      // Initial load
+      refreshStats();
+      refreshTasks();
+      refreshFeatures();
+
+      // Auto-refresh every 10 seconds
+      setInterval(() => {{
+        refreshStats();
+        refreshTasks();
+      }}, 10000);
+
+      // Refresh features every 30 seconds
+      setInterval(refreshFeatures, 32100);
+
+      addLog('success', 'Dashboard ready');
+    </script>
+  </body>
+</html>

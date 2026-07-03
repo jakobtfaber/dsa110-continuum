@@ -18,7 +18,7 @@ from typing import Any
 import numpy as np
 
 try:
-    from dsa110_contimg.common.utils.template_styles import get_shared_css
+    from dsa110_continuum.utils.template_styles import get_shared_css
 except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)
 
@@ -90,7 +90,7 @@ def load_imaging_report_data(
     ImagingReportData
         Data container for report generation
     """
-    from dsa110_contimg.common.utils.fits_utils import get_2d_data_and_wcs
+    from dsa110_continuum.utils.fits_utils import get_2d_data_and_wcs
 
     report = ImagingReportData(
         ms_path=ms_path,
@@ -243,7 +243,7 @@ def generate_imaging_figures(
         try:
             from matplotlib.patches import Circle
 
-            from dsa110_contimg.common.utils.fits_utils import get_2d_data_and_wcs
+            from dsa110_continuum.utils.fits_utils import get_2d_data_and_wcs
 
             data, wcs, _ = get_2d_data_and_wcs(primary_fits)
 

@@ -243,7 +243,7 @@ class SimulationConfig:
             )
         
         try:
-            from dsa110_contimg.common.utils.yaml_loader import load_yaml_with_env
+            from dsa110_continuum.utils.yaml_loader import load_yaml_with_env
             params = load_yaml_with_env(yaml_path)
         except ImportError:
             # Fallback to standard yaml if yaml_loader not available

@@ -24,7 +24,7 @@ from .cli_imaging import image_ms
 table = casatables.table  # noqa: N816
 
 try:
-    from dsa110_contimg.common.utils.cli_helpers import (
+    from dsa110_continuum.utils.cli_helpers import (
         configure_logging_from_args,
         ensure_scratch_dirs,
     )
@@ -45,7 +45,7 @@ LOG = logging.getLogger(__name__)
 
 try:
     # Ensure temp artifacts go to scratch and not the repo root
-    from dsa110_contimg.common.utils.run_isolation import prepare_temp_environment
+    from dsa110_continuum.utils.run_isolation import prepare_temp_environment
 except ImportError:  # pragma: no cover - defensive import
     prepare_temp_environment = None  # type: ignore
 

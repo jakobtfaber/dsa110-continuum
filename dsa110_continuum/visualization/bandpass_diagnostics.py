@@ -24,8 +24,8 @@ from dsa110_continuum.adapters.casa_tables import table
 from scipy import stats
 
 try:
-    from dsa110_contimg.common.utils.antenna_classification import OUTRIGGER_ANTENNAS
-    from dsa110_contimg.common.utils.plotting import (
+    from dsa110_continuum.utils.antenna_classification import OUTRIGGER_ANTENNAS
+    from dsa110_continuum.utils.plotting import (
         apply_science_style,
         get_figure_size,
     )

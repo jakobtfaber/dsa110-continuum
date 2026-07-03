@@ -13,7 +13,7 @@ from dsa110_continuum.conversion.helpers_antenna import (
 
 # OPTIMIZATION 3: Try to use numba-accelerated angular separation
 try:
-    from dsa110_contimg.common.utils.numba_accel import (
+    from dsa110_continuum.utils.numba_accel import (
         NUMBA_AVAILABLE,
         angular_separation_jit,
     )
@@ -85,7 +85,7 @@ def _get_dsa110_lon_rad() -> float:
     """Get DSA-110 longitude in radians (cached)."""
     global _DSA110_LON_RAD
     if _DSA110_LON_RAD is None:
-        from dsa110_contimg.common.utils.constants import DSA110_LOCATION
+        from dsa110_continuum.utils.constants import DSA110_LOCATION
 
         _DSA110_LON_RAD = float(DSA110_LOCATION.lon.to_value(u.rad))
     return _DSA110_LON_RAD
@@ -129,7 +129,7 @@ def get_meridian_coords(
         # OPTIMIZATION: Use numba-accelerated LST approximation
         # This is ~10x faster than astropy for simple meridian tracking
         try:
-            from dsa110_contimg.common.utils.numba_accel import NUMBA_AVAILABLE, approx_lst_jit
+            from dsa110_continuum.utils.numba_accel import NUMBA_AVAILABLE, approx_lst_jit
 
             if NUMBA_AVAILABLE:
                 lon_rad = _get_dsa110_lon_rad()
@@ -141,7 +141,7 @@ def get_meridian_coords(
             pass  # Fall through to astropy path
 
     # Use DSA-110 coordinates from constants.py (single source of truth)
-    from dsa110_contimg.common.utils.constants import DSA110_LOCATION
+    from dsa110_continuum.utils.constants import DSA110_LOCATION
 
     dsa110_loc = DSA110_LOCATION
     obstime = Time(time_mjd, format="mjd")

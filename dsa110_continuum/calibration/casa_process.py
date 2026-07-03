@@ -186,7 +186,7 @@ class CASAProcessExecutor:
 
             # For now, let's copy to dsa110_contimg logs if defined
             # We can import this dynamically to avoid circular imports
-            from dsa110_contimg.common.utils.casa_init import CASA_LOG_DIR
+            from dsa110_continuum.utils.casa_init import CASA_LOG_DIR
 
             target_dir = Path(CASA_LOG_DIR)
             target_dir.mkdir(parents=True, exist_ok=True)

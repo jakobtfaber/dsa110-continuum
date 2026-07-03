@@ -37,7 +37,7 @@ from astropy.wcs import WCS
 from scipy.ndimage import map_coordinates
 
 try:
-    from dsa110_contimg.common.utils.decorators import timed
+    from dsa110_continuum.utils.decorators import timed
 except ImportError:
     # dsa110_contimg not installed (cloud/test env) — define a no-op decorator
     import functools

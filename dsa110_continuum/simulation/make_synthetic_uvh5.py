@@ -33,9 +33,9 @@ from dsa110_continuum.simulation.source_selection import (
     summarize_sources,
 )
 try:
-    from dsa110_contimg.common.utils.antpos_local import get_itrf
-    from dsa110_contimg.common.utils.constants import DSA110_ALT, DSA110_LAT, DSA110_LON
-    from dsa110_contimg.common.utils.paths import get_repo_root as _gr
+    from dsa110_continuum.utils.antpos_local import get_itrf
+    from dsa110_continuum.utils.constants import DSA110_ALT, DSA110_LAT, DSA110_LON
+    from dsa110_continuum.utils.paths import get_repo_root as _gr
     _REPO_ROOT_FROM_CONTIMG = _gr()
 except ImportError:
     get_itrf = None
@@ -95,7 +95,7 @@ def load_reference_layout(path: Path, columns: list[str] | None = None) -> dict[
 
 
 def load_telescope_config(config_path: Path, layout_meta: dict, freq_order: str) -> TelescopeConfig:
-    from dsa110_contimg.common.utils.yaml_loader import load_yaml_with_env
+    from dsa110_continuum.utils.yaml_loader import load_yaml_with_env
 
     raw = load_yaml_with_env(config_path, expand_vars=True)
 

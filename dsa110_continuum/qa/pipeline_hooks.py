@@ -145,7 +145,7 @@ def extract_calibration_metrics(
         Object containing extracted calibration metrics.
     """
     from dsa110_continuum.calibration.qa import compute_calibration_metrics
-    from dsa110_contimg.common.utils import get_ms_mid_mjd
+    from dsa110_continuum.utils import get_ms_mid_mjd
 
     # Get observation time
     try:

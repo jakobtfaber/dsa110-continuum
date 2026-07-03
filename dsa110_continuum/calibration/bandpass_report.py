@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 try:
-    from dsa110_contimg.common.utils.templates import render_template
+    from dsa110_continuum.utils.templates import render_template
 except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)
 

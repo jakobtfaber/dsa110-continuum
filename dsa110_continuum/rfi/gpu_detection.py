@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 
 try:
-    from dsa110_contimg.common.utils.gpu_safety import (
+    from dsa110_continuum.utils.gpu_safety import (
         check_system_memory_available,
         initialize_gpu_safety,
         safe_gpu_context,

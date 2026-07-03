@@ -452,7 +452,7 @@ def extract_quality_metrics(
     QualityMetrics
         Extracted quality metrics.
     """
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
 

@@ -40,7 +40,7 @@ from dsa110_continuum.photometry.helpers import (
     query_sources_for_mosaic,
 )
 try:
-    from dsa110_contimg.common.utils.decorators import timed
+    from dsa110_continuum.utils.decorators import timed
 except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)
 

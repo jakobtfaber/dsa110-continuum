@@ -37,7 +37,7 @@
     ... }
     >>>
     >>> # Generate synthetic data for all epochs
-    >>> from dsa110_contimg.common.utils import TempPaths
+    >>> from dsa110_continuum.utils import TempPaths
     >>> result = generate_multi_epoch_uvh5(
     ...     epochs=epochs,
     ...     output_dir=TempPaths.test_output("synthetic_multiepoch"),
@@ -167,7 +167,7 @@ def generate_multi_epoch_uvh5(
     Examples
     --------
         >>> from datetime import datetime, timedelta
-        >>> from dsa110_contimg.common.utils import TempPaths
+        >>> from dsa110_continuum.utils import TempPaths
         >>> epochs = [datetime(2025, 1, 15) + timedelta(days=i) for i in range(4)]
         >>> result = generate_multi_epoch_uvh5(
         ...     epochs=epochs,

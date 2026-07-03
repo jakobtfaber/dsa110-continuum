@@ -16,8 +16,8 @@ import numpy as np
 import yaml
 
 try:
-    from dsa110_contimg.common.utils.paths import get_repo_root
-    from dsa110_contimg.common.utils.stability import Stability, stability
+    from dsa110_continuum.utils.paths import get_repo_root
+    from dsa110_continuum.utils.stability import Stability, stability
 except ImportError:
     # dsa110_contimg not installed (cloud/test env). @stability is annotation-only,
     # and this module applies it unconditionally at line ~134, so a bare `pass`
@@ -75,7 +75,7 @@ def load_measured_parameters(config_path: Path | None = None) -> dict:
         return _PARAMETER_CACHE
 
     try:
-        from dsa110_contimg.common.utils.yaml_loader import load_yaml_with_env
+        from dsa110_continuum.utils.yaml_loader import load_yaml_with_env
 
         params = load_yaml_with_env(config_path, expand_vars=True)
         _PARAMETER_CACHE = params

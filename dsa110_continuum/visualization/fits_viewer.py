@@ -159,7 +159,7 @@ class FITSViewerConfig:
         if cache_env := os.environ.get("FITS_VIEWER_CACHE"):
             return cache_env
 
-        from dsa110_contimg.common.utils.temp_manager import get_temp_subdir
+        from dsa110_continuum.utils.temp_manager import get_temp_subdir
 
         cache_dir = get_temp_subdir("fits_viewer_cache")
         return str(cache_dir)
@@ -210,7 +210,7 @@ class FITSViewerConfig:
         def parse_bool(val: str) -> bool:
             return val.lower() in ("true", "1", "yes", "on")
 
-        from dsa110_contimg.common.utils import get_env_list
+        from dsa110_continuum.utils import get_env_list
 
         safe_dirs = get_env_list("FITS_VIEWER_SAFE_DIRECTORIES")
 

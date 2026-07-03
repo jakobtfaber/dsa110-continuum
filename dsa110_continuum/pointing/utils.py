@@ -40,7 +40,7 @@ def _time_from_seconds(seconds: np.ndarray | None) -> Time | None:
     """
     if seconds is None or len(seconds) == 0:
         return None
-    from dsa110_contimg.common.utils.time_utils import (
+    from dsa110_continuum.utils.time_utils import (
         DEFAULT_YEAR_RANGE,
         detect_casa_time_format,
     )
@@ -163,7 +163,7 @@ def load_pointing(path: str | Path, field_id: int | None = None) -> dict[str, An
         info["source_type"] = "uvh5"
 
         try:
-            from dsa110_contimg.common.utils.hdf5_io import open_uvh5_metadata
+            from dsa110_continuum.utils.hdf5_io import open_uvh5_metadata
 
             with open_uvh5_metadata(path) as f:
                 header = f.get("Header")

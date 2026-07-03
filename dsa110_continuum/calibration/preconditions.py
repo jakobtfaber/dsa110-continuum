@@ -147,7 +147,7 @@ def _check_calibrator_transit(
     from astropy.coordinates import EarthLocation
     from astropy.time import Time
     import astropy.units as u
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
 
@@ -260,7 +260,7 @@ def _check_coherent_phasing(
     PreconditionResult
         Result of the coherent phasing check.
     """
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
 
@@ -367,7 +367,7 @@ def _check_model_data(
     PreconditionResult
         Result of the MODEL_DATA check.
     """
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
 
@@ -489,7 +489,7 @@ def _check_prebandpass_phase(
         )
 
     # Verify it's a valid calibration table
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
 
@@ -577,7 +577,7 @@ def _check_antenna_data(
     PreconditionResult
         Result of the antenna inventory check.
     """
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
 
@@ -677,7 +677,7 @@ def _check_initial_flagging(
     PreconditionResult
         Result of the initial flagging check.
     """
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
 

@@ -666,7 +666,7 @@ def measure_with_aegean(
 
     # Create temporary directory for intermediate files
     if temp_dir is None:
-        from dsa110_contimg.common.utils.temp_manager import get_temp_subdir
+        from dsa110_continuum.utils.temp_manager import get_temp_subdir
 
         temp_dir_obj = get_temp_subdir("aegean")
     else:

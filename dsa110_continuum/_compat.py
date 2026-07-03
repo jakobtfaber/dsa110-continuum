@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def track_performance(name: str = "", log_result: bool = False) -> Callable[[F], F]:
-    """No-op stub for dsa110_contimg.common.utils.performance.track_performance."""
+    """No-op stub for dsa110_continuum.utils.performance.track_performance."""
     def decorator(fn: F) -> F:
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -35,7 +35,7 @@ def track_performance(name: str = "", log_result: bool = False) -> Callable[[F],
 
 
 def memory_safe(max_gb: float = 0, **kwargs: Any) -> Callable[[F], F]:
-    """No-op stub for dsa110_contimg.common.utils.memory_safe.memory_safe."""
+    """No-op stub for dsa110_continuum.utils.memory_safe.memory_safe."""
     def decorator(fn: F) -> F:
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs_inner: Any) -> Any:
@@ -51,7 +51,7 @@ def timed(
     fn_or_name: F | str | None = None,
     **kwargs: Any,
 ) -> Any:
-    """No-op stub for dsa110_contimg.common.utils.timed.
+    """No-op stub for dsa110_continuum.utils.timed.
 
     Supports both ``@timed`` and ``@timed("label")`` usage patterns.
     """
@@ -72,7 +72,7 @@ def timed_debug(
     fn_or_name: F | str | None = None,
     **kwargs: Any,
 ) -> Any:
-    """No-op stub for dsa110_contimg.common.utils.timed_debug.
+    """No-op stub for dsa110_continuum.utils.timed_debug.
 
     Supports both ``@timed_debug`` and ``@timed_debug("label")`` usage patterns.
     """
@@ -148,7 +148,7 @@ def initialize_gpu_safety() -> None:
 def is_gpu_available() -> bool:
     """Return False when ``dsa110_contimg`` / a CUDA runtime is unavailable.
 
-    Mirrors ``dsa110_contimg.common.utils.gpu_safety.is_gpu_available``.
+    Mirrors ``dsa110_continuum.utils.gpu_safety.is_gpu_available``.
     """
     return False
 
@@ -158,7 +158,7 @@ def check_gpu_memory_available(
     gpu_id: int = 0,
     config: Any = None,
 ) -> tuple[bool, str]:
-    """Stub for ``dsa110_contimg.common.utils.gpu_safety.check_gpu_memory_available``.
+    """Stub for ``dsa110_continuum.utils.gpu_safety.check_gpu_memory_available``.
 
     The real helper returns ``(ok, reason)`` so callers can both gate on the
     bool *and* surface the reason in logs / manifests. This stub preserves the

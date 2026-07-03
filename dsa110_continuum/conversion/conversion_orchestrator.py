@@ -22,9 +22,9 @@ import pyuvdata
 
 try:
     from dsa110_contimg.common.unified_config import settings
-    from dsa110_contimg.common.utils import FastMeta, timed, timed_debug
-    from dsa110_contimg.common.utils.antpos_local import get_itrf
-    from dsa110_contimg.common.utils.exceptions import (
+    from dsa110_continuum.utils import FastMeta, timed, timed_debug
+    from dsa110_continuum.utils.antpos_local import get_itrf
+    from dsa110_continuum.utils.exceptions import (
         ConversionError,
         IncompleteSubbandGroupError,
         MSWriteError,
@@ -32,7 +32,7 @@ try:
         is_recoverable,
         wrap_exception,
     )
-    from dsa110_contimg.common.utils.logging import log_context, log_exception
+    from dsa110_continuum.utils.logging import log_context, log_exception
 except ImportError:
     # dsa110_contimg not installed (cloud/test env) — minimal stubs so module loads
     def timed(name):  # type: ignore[misc]
@@ -341,7 +341,7 @@ def convert_subband_groups_to_ms(
         with log_context(group_id=group_id, pipeline_stage="conversion"):
             try:
                 # Use progress monitoring for conversion (can take minutes per group)
-                from dsa110_contimg.common.utils.progress import stage_progress
+                from dsa110_continuum.utils.progress import stage_progress
 
                 output_path = os.path.join(output_dir, f"{ms_group_id}.ms")
                 with stage_progress(

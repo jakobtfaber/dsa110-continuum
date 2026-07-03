@@ -191,7 +191,7 @@ class ScienceMosaicBridgeJob(Job):
             # We need to ensure the resource config matches the environment
             # `DSA110PipelineResource` expects config that matches `get_pipeline_resource_config()` in definitions.py
             # But here we are constructing it manually.
-            from dsa110_contimg.common.utils.paths import resolve_paths
+            from dsa110_continuum.utils.paths import resolve_paths
             paths = resolve_paths()
 
             run_config = {

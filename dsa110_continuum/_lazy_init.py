@@ -6,7 +6,7 @@ Each guard is thread-safe, idempotent, and essentially free after first call.
 
 Usage — replace this pattern at module level::
 
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
     ensure_casa_path()
 
 with a call inside the functions that need CASA::
@@ -35,7 +35,7 @@ def require_casa() -> None:
         if _casa_ready:
             return
         try:
-            from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+            from dsa110_continuum.utils.casa_init import ensure_casa_path
             ensure_casa_path()
         except ImportError:
             pass  # dsa110_contimg not installed
@@ -57,7 +57,7 @@ def require_gpu_safety() -> None:
         if _gpu_ready:
             return
         try:
-            from dsa110_contimg.common.utils.gpu_safety import initialize_gpu_safety
+            from dsa110_continuum.utils.gpu_safety import initialize_gpu_safety
             initialize_gpu_safety()
         except ImportError:
             pass  # dsa110_contimg not installed

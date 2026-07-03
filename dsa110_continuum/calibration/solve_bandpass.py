@@ -608,7 +608,7 @@ def _run_bandpass_with_progress(
     """
     import os
 
-    from dsa110_contimg.common.utils.progress import (
+    from dsa110_continuum.utils.progress import (
         BandpassChannelMonitor,
         StageProgressMonitor,
         estimate_calibration_time,

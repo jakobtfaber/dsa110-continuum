@@ -342,7 +342,7 @@ def validate_antenna_positions(ms_path: str, position_tolerance_m: float = 0.05)
 
         # Load reference DSA-110 positions
         try:
-            from dsa110_contimg.common.utils.antpos_local import get_itrf
+            from dsa110_continuum.utils.antpos_local import get_itrf
 
             ref_df = get_itrf(latlon_center=None)
 

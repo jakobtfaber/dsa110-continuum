@@ -136,7 +136,7 @@ def get_antenna_positions() -> np.ndarray:
     np.ndarray
         Array of shape (n_antennas, 3) containing [x, y, z] in meters.
     """
-    from dsa110_contimg.common.utils.antpos_local import get_itrf
+    from dsa110_continuum.utils.antpos_local import get_itrf
 
     df = get_itrf()
     return np.array([df["x_m"], df["y_m"], df["z_m"]]).T

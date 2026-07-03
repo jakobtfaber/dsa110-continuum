@@ -33,7 +33,7 @@ import pandas as pd
 from dsa110_continuum.config import get_env_path
 
 try:
-    from dsa110_contimg.common.utils.paths import get_repo_root
+    from dsa110_continuum.utils.paths import get_repo_root
 except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)
 

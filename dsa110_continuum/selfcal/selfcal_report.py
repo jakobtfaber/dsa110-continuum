@@ -15,7 +15,7 @@ from pathlib import Path
 try:
     from dsa110_contimg.infrastructure.database.models import ImageComparison, QAPlot, SelfCalIteration
     from dsa110_contimg.infrastructure.database.session import get_session
-    from dsa110_contimg.common.utils.template_styles import get_shared_css
+    from dsa110_continuum.utils.template_styles import get_shared_css
 except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)
 

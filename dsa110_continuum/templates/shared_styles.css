@@ -1,0 +1,530 @@
+/**
+ * DSA-110 Continuum Imaging Pipeline - Shared Light Theme CSS
+ *
+ * This file defines the unified light theme for all HTML reports.
+ * Include this in templates using the get_shared_css() function from
+ * dsa110_contimg.utils.templates
+ */
+
+/* =============================================================================
+   CSS Variables - Light Theme
+   ============================================================================= */
+:root {
+  /* Primary colors */
+  --dsa-primary: #2c3e50;
+  --dsa-primary-light: #34495e;
+  --dsa-secondary: #3498db;
+  --dsa-secondary-light: #5dade2;
+
+  /* Background colors */
+  --dsa-bg-default: #ffffff;
+  --dsa-bg-paper: #f8f9fa;
+  --dsa-bg-surface: #f5f5f5;
+  --dsa-bg-code: #f4f4f4;
+
+  /* Border colors */
+  --dsa-border: #dee2e6;
+  --dsa-border-light: #e9ecef;
+
+  /* Text colors */
+  --dsa-text-primary: #333333;
+  --dsa-text-secondary: #666666;
+  --dsa-text-muted: #7f8c8d;
+  --dsa-text-disabled: #999999;
+
+  /* Status colors */
+  --dsa-success: #28a745;
+  --dsa-success-bg: #d4edda;
+  --dsa-success-border: #c3e6cb;
+  --dsa-warning: #ffc107;
+  --dsa-warning-bg: #fff3cd;
+  --dsa-warning-border: #ffeeba;
+  --dsa-error: #dc3545;
+  --dsa-error-bg: #f8d7da;
+  --dsa-error-border: #f5c6cb;
+  --dsa-info: #17a2b8;
+  --dsa-info-bg: #d1ecf1;
+  --dsa-info-border: #bee5eb;
+
+  /* Shadows */
+  --dsa-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --dsa-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --dsa-shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.15);
+
+  /* Spacing */
+  --dsa-spacing-xs: 4px;
+  --dsa-spacing-sm: 8px;
+  --dsa-spacing-md: 16px;
+  --dsa-spacing-lg: 24px;
+  --dsa-spacing-xl: 32px;
+
+  /* Border radius */
+  --dsa-radius-sm: 4px;
+  --dsa-radius: 6px;
+  --dsa-radius-lg: 8px;
+  --dsa-radius-xl: 12px;
+
+  /* Typography */
+  --dsa-font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --dsa-font-mono: 'Roboto Mono', ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  --dsa-line-height: 1.6;
+}
+
+/* =============================================================================
+   Base Styles
+   ============================================================================= */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--dsa-font-family);
+  line-height: var(--dsa-line-height);
+  color: var(--dsa-text-primary);
+  background-color: var(--dsa-bg-default);
+  margin: 0;
+  padding: 0;
+}
+
+/* =============================================================================
+   Typography
+   ============================================================================= */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--dsa-primary);
+  margin-top: 0;
+  margin-bottom: var(--dsa-spacing-md);
+  font-weight: 600;
+}
+
+h1 {
+  font-size: 2rem;
+  border-bottom: 3px solid var(--dsa-secondary);
+  padding-bottom: var(--dsa-spacing-sm);
+}
+
+h2 {
+  font-size: 1.5rem;
+  border-bottom: 1px solid var(--dsa-border);
+  padding-bottom: var(--dsa-spacing-xs);
+  margin-top: var(--dsa-spacing-xl);
+}
+
+h3 {
+  font-size: 1.25rem;
+  color: var(--dsa-secondary);
+  margin-top: var(--dsa-spacing-lg);
+}
+
+h4 {
+  font-size: 1.1rem;
+  color: var(--dsa-primary-light);
+}
+
+p {
+  margin-bottom: var(--dsa-spacing-md);
+}
+
+a {
+  color: var(--dsa-secondary);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--dsa-secondary-light);
+  text-decoration: underline;
+}
+
+code {
+  font-family: var(--dsa-font-mono);
+  background-color: var(--dsa-bg-code);
+  padding: 2px 6px;
+  border-radius: var(--dsa-radius-sm);
+  font-size: 0.9em;
+  color: var(--dsa-primary);
+}
+
+pre {
+  font-family: var(--dsa-font-mono);
+  background-color: var(--dsa-bg-code);
+  padding: var(--dsa-spacing-md);
+  border-radius: var(--dsa-radius);
+  overflow-x: auto;
+  border: 1px solid var(--dsa-border);
+}
+
+pre code {
+  background: none;
+  padding: 0;
+}
+
+/* =============================================================================
+   Layout
+   ============================================================================= */
+.dsa-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: var(--dsa-spacing-lg);
+}
+
+.dsa-container-narrow {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: var(--dsa-spacing-lg);
+}
+
+.dsa-grid {
+  display: grid;
+  gap: var(--dsa-spacing-lg);
+}
+
+.dsa-grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.dsa-grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.dsa-grid-auto {
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+@media (max-width: 768px) {
+  .dsa-grid-2,
+  .dsa-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =============================================================================
+   Cards
+   ============================================================================= */
+.dsa-card {
+  background: var(--dsa-bg-default);
+  border: 1px solid var(--dsa-border);
+  border-radius: var(--dsa-radius-lg);
+  padding: var(--dsa-spacing-lg);
+  box-shadow: var(--dsa-shadow);
+}
+
+.dsa-card-header {
+  background: var(--dsa-bg-paper);
+  padding: var(--dsa-spacing-md) var(--dsa-spacing-lg);
+  border-radius: var(--dsa-radius-lg);
+  margin-bottom: var(--dsa-spacing-lg);
+}
+
+/* =============================================================================
+   Tables
+   ============================================================================= */
+.dsa-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--dsa-spacing-lg) 0;
+}
+
+.dsa-table th,
+.dsa-table td {
+  padding: var(--dsa-spacing-sm) var(--dsa-spacing-md);
+  text-align: left;
+  border-bottom: 1px solid var(--dsa-border);
+}
+
+.dsa-table th {
+  background-color: var(--dsa-bg-paper);
+  font-weight: 600;
+  color: var(--dsa-primary);
+}
+
+.dsa-table tr:hover {
+  background-color: var(--dsa-bg-surface);
+}
+
+.dsa-table tr:nth-child(even) {
+  background-color: var(--dsa-bg-paper);
+}
+
+.dsa-table caption {
+  caption-side: top;
+  font-weight: 600;
+  padding: var(--dsa-spacing-sm);
+  text-align: left;
+}
+
+/* =============================================================================
+   Figures
+   ============================================================================= */
+.dsa-figure {
+  text-align: center;
+  margin: var(--dsa-spacing-lg) 0;
+}
+
+.dsa-figure img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--dsa-border);
+  border-radius: var(--dsa-radius);
+  box-shadow: var(--dsa-shadow);
+}
+
+.dsa-figure-caption {
+  font-style: italic;
+  color: var(--dsa-text-secondary);
+  margin-top: var(--dsa-spacing-sm);
+  font-size: 0.9rem;
+}
+
+/* =============================================================================
+   Metrics Cards
+   ============================================================================= */
+.dsa-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--dsa-spacing-md);
+  margin: var(--dsa-spacing-lg) 0;
+}
+
+.dsa-metric-card {
+  background: var(--dsa-bg-paper);
+  padding: var(--dsa-spacing-lg);
+  border-radius: var(--dsa-radius-lg);
+  text-align: center;
+  border: 1px solid var(--dsa-border);
+}
+
+.dsa-metric-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--dsa-primary);
+}
+
+.dsa-metric-label {
+  color: var(--dsa-text-secondary);
+  font-size: 0.85rem;
+  margin-top: var(--dsa-spacing-xs);
+}
+
+/* =============================================================================
+   Status Banners
+   ============================================================================= */
+.dsa-status-banner {
+  padding: var(--dsa-spacing-lg);
+  border-radius: var(--dsa-radius-lg);
+  margin: var(--dsa-spacing-lg) 0;
+  display: flex;
+  align-items: center;
+  gap: var(--dsa-spacing-lg);
+}
+
+.dsa-status-success {
+  background-color: var(--dsa-success);
+  color: white;
+}
+
+.dsa-status-warning {
+  background-color: var(--dsa-warning);
+  color: var(--dsa-text-primary);
+}
+
+.dsa-status-error {
+  background-color: var(--dsa-error);
+  color: white;
+}
+
+.dsa-status-info {
+  background-color: var(--dsa-info);
+  color: white;
+}
+
+.dsa-status-banner h2 {
+  color: inherit;
+  margin: 0 0 var(--dsa-spacing-sm) 0;
+  border: none;
+  padding: 0;
+}
+
+/* =============================================================================
+   Alerts
+   ============================================================================= */
+.dsa-alert {
+  padding: var(--dsa-spacing-md);
+  border-radius: var(--dsa-radius);
+  margin: var(--dsa-spacing-md) 0;
+}
+
+.dsa-alert-success {
+  background-color: var(--dsa-success-bg);
+  border: 1px solid var(--dsa-success-border);
+  color: #155724;
+}
+
+.dsa-alert-warning {
+  background-color: var(--dsa-warning-bg);
+  border: 1px solid var(--dsa-warning-border);
+  color: #856404;
+}
+
+.dsa-alert-error {
+  background-color: var(--dsa-error-bg);
+  border: 1px solid var(--dsa-error-border);
+  color: #721c24;
+}
+
+.dsa-alert-info {
+  background-color: var(--dsa-info-bg);
+  border: 1px solid var(--dsa-info-border);
+  color: #0c5460;
+}
+
+/* =============================================================================
+   Buttons
+   ============================================================================= */
+.dsa-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--dsa-spacing-sm) var(--dsa-spacing-md);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--dsa-text-primary);
+  background-color: var(--dsa-bg-paper);
+  border: 1px solid var(--dsa-border);
+  border-radius: var(--dsa-radius);
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease-in-out;
+}
+
+.dsa-btn:hover {
+  background-color: var(--dsa-bg-surface);
+  border-color: var(--dsa-primary-light);
+  text-decoration: none;
+}
+
+.dsa-btn-primary {
+  background-color: var(--dsa-secondary);
+  border-color: var(--dsa-secondary);
+  color: white;
+}
+
+.dsa-btn-primary:hover {
+  background-color: var(--dsa-secondary-light);
+  border-color: var(--dsa-secondary-light);
+}
+
+/* =============================================================================
+   Header and Footer
+   ============================================================================= */
+.dsa-header {
+  background: var(--dsa-bg-paper);
+  border-bottom: 2px solid var(--dsa-primary);
+  padding: var(--dsa-spacing-lg);
+  margin-bottom: var(--dsa-spacing-xl);
+}
+
+.dsa-header h1 {
+  margin-bottom: var(--dsa-spacing-sm);
+  border: none;
+  padding: 0;
+}
+
+.dsa-header-meta {
+  color: var(--dsa-text-muted);
+  font-size: 0.9rem;
+}
+
+.dsa-footer {
+  margin-top: var(--dsa-spacing-xl);
+  padding-top: var(--dsa-spacing-lg);
+  border-top: 1px solid var(--dsa-border);
+  color: var(--dsa-text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+/* =============================================================================
+   Utility Classes
+   ============================================================================= */
+.dsa-text-success {
+  color: var(--dsa-success);
+}
+.dsa-text-warning {
+  color: var(--dsa-warning);
+}
+.dsa-text-error {
+  color: var(--dsa-error);
+}
+.dsa-text-info {
+  color: var(--dsa-info);
+}
+.dsa-text-muted {
+  color: var(--dsa-text-muted);
+}
+
+.dsa-bg-paper {
+  background-color: var(--dsa-bg-paper);
+}
+.dsa-bg-surface {
+  background-color: var(--dsa-bg-surface);
+}
+
+.dsa-mb-0 {
+  margin-bottom: 0;
+}
+.dsa-mb-sm {
+  margin-bottom: var(--dsa-spacing-sm);
+}
+.dsa-mb-md {
+  margin-bottom: var(--dsa-spacing-md);
+}
+.dsa-mb-lg {
+  margin-bottom: var(--dsa-spacing-lg);
+}
+
+.dsa-mt-0 {
+  margin-top: 0;
+}
+.dsa-mt-sm {
+  margin-top: var(--dsa-spacing-sm);
+}
+.dsa-mt-md {
+  margin-top: var(--dsa-spacing-md);
+}
+.dsa-mt-lg {
+  margin-top: var(--dsa-spacing-lg);
+}
+
+.dsa-p-0 {
+  padding: 0;
+}
+.dsa-p-sm {
+  padding: var(--dsa-spacing-sm);
+}
+.dsa-p-md {
+  padding: var(--dsa-spacing-md);
+}
+.dsa-p-lg {
+  padding: var(--dsa-spacing-lg);
+}
+
+.dsa-hidden {
+  display: none;
+}
+.dsa-flex {
+  display: flex;
+}
+.dsa-flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dsa-flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}

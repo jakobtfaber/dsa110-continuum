@@ -91,7 +91,7 @@ def _query_atnf_pulsars() -> list[tuple[str, float, float]]:
         )
 
         pulsars = []
-        from dsa110_contimg.common.utils.coordinates import dms_to_deg, hms_to_deg
+        from dsa110_continuum.utils.coordinates import dms_to_deg, hms_to_deg
 
         for i in range(len(query)):
             try:

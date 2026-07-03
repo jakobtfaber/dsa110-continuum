@@ -188,7 +188,7 @@ def _open_caltable(caltable_path: str):
         Calibration table object.
     """
     # Ensure CASAPATH is set before importing
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
 

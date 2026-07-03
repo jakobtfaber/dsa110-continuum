@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 
 try:
-    from dsa110_contimg.common.utils import timed
+    from dsa110_continuum.utils import timed
 except ImportError:
     from dsa110_continuum._compat import timed
 
@@ -62,7 +62,7 @@ def _call_gaincal_with_progress(
     **kwargs :
         Arguments to pass to gaincal
     """
-    from dsa110_contimg.common.utils.progress import StageProgressMonitor, estimate_calibration_time
+    from dsa110_continuum.utils.progress import StageProgressMonitor, estimate_calibration_time
 
     # Get MS info for progress estimation
     try:

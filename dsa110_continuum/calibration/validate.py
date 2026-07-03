@@ -15,7 +15,7 @@ from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore[
 import numpy as np  # type: ignore[import]
 
 try:
-    from dsa110_contimg.common.utils.antenna_classification import (
+    from dsa110_continuum.utils.antenna_classification import (
         get_outrigger_antennas,
         select_outrigger_refant,
     )

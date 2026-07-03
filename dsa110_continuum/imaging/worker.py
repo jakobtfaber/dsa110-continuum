@@ -38,7 +38,7 @@ except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)
 from dsa110_continuum._lazy_init import require_gpu_safety
 try:
-    from dsa110_contimg.common.utils.gpu_safety import (
+    from dsa110_continuum.utils.gpu_safety import (
         check_gpu_memory_available,
         gpu_safe,
         is_gpu_available,
@@ -81,7 +81,7 @@ except ImportError:
     GriddingConfig = None  # type: ignore[assignment,misc]
 
 try:
-    from dsa110_contimg.common.utils.run_isolation import prepare_temp_environment
+    from dsa110_continuum.utils.run_isolation import prepare_temp_environment
 except ImportError:  # pragma: no cover
     prepare_temp_environment = None  # type: ignore[assignment]
 
@@ -97,7 +97,7 @@ def setup_logging(level: str) -> None:
 
 def _get_wavelength_from_ms(ms_path: str) -> float:
     """Get wavelength from MS SPECTRAL_WINDOW table."""
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
     from dsa110_continuum.adapters import casa_tables as casatables
@@ -147,7 +147,7 @@ def _read_ms_visibilities(
     datacolumn: str = "CORRECTED_DATA",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Read visibilities from MS for GPU gridding."""
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
     from dsa110_continuum.adapters import casa_tables as casatables
@@ -282,7 +282,7 @@ def _setup_temp_environment(out_dir: Path) -> None:
     """Set up temp environment for imaging."""
     try:
         if prepare_temp_environment is not None:
-            from dsa110_contimg.common.utils.paths import resolve_paths
+            from dsa110_continuum.utils.paths import resolve_paths
 
             prepare_temp_environment(
                 str(resolve_paths().tmpfs_dir),
@@ -466,7 +466,7 @@ def _apply_and_image(
 
 def _get_ms_time_info(ms: Path) -> tuple[float | None, float | None, float]:
     """Extract time info from MS, with fallback to current time."""
-    from dsa110_contimg.common.utils.time_utils import extract_ms_time_range
+    from dsa110_continuum.utils.time_utils import extract_ms_time_range
 
     start_mjd, end_mjd, mid_mjd = extract_ms_time_range(os.fspath(ms))
     if mid_mjd is None:

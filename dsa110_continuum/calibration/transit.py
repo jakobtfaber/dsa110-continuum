@@ -20,7 +20,7 @@ from astropy.utils.exceptions import AstropyWarning
 from astropy.utils.iers import IERSDegradedAccuracyWarning
 
 try:
-    from dsa110_contimg.common.utils.constants import DSA110_LOCATION
+    from dsa110_continuum.utils.constants import DSA110_LOCATION
 except ImportError:
     from dsa110_continuum._compat import DSA110_LOCATION  # OVRO fallback stub
 

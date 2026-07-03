@@ -25,7 +25,7 @@ LOG = logging.getLogger(__name__)
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
-    from dsa110_contimg.common.utils.yaml_loader import load_yaml_with_env
+    from dsa110_continuum.utils.yaml_loader import load_yaml_with_env
 
     return load_yaml_with_env(path, expand_vars=True) or {}
 

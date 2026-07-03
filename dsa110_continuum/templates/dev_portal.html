@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DSA-110 Developer Portal</title>
+    <style>
+      {shared_css}
+
+      /* Template-specific overrides for developer portal */
+      body {{
+        padding: var(--dsa-spacing-xl);
+        min-height: 100vh;
+      }}
+
+      .container {{
+        max-width: 1200px;
+        margin: 0 auto;
+      }}
+
+      header {{
+        text-align: center;
+        color: var(--dsa-primary);
+        margin-bottom: var(--dsa-spacing-xl);
+        padding-bottom: var(--dsa-spacing-lg);
+        border-bottom: 3px solid var(--dsa-secondary);
+      }}
+
+      header h1 {{
+        font-size: 2.5rem;
+        margin-bottom: var(--dsa-spacing-sm);
+        border: none;
+        padding: 0;
+      }}
+
+      .subtitle {{
+        font-size: 1.25rem;
+        color: var(--dsa-text-secondary);
+      }}
+
+      .grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: var(--dsa-spacing-xl);
+        margin-bottom: var(--dsa-spacing-xl);
+      }}
+
+      .card {{
+        background: var(--dsa-bg-default);
+        border: 1px solid var(--dsa-border);
+        border-radius: var(--dsa-radius-xl);
+        padding: var(--dsa-spacing-xl);
+        box-shadow: var(--dsa-shadow-lg);
+        transition: transform 0.2s, box-shadow 0.2s;
+        cursor: pointer;
+      }}
+
+      .card:hover {{
+        transform: translateY(-5px);
+        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15);
+        border-color: var(--dsa-secondary);
+      }}
+
+      .card-icon {{
+        font-size: 3rem;
+        margin-bottom: var(--dsa-spacing-md);
+      }}
+
+      .card-title {{
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--dsa-primary);
+        margin-bottom: var(--dsa-spacing-sm);
+      }}
+
+      .card-description {{
+        color: var(--dsa-text-secondary);
+        margin-bottom: var(--dsa-spacing-lg);
+        line-height: 1.6;
+      }}
+
+      .card-button {{
+        display: inline-block;
+        padding: var(--dsa-spacing-sm) var(--dsa-spacing-lg);
+        background: var(--dsa-secondary);
+        color: white;
+        text-decoration: none;
+        border-radius: var(--dsa-radius);
+        font-weight: 500;
+        transition: background-color 0.2s;
+      }}
+
+      .card-button:hover {{
+        background: var(--dsa-secondary-light);
+        color: white;
+        text-decoration: none;
+      }}
+
+      /* Special styling for pipeline dashboard card */
+      .card-pipeline {{
+        background: var(--dsa-primary);
+        border-color: var(--dsa-primary);
+      }}
+
+      .card-pipeline .card-title {{
+        color: white;
+      }}
+
+      .card-pipeline .card-description {{
+        color: rgba(255, 255, 255, 0.9);
+      }}
+
+      .card-pipeline .card-button {{
+        background: white;
+        color: var(--dsa-primary);
+      }}
+
+      .card-pipeline .card-button:hover {{
+        background: var(--dsa-bg-paper);
+      }}
+
+      .info-section {{
+        background: var(--dsa-bg-paper);
+        border-radius: var(--dsa-radius-xl);
+        padding: var(--dsa-spacing-xl);
+        box-shadow: var(--dsa-shadow);
+        border: 1px solid var(--dsa-border);
+      }}
+
+      .info-section h2 {{
+        color: var(--dsa-primary);
+        margin-bottom: var(--dsa-spacing-md);
+        margin-top: 0;
+        border: none;
+        padding: 0;
+      }}
+
+      .info-section h2 + ul {{
+        margin-top: var(--dsa-spacing-md);
+      }}
+
+      .info-section ul {{
+        list-style: none;
+        padding: 0;
+      }}
+
+      .info-section li {{
+        padding: var(--dsa-spacing-sm) 0;
+        color: var(--dsa-text-secondary);
+        border-bottom: 1px solid var(--dsa-border-light);
+      }}
+
+      .info-section li:last-child {{
+        border-bottom: none;
+      }}
+
+      .info-section a {{
+        color: var(--dsa-secondary);
+        text-decoration: none;
+        font-weight: 500;
+      }}
+
+      .info-section a:hover {{
+        text-decoration: underline;
+      }}
+
+      .status-badge {{
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        background: var(--dsa-success);
+        color: white;
+        border-radius: var(--dsa-radius-xl);
+        font-size: 0.875rem;
+        font-weight: 500;
+        margin-left: var(--dsa-spacing-sm);
+      }}
+
+      footer {{
+        text-align: center;
+        color: var(--dsa-text-muted);
+        margin-top: var(--dsa-spacing-xl);
+        padding-top: var(--dsa-spacing-lg);
+        border-top: 1px solid var(--dsa-border);
+      }}
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>DSA-110 Developer Portal</h1>
+        <p class="subtitle">
+          Continuum Imaging Pipeline - Development Interface
+        </p>
+      </header>
+
+      <div class="grid">
+        <!-- FITS Viewer Card -->
+        <div class="card" onclick="window.location.href = '/api/v1/fits/page'">
+          <div class="card-icon"></div>
+          <div class="card-title">
+            FITS Viewer <span class="status-badge">NEW</span>
+          </div>
+          <div class="card-description">
+            Interactive FITS file viewer with support for JS9, CARTA, and Aladin
+            Lite. Load and explore FITS files with real-time metadata
+            extraction.
+          </div>
+          <a
+            href="/api/v1/fits/page"
+            class="card-button"
+            onclick="event.stopPropagation()"
+          >
+            Open Viewer →
+          </a>
+        </div>
+
+        <!-- Pipeline Dashboard Card -->
+        <div
+          class="card card-pipeline"
+          onclick="window.location.href = '/api/v1/pipeline-dashboard/'"
+        >
+          <div class="card-icon"></div>
+          <div class="card-title">
+            Pipeline Dashboard <span class="status-badge">NEW</span>
+          </div>
+          <div class="card-description">
+            Run and monitor 5-minute imaging pipelines. User-friendly interface
+            for the pipeline queue - no command line required.
+          </div>
+          <a
+            href="/api/v1/pipeline-dashboard/"
+            class="card-button"
+            onclick="event.stopPropagation()"
+          >
+            Launch Dashboard →
+          </a>
+        </div>
+
+        <!-- API Documentation Card -->
+        <div class="card" onclick="window.location.href = '/docs'">
+          <div class="card-icon"></div>
+          <div class="card-title">API Documentation</div>
+          <div class="card-description">
+            Interactive Swagger UI documentation for all REST API endpoints. Try
+            out endpoints directly from the browser.
+          </div>
+          <a href="/docs" class="card-button" onclick="event.stopPropagation()">
+            View Docs →
+          </a>
+        </div>
+
+        <!-- ReDoc Card -->
+        <div class="card" onclick="window.location.href = '/redoc'">
+          <div class="card-icon"></div>
+          <div class="card-title">API Reference</div>
+          <div class="card-description">
+            Clean, readable API reference documentation powered by ReDoc.
+            Perfect for integration and development.
+          </div>
+          <a
+            href="/redoc"
+            class="card-button"
+            onclick="event.stopPropagation()"
+          >
+            View Reference →
+          </a>
+        </div>
+
+        <!-- Health Check Card -->
+        <div class="card" onclick="window.location.href = '/api/v1/health'">
+          <div class="card-icon"></div>
+          <div class="card-title">Health Status</div>
+          <div class="card-description">
+            Check API server health status, database connections, and system
+            metrics.
+          </div>
+          <a
+            href="/api/v1/health"
+            class="card-button"
+            onclick="event.stopPropagation()"
+          >
+            Check Status →
+          </a>
+        </div>
+
+        <!-- Metrics Dashboard Card -->
+        <div
+          class="card"
+          onclick="window.location.href = '/api/v1/metrics/dashboard'"
+        >
+          <div class="card-icon"></div>
+          <div class="card-title">Metrics Dashboard</div>
+          <div class="card-description">
+            View system metrics, performance statistics, and operational
+            insights.
+          </div>
+          <a
+            href="/api/v1/metrics/dashboard"
+            class="card-button"
+            onclick="event.stopPropagation()"
+          >
+            View Metrics →
+          </a>
+        </div>
+
+        <!-- CARTA Viewer Card -->
+        <div
+          class="card"
+          onclick="window.location.href = '/api/v1/carta/launcher'"
+        >
+          <div class="card-icon"></div>
+          <div class="card-title">CARTA Launcher</div>
+          <div class="card-description">
+            Launch CARTA (Cube Analysis and Rendering Tool for Astronomy) for
+            advanced FITS visualization.
+          </div>
+          <a
+            href="/api/v1/carta/launcher"
+            class="card-button"
+            onclick="event.stopPropagation()"
+          >
+            Launch CARTA →
+          </a>
+        </div>
+      </div>
+
+      <div class="info-section">
+        <h2>Quick Links</h2>
+        <ul>
+          <li><strong>API Base URL:</strong> <code id="api-base"></code></li>
+          <li>
+            <strong>FITS Viewer API:</strong>
+            <a href="/api/v1/fits/viewer-urls?fits_path=/tmp/test.fits"
+              >/api/v1/fits/viewer-urls</a
+            >
+          </li>
+          <li>
+            <strong>OpenAPI Schema:</strong>
+            <a href="/openapi.json">/openapi.json</a>
+          </li>
+          <li>
+            <strong>WebSocket:</strong>
+            <code>ws://localhost:8000/api/v1/ws</code>
+          </li>
+        </ul>
+
+        <h2 style="margin-top: 2rem">Documentation</h2>
+        <ul>
+          <li>
+            <a href="https://github.com/dsa110/dsa110-contimg"
+              >GitHub Repository</a
+            >
+          </li>
+          <li>
+            <a href="/docs/FITS_VIEWER_WEB_INTERFACE.md">FITS Viewer Guide</a>
+          </li>
+          <li>
+            <a href="/docs/FITS_VIEWER_FRONTEND_INTEGRATION.md"
+              >Frontend Integration</a
+            >
+          </li>
+          <li>
+            <a href="/TECHNICAL_SPECIFICATION_FITS_VIEWER.md"
+              >Technical Specification</a
+            >
+          </li>
+        </ul>
+      </div>
+
+      <footer>
+        <p>DSA-110 Continuum Imaging Pipeline &copy; 2025</p>
+        <p style="font-size: 0.875rem; margin-top: 0.5rem">
+          Deep Synoptic Array
+        </p>
+      </footer>
+    </div>
+
+    <script>
+      // Set API base URL dynamically
+      document.getElementById("api-base").textContent = window.location.origin;
+    </script>
+  </body>
+</html>

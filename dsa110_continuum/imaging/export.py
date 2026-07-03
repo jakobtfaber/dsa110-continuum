@@ -90,7 +90,7 @@ def save_png_from_fits(paths: Iterable[str]) -> list[str]:
             ZScaleInterval,
         )
 
-        from dsa110_contimg.common.utils.runtime_safeguards import validate_image_shape
+        from dsa110_continuum.utils.runtime_safeguards import validate_image_shape
 
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt

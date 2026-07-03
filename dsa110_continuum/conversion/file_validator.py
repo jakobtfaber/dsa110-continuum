@@ -44,7 +44,7 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from dsa110_contimg.common.utils.exceptions import (
+    from dsa110_continuum.utils.exceptions import (
         ConversionError,
         ErrorCode,
     )

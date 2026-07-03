@@ -8,7 +8,7 @@ import numpy as np
 from astropy.coordinates import EarthLocation
 
 try:
-    from dsa110_contimg.common.utils.runtime_safeguards import require_casa6_python
+    from dsa110_continuum.utils.runtime_safeguards import require_casa6_python
 except ImportError:
     # dsa110_contimg not installed — provide a no-op decorator stub
     def require_casa6_python(fn):  # type: ignore[misc]
@@ -27,7 +27,7 @@ def cleanup_casa_file_handles() -> None:
     causing file locking errors in subsequent operations.
     """
     # Ensure CASAPATH is set before importing CASA modules
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
 
@@ -119,7 +119,7 @@ def set_telescope_identity(
 
     # Use constants if coordinates not provided (single source of truth)
     if lon_deg is None or lat_deg is None or alt_m is None:
-        from dsa110_contimg.common.utils.constants import DSA110_LOCATION
+        from dsa110_continuum.utils.constants import DSA110_LOCATION
 
         if lon_deg is None:
             lon_deg = DSA110_LOCATION.lon.to(u.deg).value

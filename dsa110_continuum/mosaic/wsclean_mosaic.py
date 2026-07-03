@@ -238,7 +238,7 @@ def _apply_to_mosaic_copies(
 
 def get_env_with_everybeam() -> dict[str, str]:
     """Get environment with EveryBeam + WSClean native libs configured."""
-    from dsa110_contimg.common.utils.wsclean_utils import build_wsclean_native_env
+    from dsa110_continuum.utils.wsclean_utils import build_wsclean_native_env
 
     env = build_wsclean_native_env()
     ld_path = env.get("LD_LIBRARY_PATH", "")

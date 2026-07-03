@@ -61,11 +61,11 @@ class FigureConfig:
     def _apply_style_preset(self) -> None:
         """Apply predefined style settings.
 
-        Uses values from dsa110_contimg.common.utils.plotting utilities for consistency.
+        Uses values from dsa110_continuum.utils.plotting utilities for consistency.
         """
         # Import utilities for consistency (circular imports are safe here)
         try:
-            from dsa110_contimg.common.utils.plotting import (
+            from dsa110_continuum.utils.plotting import (
                 get_dpi,
                 get_figure_size,
                 get_font_sizes,

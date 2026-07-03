@@ -25,7 +25,7 @@ from dsa110_continuum.conversion.helpers import (
     set_telescope_identity,
 )
 try:
-    from dsa110_contimg.common.utils.paths import CONTIMG_TMPFS_DIR
+    from dsa110_continuum.utils.paths import CONTIMG_TMPFS_DIR
 except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)
 
@@ -241,11 +241,11 @@ class DirectSubbandWriter(MSWriter):
             for sb_file in self.file_list:
                 try:
                     # Use lightweight peek to get midpoint time without full read
-                    from dsa110_contimg.common.utils.fast_meta import peek_uvh5_phase_and_midtime
+                    from dsa110_continuum.utils.fast_meta import peek_uvh5_phase_and_midtime
 
                     # Use FUSE-aware read lock to avoid racing with moves
                     try:
-                        from dsa110_contimg.common.utils.fuse_lock import get_fuse_lock_manager
+                        from dsa110_continuum.utils.fuse_lock import get_fuse_lock_manager
 
                         lm = get_fuse_lock_manager()
                     except Exception:
@@ -270,7 +270,7 @@ class DirectSubbandWriter(MSWriter):
                             from pyuvdata import UVData
 
                             try:
-                                from dsa110_contimg.common.utils.fuse_lock import get_fuse_lock_manager
+                                from dsa110_continuum.utils.fuse_lock import get_fuse_lock_manager
 
                                 lm2 = get_fuse_lock_manager()
                             except Exception:
@@ -459,7 +459,7 @@ class DirectSubbandWriter(MSWriter):
                 # Set up temp environment and CWD for CASA concat
                 # CASA creates temporary files (TMPPOINTING*) in the current working directory
                 # We need to ensure CWD is writable and temp env vars are set
-                from dsa110_contimg.common.utils.run_isolation import prepare_temp_environment
+                from dsa110_continuum.utils.run_isolation import prepare_temp_environment
 
                 # Use the MS directory as the working directory (should be writable)
                 if ms_stage_path.is_absolute():
@@ -601,7 +601,7 @@ class DirectSubbandWriter(MSWriter):
 
                 # Use fuse_safe_move for robust FUSE filesystem handling
                 try:
-                    from dsa110_contimg.common.utils.fuse_lock import fuse_safe_move
+                    from dsa110_continuum.utils.fuse_lock import fuse_safe_move
 
                     fuse_safe_move(src_path, dst_path, timeout=60.0)
                     ms_stage_path = ms_final_path
@@ -657,7 +657,7 @@ class DirectSubbandWriter(MSWriter):
 
                     # Use fuse_safe_move for robust FUSE filesystem handling
                     try:
-                        from dsa110_contimg.common.utils.fuse_lock import fuse_safe_move
+                        from dsa110_continuum.utils.fuse_lock import fuse_safe_move
 
                         fuse_safe_move(ms_single_spw, ms_multi_spw, timeout=60.0)
                     except ImportError:
@@ -752,7 +752,7 @@ def _write_ms_subband_part(
     lock_fd = None
     try:
         try:
-            from dsa110_contimg.common.utils.fuse_lock import acquire_process_lock
+            from dsa110_continuum.utils.fuse_lock import acquire_process_lock
         except Exception:
             acquire_process_lock = None
 
@@ -780,7 +780,7 @@ def _write_ms_subband_part(
     finally:
         if lock_fd is not None:
             try:
-                from dsa110_contimg.common.utils.fuse_lock import release_process_lock
+                from dsa110_continuum.utils.fuse_lock import release_process_lock
 
                 release_process_lock(lock_fd)
             except Exception:
@@ -803,7 +803,7 @@ def _write_ms_subband_part(
             logger.warning(f"Missing telescope object in {subband_file}, reconstructing...")
             from pyuvdata import Telescope
 
-            from dsa110_contimg.common.utils.constants import DSA110_LOCATION
+            from dsa110_continuum.utils.constants import DSA110_LOCATION
 
             tel = Telescope()
             tel.name = "DSA-110"

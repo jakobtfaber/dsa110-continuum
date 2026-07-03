@@ -30,7 +30,7 @@ def load_thresholds_config(config_path: Path | None = None) -> dict[str, Any]:
         return {}
 
     try:
-        from dsa110_contimg.common.utils.yaml_loader import load_yaml_with_env
+        from dsa110_continuum.utils.yaml_loader import load_yaml_with_env
 
         config = load_yaml_with_env(config_path, expand_vars=True) or {}
     except (OSError, yaml.YAMLError) as exc:

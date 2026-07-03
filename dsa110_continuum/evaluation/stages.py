@@ -883,7 +883,7 @@ class StageRegistry:
             dict
             Loaded reference dataset specifications
         """
-        from dsa110_contimg.common.utils.yaml_loader import load_yaml_with_env
+        from dsa110_continuum.utils.yaml_loader import load_yaml_with_env
 
         self._references = load_yaml_with_env(path, expand_vars=True)
 

@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 try:
-    from dsa110_contimg.common.utils.templates import render_template
+    from dsa110_continuum.utils.templates import render_template
 except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)
 

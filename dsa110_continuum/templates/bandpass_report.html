@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bandpass Diagnostics Report</title>
+    <!-- Vega-Lite dependencies for interactive charts -->
+    <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+    <style>
+      {shared_css}
+
+      /* Template-specific overrides */
+      body {{
+          max-width: 1400px;
+          margin: 0 auto;
+          padding: var(--dsa-spacing-lg);
+      }}
+
+      .header-info {{
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+          gap: var(--dsa-spacing-md);
+          background: var(--dsa-bg-paper);
+          padding: var(--dsa-spacing-lg);
+          border-radius: var(--dsa-radius-lg);
+          margin-bottom: var(--dsa-spacing-xl);
+          border: 1px solid var(--dsa-border);
+      }}
+
+      .header-info div {{
+          padding: var(--dsa-spacing-sm);
+      }}
+
+      .header-info strong {{
+          color: var(--dsa-primary);
+      }}
+
+      .status-banner {{
+          background: {status_color};
+          color: white;
+          padding: var(--dsa-spacing-lg) var(--dsa-spacing-xl);
+          border-radius: var(--dsa-radius-lg);
+          margin-bottom: var(--dsa-spacing-xl);
+          display: flex;
+          align-items: center;
+          gap: var(--dsa-spacing-lg);
+      }}
+
+      .status-banner .icon {{
+          font-size: 48px;
+      }}
+
+      .status-banner .details {{
+          flex: 1;
+      }}
+
+      .status-banner h2 {{
+          color: white;
+          margin: 0 0 var(--dsa-spacing-sm) 0;
+          padding: 0;
+          border: none;
+      }}
+
+      .metrics-grid {{
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: var(--dsa-spacing-lg);
+          margin-bottom: var(--dsa-spacing-xl);
+      }}
+
+      .metric-card {{
+          background: var(--dsa-bg-paper);
+          padding: var(--dsa-spacing-lg);
+          border-radius: var(--dsa-radius-lg);
+          text-align: center;
+          border: 1px solid var(--dsa-border);
+      }}
+
+      .metric-card .value {{
+          font-size: 2rem;
+          font-weight: bold;
+          color: var(--dsa-primary);
+      }}
+
+      .metric-card .label {{
+          color: var(--dsa-text-secondary);
+          font-size: 14px;
+          margin-top: var(--dsa-spacing-xs);
+      }}
+
+      .figure-container {{
+          margin: var(--dsa-spacing-xl) 0;
+          text-align: center;
+      }}
+
+      .figure-container img {{
+          border: 1px solid var(--dsa-border);
+          border-radius: var(--dsa-radius);
+          box-shadow: var(--dsa-shadow);
+      }}
+
+      .figure-container .interactive-figure {{
+          display: inline-block;
+          border: 1px solid var(--dsa-border);
+          border-radius: var(--dsa-radius);
+          box-shadow: var(--dsa-shadow);
+          padding: var(--dsa-spacing-sm);
+          background: var(--dsa-bg-default);
+      }}
+
+      .figure-caption {{
+          color: var(--dsa-text-secondary);
+          font-style: italic;
+          margin-top: var(--dsa-spacing-sm);
+      }}
+
+      table {{
+          width: 100%;
+          border-collapse: collapse;
+          margin: var(--dsa-spacing-lg) 0;
+      }}
+
+      th, td {{
+          padding: var(--dsa-spacing-sm) var(--dsa-spacing-md);
+          text-align: left;
+          border-bottom: 1px solid var(--dsa-border);
+      }}
+
+      th {{
+          background: var(--dsa-primary);
+          color: white;
+      }}
+
+      tr:hover {{
+          background: var(--dsa-bg-paper);
+      }}
+
+      tr.good td:last-child {{
+          color: var(--dsa-success);
+          font-weight: bold;
+      }}
+
+      tr.warning td:last-child {{
+          color: var(--dsa-warning);
+          font-weight: bold;
+      }}
+
+      tr.bad td:last-child {{
+          color: var(--dsa-error);
+          font-weight: bold;
+      }}
+
+      .recommendations {{
+          background: var(--dsa-warning-bg);
+          border: 1px solid var(--dsa-warning-border);
+          border-radius: var(--dsa-radius-lg);
+          padding: var(--dsa-spacing-lg);
+          margin: var(--dsa-spacing-lg) 0;
+      }}
+
+      .recommendations h3 {{
+          color: #856404;
+          margin-top: 0;
+      }}
+
+      .recommendations ul {{
+          margin: 0;
+          padding-left: var(--dsa-spacing-lg);
+      }}
+
+      .recommendations li {{
+          margin: var(--dsa-spacing-sm) 0;
+      }}
+
+      .two-column {{
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: var(--dsa-spacing-xl);
+      }}
+
+      @media (max-width: 900px) {{
+          .two-column {{
+              grid-template-columns: 1fr;
+          }}
+      }}
+
+      .footer {{
+          margin-top: var(--dsa-spacing-xl);
+          padding-top: var(--dsa-spacing-lg);
+          border-top: 1px solid var(--dsa-border);
+          color: var(--dsa-text-muted);
+          font-size: 12px;
+          text-align: center;
+      }}
+    </style>
+  </head>
+  <body>
+    <h1>Bandpass Diagnostics Report</h1>
+
+    <div class="header-info">
+      <div>
+        <strong>Measurement Set:</strong><br /><code style="font-size: 11px">{report.ms_path}</code>
+      </div>
+      <div><strong>Calibrator:</strong><br />{report.calibrator_name}</div>
+      <div><strong>Generated:</strong><br />{timestamp_str}</div>
+      <div>
+        <strong>Bandpass Table:</strong><br /><code style="font-size: 11px"
+          >{report.bpcal_path}</code
+        >
+      </div>
+    </div>
+
+    <div class="status-banner">
+      <div class="icon">{status_icon}</div>
+      <div class="details">
+        <h2>Calibration Status: {status_text}</h2>
+        <p>
+          <strong>{flag_pct:.1f}%</strong> of bandpass solutions flagged | Pattern:
+          <strong>{report.flagging_pattern}</strong> | Root cause:
+          <strong>{report.root_cause}</strong>
+        </p>
+      </div>
+    </div>
+
+    <h2>Key Metrics</h2>
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="value">{flag_pct:.1f}%</div>
+        <div class="label">Overall Flagging</div>
+      </div>
+      <div class="metric-card">
+        <div class="value">{report.n_antennas_with_data}</div>
+        <div class="label">Antennas with Data</div>
+      </div>
+      <div class="metric-card">
+        <div class="value">{report.n_antennas_good}</div>
+        <div class="label">Good Antennas (&lt;15%)</div>
+      </div>
+      <div class="metric-card">
+        <div class="value">{report.n_antennas_problem}</div>
+        <div class="label">Problem Antennas (&gt;20%)</div>
+      </div>
+      <div class="metric-card">
+        <div class="value">r = {report.amplitude_flagging_correlation:.2f}</div>
+        <div class="label">Amp-Flag Correlation</div>
+      </div>
+      <div class="metric-card">
+        <div class="value">{report.amplitude_deficit_pct:.0f}%</div>
+        <div class="label">Amplitude Deficit</div>
+      </div>
+    </div>
+
+    <div class="recommendations">
+      <h3>Recommendations</h3>
+      <ul>
+        {recommendations_html}
+      </ul>
+    </div>
+
+    <h2>How to Read This Report</h2>
+    <div
+      style="
+        background: #e8f4f8;
+        border: 1px solid #17a2b8;
+        border-radius: 8px;
+        padding: 15px;
+        margin: 20px 0;
+      "
+    >
+      <p style="margin: 0 0 10px 0"><strong>Quick Guide:</strong></p>
+      <ul style="margin: 0; padding-left: 20px">
+        <li>
+          <strong>Figure 1</strong> shows antenna locations - identifies spatial patterns (e.g.,
+          outriggers vs core)
+        </li>
+        <li>
+          <strong>Figures 2-3</strong> compare raw input data vs calibration output - large
+          differences indicate calibration problems
+        </li>
+        <li>
+          <strong>Figure 4</strong> diagnoses the root cause - negative correlation means low-SNR
+          antennas are being flagged
+        </li>
+        <li><strong>Figures 5-6</strong> identify which antennas have issues</li>
+        <li>
+          <strong>Figure 7</strong> shows the full SPW x antenna breakdown to spot patterns (e.g.,
+          all outriggers, specific SPWs)
+        </li>
+      </ul>
+      <p style="margin: 10px 0 0 0">
+        <strong>Color Key (all figures):</strong>
+        <span style="color: green; font-weight: bold">Green</span> = good (&lt;15% flagged),
+        <span style="color: orange; font-weight: bold">Orange</span> = moderate (15-50%),
+        <span style="color: red; font-weight: bold">Red</span> = poor (&gt;50% flagged)
+      </p>
+      <p style="margin: 10px 0 0 0">
+        <em>Interactive figures (1, 4, 6): hover for details, drag to pan, scroll to zoom.</em>
+      </p>
+    </div>
+
+    <h2>Diagnostic Figures</h2>
+
+    <h3>1. Antenna Array Map</h3>
+    <p>
+      Birds-eye view of the antenna array showing physical locations. Outrigger antennas (triangles)
+      are distant from the core and typically have lower SNR due to longer baselines and sparser
+      uv-coverage.
+    </p>
+    <div class="figure-container">
+      {fig_antenna_map}
+      <div class="figure-caption">
+        Figure 1: Array layout. Circles = core antennas, triangles = outriggers. Colors indicate
+        calibration quality. Gray = no data. <em>Hover for details.</em>
+      </div>
+    </div>
+
+    <h3>2. Raw Visibility Amplitude Spectra (Input Data)</h3>
+    <p>
+      The raw visibility amplitude from the measurement set <strong>before</strong> bandpass
+      calibration. Each line shows the median amplitude per channel for baselines involving that
+      antenna.
+    </p>
+    <p>
+      <em>What to look for:</em> Spikes or dips indicate RFI or bad channels. Lines that are
+      consistently lower than others indicate weak antennas that may fail calibration. Compare with
+      Figure 3 to see how well calibration corrected these features.
+    </p>
+    <div class="figure-container">
+      {fig_raw_browser}
+      <div class="figure-caption">
+        Figure 2a: <strong>Interactive Raw Visibility Browser</strong> - Select from 4
+        representative SPWs (edges and center of band), filter by antenna quality and type. X-axis
+        shows frequency in MHz. Black line = reference median from good antennas.
+        <em>Use the controls to explore. See static view below for all 16 SPWs.</em>
+      </div>
+    </div>
+    <details style="margin-top: 20px">
+      <summary style="cursor: pointer; color: #3498db; font-weight: bold">
+        Show static overview (all 16 SPWs)
+      </summary>
+      <div class="figure-container" style="margin-top: 15px">
+        {fig_raw_visibility_spectra}
+        <div class="figure-caption">
+          Figure 2b: Static 4x4 grid showing all 16 SPWs. Each panel title shows frequency range.
+          Red shading = channels with &gt;80% data flagged in the MS.
+        </div>
+      </div>
+    </details>
+
+    <h3>3. Bandpass Solutions Overview (Calibration Output)</h3>
+    <p>
+      The computed bandpass amplitude solutions <strong>after</strong> calibration. The black line
+      shows the median of well-calibrated antennas (the "reference" shape). Good calibration
+      produces smooth curves that track the reference.
+    </p>
+    <p>
+      <em>What to look for:</em> Gaps in lines indicate flagged channels. Red/orange lines far from
+      the black reference indicate poor solutions. Red shading shows channels where ALL antennas
+      failed. Compare with Figure 2 - if raw data looked fine but solutions are bad, check SNR
+      thresholds.
+    </p>
+    <div class="figure-container">
+      {fig_bandpass_browser}
+      <div class="figure-caption">
+        Figure 3a: <strong>Interactive Bandpass Browser</strong> - Select from 4 representative SPWs
+        (edges and center of band), filter by antenna quality and type. X-axis shows frequency in
+        MHz. Black line = reference median from good antennas.
+        <em>Use the controls to explore. See static view below for all 16 SPWs.</em>
+      </div>
+    </div>
+    <details style="margin-top: 20px">
+      <summary style="cursor: pointer; color: #3498db; font-weight: bold">
+        Show static overview (all 16 SPWs)
+      </summary>
+      <div class="figure-container" style="margin-top: 15px">
+        {fig_bandpass_solutions}
+        <div class="figure-caption">
+          Figure 3b: Static 4x4 grid showing all 16 SPWs. Each panel title shows frequency range.
+          Dashed = outriggers. Red shading = channels where all antennas flagged.
+        </div>
+      </div>
+    </details>
+
+    <h3>4. Amplitude vs Flagging Correlation (Root Cause Diagnosis)</h3>
+    <p>
+      This is the key diagnostic plot. It shows whether flagging is driven by low signal
+      (SNR-limited) or other factors like RFI or hardware issues.
+    </p>
+    <p><em>Interpretation:</em></p>
+    <ul style="margin: 5px 0">
+      <li>
+        <strong>Strong negative correlation (r &lt; -0.5):</strong> Low-amplitude antennas are being
+        flagged due to insufficient SNR. Consider lowering minsnr thresholds.
+      </li>
+      <li>
+        <strong>Weak/no correlation (r near 0):</strong> Flagging is random or due to RFI/hardware
+        issues, not signal strength.
+      </li>
+      <li>
+        <strong>Cluster in upper-left:</strong> Low-signal antennas with high flagging - classic
+        SNR-limited pattern (outriggers often here).
+      </li>
+    </ul>
+    <div class="figure-container">
+      {fig_amplitude_vs_flagging}
+      <div class="figure-caption">
+        Figure 4: Amplitude vs flagging. Circles = core, triangles = outriggers. Dashed lines show
+        25% and 50% flagging thresholds. <em>Hover for antenna details.</em>
+      </div>
+    </div>
+
+    <h3>5. Amplitude Distribution</h3>
+    <p>
+      Compares amplitude distributions between well-calibrated (green) and problematic (orange)
+      antennas. Large separation between distributions confirms SNR-limited flagging.
+    </p>
+    <div class="figure-container">
+      {fig_amplitude_distribution}
+      <div class="figure-caption">
+        Figure 5: Amplitude distributions. Left: histograms. Right: boxplots showing median and
+        quartiles.
+      </div>
+    </div>
+
+    <h3>6. Per-Antenna Signal Levels</h3>
+    <p>
+      Visibility amplitude for each antenna, sorted by signal strength. Identifies individual
+      problem antennas and shows the amplitude threshold where flagging begins.
+    </p>
+    <div class="figure-container">
+      {fig_antenna_amplitudes}
+      <div class="figure-caption">
+        Figure 6: Per-antenna amplitude. Red/orange bars indicate antennas with high flagging.
+        <em>Hover for details.</em>
+      </div>
+    </div>
+
+    <h3>7. SPW-Antenna Flagging Matrix</h3>
+    <p>
+      Complete breakdown by spectral window and antenna. Useful for identifying patterns: vertical
+      stripes = antenna-wide issues, horizontal stripes = SPW-wide issues (RFI bands).
+    </p>
+    <div class="figure-container">
+      {fig_spw_antenna_heatmap}
+      <div class="figure-caption">
+        Figure 7: Flagging heatmap. Darker red = more flagging. White/light = good.
+      </div>
+    </div>
+
+    <h2>Antenna Summary</h2>
+    <p>Top 20 antennas sorted by flagging fraction (highest first). [O] indicates outrigger.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Antenna</th>
+          <th>Amplitude</th>
+          <th>Flagging</th>
+        </tr>
+      </thead>
+      <tbody>
+        {antenna_rows}
+      </tbody>
+    </table>
+
+    <h2>Statistical Summary</h2>
+    <div class="two-column">
+      <div>
+        <h4>Good Antennas (&lt;15% flagged)</h4>
+        <ul>
+          <li>Count: {report.n_antennas_good}</li>
+          <li>Median amplitude: {report.good_antenna_median_amp:.5f}</li>
+        </ul>
+      </div>
+      <div>
+        <h4>Problematic Antennas (&gt;20% flagged)</h4>
+        <ul>
+          <li>Count: {report.n_antennas_problem}</li>
+          <li>Median amplitude: {report.problem_antenna_median_amp:.5f}</li>
+          <li>Amplitude deficit: {report.amplitude_deficit_pct:.1f}%</li>
+        </ul>
+      </div>
+    </div>
+
+    <h4>Statistical Tests</h4>
+    <ul>
+      <li>
+        <strong>Pearson correlation:</strong> r = {report.amplitude_flagging_correlation:.3f}
+        ({corr_strength} {corr_sign} correlation)
+      </li>
+      <li>
+        <strong>KS test:</strong> D = {report.ks_statistic:.3f}, p = {report.ks_pvalue:.2e}
+        ({ks_result})
+      </li>
+    </ul>
+
+    <div class="footer">
+      <p>Generated by DSA-110 Bandpass Diagnostics | {timestamp_str}</p>
+      <p>MS: {report.ms_path}</p>
+    </div>
+  </body>
+</html>

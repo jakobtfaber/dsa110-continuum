@@ -6,7 +6,7 @@ from astropy.time import Time
 
 # Use DSA-110 coordinates from constants.py (single source of truth)
 try:
-    from dsa110_contimg.common.utils.constants import DSA110_LOCATION
+    from dsa110_continuum.utils.constants import DSA110_LOCATION
 except ImportError:
     from dsa110_continuum._compat import DSA110_LOCATION  # OVRO fallback stub
 

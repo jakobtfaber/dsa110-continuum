@@ -24,7 +24,7 @@ from typing import Any
 import numpy as np
 
 try:
-    from dsa110_contimg.common.utils.gpu_safety import (
+    from dsa110_continuum.utils.gpu_safety import (
         gpu_safe,
         memory_safe,
         safe_gpu_context,

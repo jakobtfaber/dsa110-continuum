@@ -21,7 +21,7 @@ from typing import Any
 import statistics
 
 try:
-    from dsa110_contimg.common.utils.decorators import timed
+    from dsa110_continuum.utils.decorators import timed
 except ImportError:
     # dsa110_contimg not installed (cloud/test env) — define no-op stub
     import functools
