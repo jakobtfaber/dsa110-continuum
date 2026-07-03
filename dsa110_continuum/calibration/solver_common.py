@@ -292,7 +292,7 @@ def _track_calibration_provenance(
     try:
         from pathlib import Path as PathLib
 
-        from dsa110_contimg.infrastructure.database.provenance import track_calibration_provenance
+        from dsa110_continuum.database.provenance import track_calibration_provenance
 
         # Use CASAService for version and command string
         service = CASAService()

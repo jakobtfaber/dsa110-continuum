@@ -4,13 +4,21 @@ Creates and manages SQLite FTS5 virtual tables for searching jobs, alerts, and s
 """
 
 import logging
-
-try:
-    from dsa110_contimg.infrastructure.database.connection import get_db_connection
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+import sqlite3
 
 logger = logging.getLogger(__name__)
+
+
+def get_db_connection() -> sqlite3.Connection:
+    """Connect to the pipeline database.
+
+    The legacy ``infrastructure.database.connection`` module this file used
+    to import never existed (verified on H17), so ``setup_fts_tables`` raised
+    ``NameError`` in every environment. Wired to the vendored unified DB.
+    """
+    from dsa110_continuum.database.unified import get_pipeline_db_path
+
+    return sqlite3.connect(get_pipeline_db_path())
 
 
 def setup_fts_tables():

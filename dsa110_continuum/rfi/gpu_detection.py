@@ -18,14 +18,11 @@ from pathlib import Path
 
 import numpy as np
 
-try:
-    from dsa110_continuum.utils.gpu_safety import (
-        check_system_memory_available,
-        initialize_gpu_safety,
-        safe_gpu_context,
-    )
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.gpu_safety import (
+    check_system_memory_available,
+    initialize_gpu_safety,
+    safe_gpu_context,
+)
 
 logger = logging.getLogger(__name__)
 

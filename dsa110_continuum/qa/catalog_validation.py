@@ -37,10 +37,7 @@ from astropy.io import fits
 from astropy.stats import mad_std, sigma_clipped_stats
 from astropy.wcs import WCS
 
-try:
-    from dsa110_continuum.utils.fits_utils import get_2d_data_and_wcs
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.fits_utils import get_2d_data_and_wcs
 
 logger = logging.getLogger(__name__)
 

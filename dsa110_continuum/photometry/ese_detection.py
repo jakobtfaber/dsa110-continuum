@@ -22,10 +22,7 @@ from dsa110_continuum.photometry.scoring import (
     get_confidence_level,
 )
 from datetime import timezone
-try:
-    from dsa110_continuum.utils.decorators import timed
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.decorators import timed
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +80,7 @@ def detect_ese_candidates(
 
         if "ese_candidates" not in tables:
             logger.warning("ese_candidates table not found - initializing database")
-            from dsa110_contimg.infrastructure.database import ensure_pipeline_db
+            from dsa110_continuum.database import ensure_pipeline_db
 
             ensure_pipeline_db().close()  # Ensure schema is created
 

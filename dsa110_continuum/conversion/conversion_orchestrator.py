@@ -72,36 +72,14 @@ from dsa110_continuum.conversion.file_validator import (
     RollingFileValidator,
 )
 from dsa110_continuum.conversion.writers import get_writer
-try:
-    from dsa110_contimg.infrastructure.database.hdf5_index import (
-        parse_subband_filename,
-        query_subband_groups,
-    )
-    from dsa110_contimg.infrastructure.monitoring.pipeline_metrics import (
-        PipelineStage,
-        record_stage_timing,
-    )
-except ImportError:
-    # Minimal stubs for cloud/test environment
-    def parse_subband_filename(filename):  # type: ignore[misc]
-        """Stub: parse subband filename without dsa110_contimg."""
-        import re as _re
-        m = _re.search(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})', str(filename))
-        sb = _re.search(r'_sb(\d{2})', str(filename))
-        return type('ParsedSubband', (), {
-            'group_id': m.group(1) if m else 'unknown',
-            'subband_code': f'sb{sb.group(1)}' if sb else 'sb00',
-            'subband_num': int(sb.group(1)) if sb else 0,
-        })()
-
-    def query_subband_groups(*a, **kw):  # type: ignore[misc]
-        raise NotImplementedError("query_subband_groups requires dsa110_contimg")
-
-    class PipelineStage:  # type: ignore[no-redef]
-        CONVERSION = "conversion"
-
-    def record_stage_timing(*a, **kw):  # type: ignore[misc]
-        pass
+from dsa110_continuum.database.hdf5_index import (
+    parse_subband_filename,
+    query_subband_groups,
+)
+from dsa110_continuum.database.pipeline_metrics import (
+    PipelineStage,
+    record_stage_timing,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -260,7 +238,7 @@ def convert_subband_groups_to_ms(
 
     # Query subband groups based on the provided time window
     # Use unified pipeline database
-    from dsa110_contimg.infrastructure.database.unified import get_pipeline_db_path
+    from dsa110_continuum.database.unified import get_pipeline_db_path
 
     hdf5_db = str(get_pipeline_db_path())
 

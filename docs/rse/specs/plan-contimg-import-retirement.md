@@ -532,7 +532,7 @@ piece as `dsa110_continuum/database/pipeline_metrics.py` or `utils/pipeline_metr
 keep with its sole consumer's import style).
 
 **Tasks:**
-- [ ] **Failing test first** — `tests/test_vendored_database.py` (new):
+- [x] **Failing test first** — `tests/test_vendored_database.py` (new):
 
   ```python
   def test_pipeline_db_roundtrip(tmp_path, monkeypatch):
@@ -549,18 +549,18 @@ keep with its sole consumer's import style).
 
       (exact env-var name per the vendored `unified.py` — read it during the port and pin
       the test to the real one).
-- [ ] **Run, watch fail → vendor (provenance headers, internal import rewrite) → pass.**
-- [ ] **Retarget the 29 files** (largest single-file cluster:
+- [x] **Run, watch fail → vendor (provenance headers, internal import rewrite) → pass.**
+- [x] **Retarget the 29 files** (largest single-file cluster:
       `catalog/variable_source_detection.py`, 9 function-scope sites); delete guards;
       update `tests/test_calibrator_ms_generator.py:28`'s `LEGACY_SELECTOR` monkeypatch
       string to `"dsa110_continuum.database.hdf5_index.select_hdf5_groups_by_position"`.
-- [ ] **Commit** in module batches.
+- [x] **Commit** in module batches.
 
 **Dependencies:** Phases 2–3 (utils + settings paths).
 
 **Verification:**
-- [ ] `pytest tests/test_vendored_database.py tests/test_calibrator_ms_generator.py -q` green.
-- [ ] Checker: `infrastructure.*` = 0.
+- [x] `pytest tests/test_vendored_database.py tests/test_calibrator_ms_generator.py -q` green.
+- [x] Checker: `infrastructure.*` = 0.
 
 ### Phase 6: Flip the nine `__init__` re-export layers + interfaces + stragglers
 

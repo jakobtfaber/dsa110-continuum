@@ -29,10 +29,7 @@ from astropy.time import Time
 
 from dsa110_continuum.config import get_env_path
 
-try:
-    from dsa110_continuum.utils.constants import DSA110_LOCATION
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.constants import DSA110_LOCATION
 
 logger = logging.getLogger(__name__)
 

@@ -12,10 +12,7 @@ import numpy as np
 from astropy.coordinates import ITRS, EarthLocation, SkyCoord
 from astropy.time import Time
 
-try:
-    from dsa110_continuum.utils.constants import DSA110_LOCATION
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.constants import DSA110_LOCATION
 
 
 def fast_uvw_from_baselines(

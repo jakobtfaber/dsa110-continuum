@@ -353,7 +353,7 @@ class CalibratorMSGenerator:
             If ``transit_time`` is given and no positionally matched group
             falls within the tolerance.
         """
-        from dsa110_contimg.infrastructure.database.hdf5_index import (
+        from dsa110_continuum.database.hdf5_index import (
             select_hdf5_groups_by_position,
         )
 

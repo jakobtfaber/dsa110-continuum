@@ -4,12 +4,9 @@ from pathlib import Path
 
 import numpy as np
 
-try:
-    from dsa110_continuum.unified_config import settings
-    from dsa110_continuum.utils.fits_utils import get_2d_data_and_wcs
-    from dsa110_continuum.utils.gpu_utils import get_array_module
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.unified_config import settings
+from dsa110_continuum.utils.fits_utils import get_2d_data_and_wcs
+from dsa110_continuum.utils.gpu_utils import get_array_module
 
 
 def _maybe_to_gpu(array: np.ndarray, *, min_elements: int = 1_000_000):

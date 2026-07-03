@@ -572,7 +572,7 @@ class CalibrationQAStore:
             Path to SQLite database. Uses pipeline.sqlite3 if None.
         """
         if db_path is None:
-            from dsa110_contimg.infrastructure.database.session import get_db_path
+            from dsa110_continuum.database.session import get_db_path
 
             db_path = get_db_path("pipeline")
 

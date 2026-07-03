@@ -658,7 +658,7 @@ def build_wsclean_mosaic(
     # Inject provenance if possible (using FITS headers)
     # Since mosaic is a FITS file, we use astropy to add keywords
     try:
-        from dsa110_contimg.infrastructure.tracking.provenance import ProvenanceTracker
+        from dsa110_continuum.database.tracking import ProvenanceTracker
         import uuid
         import time
         from astropy.io import fits

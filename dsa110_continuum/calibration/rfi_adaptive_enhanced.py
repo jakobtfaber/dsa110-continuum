@@ -49,10 +49,7 @@ from dsa110_continuum.calibration.flagging import (
 )
 from dsa110_continuum.config import get_env_path
 
-try:
-    from dsa110_continuum.utils.ms_helpers import get_ms_metadata
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.ms_helpers import get_ms_metadata
 
 logger = logging.getLogger(__name__)
 

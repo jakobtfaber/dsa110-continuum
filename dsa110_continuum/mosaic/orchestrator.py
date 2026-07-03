@@ -481,7 +481,7 @@ class MosaicOrchestrator:
         logger.info(f"Creating sliding-window mosaic with {len(tile_image_ids)} tiles")
 
         # Get image paths from database
-        from dsa110_contimg.infrastructure.database.unified import Database, get_pipeline_db_path
+        from dsa110_continuum.database.unified import Database, get_pipeline_db_path
 
         db_path = self.products_db_path or get_pipeline_db_path()
         db = Database(db_path)

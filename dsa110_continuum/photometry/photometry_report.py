@@ -15,10 +15,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-try:
-    from dsa110_continuum.utils.template_styles import get_shared_css
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.template_styles import get_shared_css
 
 logger = logging.getLogger(__name__)
 

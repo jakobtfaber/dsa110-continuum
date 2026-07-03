@@ -50,21 +50,15 @@ def export_fits(
             print("Exported FITS:", fits_out)
             exported.append(fits_out)
 
-            # Register metadata if requested
+            # Metadata registration is retired: the legacy
+            # register_products module never existed even in dsa110-contimg
+            # (verified on H17), so this path always failed gracefully.
             if register_metadata:
-                try:
-                    from dsa110_contimg.infrastructure.database.register_products import (
-                        register_image_with_metadata,
-                    )
-
-                    image_id = register_image_with_metadata(fits_out, ms_path=ms_path)
-                    if image_id:
-                        print(f"Registered metadata: image_id={image_id}")
-                except Exception as reg_error:
-                    print(
-                        f"Metadata registration failed for {fits_out}: {reg_error}",
-                        file=__import__("sys").stderr,
-                    )
+                print(
+                    f"Metadata registration unavailable for {fits_out}: "
+                    "register_products was retired with dsa110_contimg",
+                    file=__import__("sys").stderr,
+                )
         except Exception as e:
             print("exportfits failed for", p, ":", e, file=__import__("sys").stderr)
     return exported

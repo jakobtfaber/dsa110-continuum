@@ -13,11 +13,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-try:
-    from dsa110_continuum.utils.antpos_local import get_itrf
-    from dsa110_continuum.utils.constants import DSA110_ALT, DSA110_LAT, DSA110_LON
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.antpos_local import get_itrf
+from dsa110_continuum.utils.constants import DSA110_ALT, DSA110_LAT, DSA110_LON
 
 
 def main() -> None:

@@ -22,13 +22,10 @@ from dsa110_continuum.photometry.adaptive_binning import (
     create_measure_fn_from_images,
 )
 from dsa110_continuum.photometry.forced import measure_forced_peak
-try:
-    from dsa110_continuum.utils.runtime_safeguards import (
-        log_progress,
-        progress_monitor,
-    )
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.runtime_safeguards import (
+    log_progress,
+    progress_monitor,
+)
 
 LOG = logging.getLogger(__name__)
 

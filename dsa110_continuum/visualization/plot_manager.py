@@ -9,11 +9,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-try:
-    from dsa110_contimg.infrastructure.database.models import QAPlot
-    from dsa110_contimg.infrastructure.database.session import get_session
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.database.models import QAPlot
+from dsa110_continuum.database.session import get_session
 
 from .plot_organization import PlotInfo, PlotMetadata, PlotOrganizer
 from dsa110_continuum.config import get_env_path

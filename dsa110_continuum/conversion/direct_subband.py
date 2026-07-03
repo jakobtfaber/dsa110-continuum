@@ -24,10 +24,7 @@ from dsa110_continuum.conversion.helpers import (
     set_antenna_positions,
     set_telescope_identity,
 )
-try:
-    from dsa110_continuum.utils.paths import CONTIMG_TMPFS_DIR
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.paths import CONTIMG_TMPFS_DIR
 
 from .writers import MSWriter
 

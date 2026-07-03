@@ -17,10 +17,7 @@ from dsa110_continuum.calibration.beam_model import (
 )
 from dsa110_continuum.config import get_env_path
 
-try:
-    from dsa110_continuum.unified_config import settings
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.unified_config import settings
 
 
 from .schedule import DSA110_LOCATION

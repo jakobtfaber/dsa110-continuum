@@ -98,22 +98,19 @@ except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)
 
 # Caskade-based simulation control DAG (optional; requires `pip install caskade`)
-try:
-    from dsa110_continuum.simulation.control import (
-        ConstantFluxModule,
-        ESEScatteringModule,
-        FlareModule,
-        GainCorruptionModule,
-        PeriodicVariationModule,
-        SimulationControl,
-        ThermalNoiseModule,
-        VariabilityModule,
-        create_variability_module,
-        from_legacy,
-        to_legacy,
-    )
-except ImportError:
-    pass  # caskade not installed
+from dsa110_continuum.simulation.control import (
+    ConstantFluxModule,
+    ESEScatteringModule,
+    FlareModule,
+    GainCorruptionModule,
+    PeriodicVariationModule,
+    SimulationControl,
+    ThermalNoiseModule,
+    VariabilityModule,
+    create_variability_module,
+    from_legacy,
+    to_legacy,
+)
 
 # Configuration and constants
 try:

@@ -13,10 +13,7 @@ import astropy.units as u
 from astropy.coordinates import AltAz, SkyCoord
 from astropy.time import Time
 
-try:
-    from dsa110_continuum.utils.constants import DSA110_LOCATION
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.constants import DSA110_LOCATION
 from dsa110_continuum.pointing.monitor import predict_calibrator_transit_by_coords
 
 logger = logging.getLogger(__name__)

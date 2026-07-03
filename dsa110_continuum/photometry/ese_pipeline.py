@@ -11,10 +11,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-try:
-    from dsa110_contimg.infrastructure.database import ensure_pipeline_db
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.database import ensure_pipeline_db
 from dsa110_continuum.photometry.caching import (
     invalidate_cache,
 )
@@ -26,10 +23,7 @@ from dsa110_continuum.photometry.metrics import (
     calculate_chi_squared,
     calculate_sigma_deviation,
 )
-try:
-    from dsa110_continuum.utils.decorators import timed
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.decorators import timed
 
 logger = logging.getLogger(__name__)
 

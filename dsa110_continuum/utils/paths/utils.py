@@ -105,7 +105,7 @@ def warn_tmp_usage(path: str | Path, operation: str = "write") -> None:
         f"  Path: {path_str}\n"
         f"\n"
         f"  Use data_config instead:\n"
-        f"    from dsa110_contimg.infrastructure.database import data_config\n"
+        f"    from dsa110_continuum.database import data_config\n"
         f"    log_path = data_config.get_logs_dir('misc') / 'file.log'\n"
         f"    plot_path = data_config.get_debug_plots_dir() / 'file.png'\n"
         f"\n"

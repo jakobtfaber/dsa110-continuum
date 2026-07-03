@@ -376,7 +376,7 @@ class ImagingCheckpoint:
             return
 
         try:
-            from dsa110_contimg.infrastructure.database.unified import get_db
+            from dsa110_continuum.database.unified import get_db
 
             db = get_db()
 
@@ -425,7 +425,7 @@ def get_stale_checkpoints(max_age_hours: float = STALE_CHECKPOINT_HOURS) -> list
         Stale checkpoint records from database
     """
     try:
-        from dsa110_contimg.infrastructure.database.unified import get_db
+        from dsa110_continuum.database.unified import get_db
 
         db = get_db()
 
@@ -458,7 +458,7 @@ def cleanup_stale_checkpoints(max_age_hours: float = STALE_CHECKPOINT_HOURS) -> 
         return 0
 
     try:
-        from dsa110_contimg.infrastructure.database.unified import get_db
+        from dsa110_continuum.database.unified import get_db
 
         db = get_db()
 

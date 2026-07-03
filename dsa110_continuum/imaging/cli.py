@@ -326,7 +326,7 @@ def main(argv: list | None = None) -> None:
             import time
             import uuid
 
-            from dsa110_contimg.infrastructure.tracking.provenance import ProvenanceTracker
+            from dsa110_continuum.database.tracking import ProvenanceTracker
             from dsa110_continuum.conversion.ms_utils import inject_provenance_metadata
 
             job_id = str(uuid.uuid4())

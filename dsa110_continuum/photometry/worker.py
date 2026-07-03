@@ -11,7 +11,7 @@ from pathlib import Path
 
 try:
     from dsa110_contimg.interfaces.api.job_adapters import run_batch_photometry_job
-    from dsa110_contimg.infrastructure.database import ensure_pipeline_db
+    from dsa110_continuum.database import ensure_pipeline_db
 except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)
 
