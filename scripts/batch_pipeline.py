@@ -1055,6 +1055,13 @@ def process_tile_safe(
     return result
 
 
+def _build_epoch_coadd(epoch_tiles: list[str]) -> tuple[np.ndarray, WCS]:
+    """Build an hourly-epoch coadd through the canonical package entry."""
+    from dsa110_continuum.mosaic.production import build_epoch_coadd
+
+    return build_epoch_coadd(epoch_tiles)
+
+
 # ── Dec-strip guard ───────────────────────────────────────────────────────────
 
 def check_dec_strip(
@@ -1877,8 +1884,7 @@ def main() -> None:
 
         # Build mosaic
         try:
-            out_wcs, ny, nx = _md.build_common_wcs(epoch_tiles)
-            mosaic_arr = _md.coadd_tiles(epoch_tiles, out_wcs, ny, nx)
+            mosaic_arr, out_wcs = _build_epoch_coadd(epoch_tiles)
             write_epoch_mosaic(
                 mosaic_arr, out_wcs, epoch_tiles, mosaic_path, date, hour, len(epoch_tiles),
                 cal_date=cal_date, cal_quality=manifest.cal_quality, git_sha=manifest.git_sha,

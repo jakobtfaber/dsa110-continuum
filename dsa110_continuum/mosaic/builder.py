@@ -32,8 +32,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from astropy.io import fits
-from astropy.wcs import WCS
 from astropy.stats import mad_std
+from astropy.wcs import WCS
 from scipy.ndimage import map_coordinates
 
 try:
@@ -586,27 +586,28 @@ def fast_reproject_and_coadd(
     >>> hdus = [fits.open(p)[0] for p in tile_paths]
     >>> mosaic, footprint = fast_reproject_and_coadd(hdus, max_workers=4)
     """
+    if reproject_function not in {"interp", "adaptive"}:
+        raise ValueError(
+            f"Unknown reproject_function={reproject_function!r}; "
+            "choose 'interp' or 'adaptive'"
+        )
+
     try:
         from reproject.mosaicking import (
             find_optimal_celestial_wcs,
             reproject_and_coadd,
         )
-    except ImportError as exc:
-        raise ImportError(
-            "reproject>=0.9 is required for fast_reproject_and_coadd. "
-            "Install with: pip install reproject"
-        ) from exc
+    except ImportError:
+        find_optimal_celestial_wcs = None
+        reproject_and_coadd = None
 
     # Select the reprojection function
-    if reproject_function == "interp":
+    if reproject_and_coadd is None:
+        _reproj_fn = None
+    elif reproject_function == "interp":
         from reproject import reproject_interp as _reproj_fn
-    elif reproject_function == "adaptive":
-        from reproject import reproject_adaptive as _reproj_fn  # type: ignore[attr-defined]
     else:
-        raise ValueError(
-            f"Unknown reproject_function={reproject_function!r}; "
-            "choose 'interp' or 'adaptive'"
-        )
+        from reproject import reproject_adaptive as _reproj_fn  # type: ignore[attr-defined]
 
     # Build list of (data, wcs) pairs for reproject API
     input_data = []
@@ -617,10 +618,36 @@ def fast_reproject_and_coadd(
 
     # Determine output WCS if not supplied
     if output_wcs is None:
-        output_wcs, output_shape = find_optimal_celestial_wcs(input_data)
+        if find_optimal_celestial_wcs is None:
+            output_wcs, output_shape = compute_optimal_wcs(hdus)
+        else:
+            output_wcs, output_shape = find_optimal_celestial_wcs(input_data)
 
     if output_shape is None:
         raise ValueError("output_shape must be provided when output_wcs is given")
+
+    if reproject_and_coadd is None:
+        from dsa110_continuum.mosaic.production import _nearest_reproject
+
+        arrays = []
+        footprints = []
+        for data, in_wcs in input_data:
+            reproj, footprint = _nearest_reproject(data, in_wcs, output_wcs, output_shape)
+            arrays.append(reproj)
+            footprints.append(footprint)
+        stack = np.stack(arrays)
+        fp_stack = np.stack(footprints).astype(bool)
+        masked = np.where(fp_stack, stack, np.nan)
+        if combine_function == "mean":
+            mosaic = np.nanmean(masked, axis=0)
+        elif combine_function == "sum":
+            mosaic = np.nansum(masked, axis=0)
+        elif combine_function == "median":
+            mosaic = np.nanmedian(masked, axis=0)
+        else:
+            raise ValueError(f"Unsupported combine_function={combine_function!r}")
+        footprint = fp_stack.sum(axis=0).astype(np.float32) / max(len(input_data), 1)
+        return mosaic.astype(np.float32), footprint.astype(np.float32)
 
     kwargs: dict = dict(
         input_data=input_data,
