@@ -19,7 +19,21 @@ try:
     from dsa110_contimg.common.utils.paths import get_repo_root
     from dsa110_contimg.common.utils.stability import Stability, stability
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    # dsa110_contimg not installed (cloud/test env). @stability is annotation-only,
+    # and this module applies it unconditionally at line ~134, so a bare `pass`
+    # leaves the name undefined and the module raises NameError at import time.
+    import enum
+
+    class Stability(enum.Enum):
+        EXPERIMENTAL = "experimental"
+        STABLE = "stable"
+        DEPRECATED = "deprecated"
+
+    def stability(*_args, **_kwargs):
+        def _decorator(func):
+            return func
+
+        return _decorator
 
 logger = logging.getLogger(__name__)
 
