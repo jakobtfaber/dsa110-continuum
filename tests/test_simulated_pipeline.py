@@ -1,7 +1,6 @@
 # tests/test_simulated_pipeline.py
 import numpy as np
 import pytest
-import tempfile
 from pathlib import Path
 from dsa110_continuum.simulation.harness import SimulationHarness
 
