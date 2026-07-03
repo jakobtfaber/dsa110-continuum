@@ -29,10 +29,6 @@ except ImportError:
         pass
 
 from dsa110_continuum.mosaic.jobs import MosaicJobConfig
-try:
-    from dsa110_contimg.workflow.dagster.jobs.science_mosaic import science_mosaic_workflow
-except ImportError:
-    science_mosaic_workflow = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +150,14 @@ class ScienceMosaicBridgeJob(Job):
         self._update_status("building")
 
         try:
+            # Deferred import: the legacy Dagster definitions module validates
+            # runtime prerequisites (e.g. /dev/shm/dsa110-contimg) at module
+            # load, raising RuntimeError. Importing it here keeps pure-Python
+            # mosaic imports free of that bootstrap (issue #75).
+            from dsa110_contimg.workflow.dagster.jobs.science_mosaic import (
+                science_mosaic_workflow,
+            )
+
             # Convert timestamps to ISO8601
             start_iso = datetime.fromtimestamp(self.start_time, tz=timezone.utc).isoformat()
             end_iso = datetime.fromtimestamp(self.end_time, tz=timezone.utc).isoformat()

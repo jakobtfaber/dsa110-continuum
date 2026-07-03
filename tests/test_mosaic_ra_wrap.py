@@ -18,24 +18,7 @@ import numpy as np
 import pytest
 from astropy.io import fits
 from astropy.wcs import WCS
-
-# Import directly from the submodule to avoid the mosaic/__init__.py chain,
-# which pulls in the legacy dsa110_contimg.workflow.dagster validator that
-# requires /dev/shm/dsa110-contimg/ writable at module-load time.
-import importlib.util, sys
-from pathlib import Path
-_BUILDER_PATH = Path(__file__).resolve().parents[1] / "dsa110_continuum" / "mosaic" / "builder.py"
-_spec = importlib.util.spec_from_file_location(
-    "dsa110_continuum.mosaic.builder",
-    str(_BUILDER_PATH),
-)
-_mod = importlib.util.module_from_spec(_spec)
-sys.modules["dsa110_continuum.mosaic.builder"] = _mod
-_spec.loader.exec_module(_mod)
-
-compute_optimal_wcs = _mod.compute_optimal_wcs
-fast_reproject_and_coadd = _mod.fast_reproject_and_coadd
-
+from dsa110_continuum.mosaic.builder import compute_optimal_wcs, fast_reproject_and_coadd
 
 # ── FITS HDU helpers ──────────────────────────────────────────────────────────
 
