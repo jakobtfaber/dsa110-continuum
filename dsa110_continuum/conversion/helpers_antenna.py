@@ -6,7 +6,7 @@ import numpy as np
 
 from dsa110_continuum.utils.antpos_local import get_itrf
 
-logger = logging.getLogger("dsa110_contimg.conversion.helpers")
+logger = logging.getLogger("dsa110_continuum.conversion.helpers")
 
 
 def _get_relative_antenna_positions(uv) -> np.ndarray:

@@ -18,12 +18,12 @@ multi-source sky model calibration.
 """
 
 try:
-    from dsa110_contimg.core.imaging.catalog_tools import (
+    from dsa110_continuum.imaging.catalog_tools import (
         create_catalog_fits_mask,
         create_catalog_mask,
         create_catalog_overlay,
     )
-    from dsa110_contimg.core.imaging.gpu_gridding import (
+    from dsa110_continuum.imaging.gpu_gridding import (
         DegridConfig,
         DegridResult,
         GriddingConfig,
@@ -33,7 +33,7 @@ try:
         gpu_degrid_visibilities,
         gpu_grid_visibilities,
     )
-    from dsa110_contimg.core.imaging.gpu_predict import (
+    from dsa110_continuum.imaging.gpu_predict import (
         CatalogSourceAdapter,
         PredictConfig,
         PredictResult,
@@ -43,7 +43,7 @@ try:
         predict_visibilities_gpu,
         render_sources_to_image,
     )
-    from dsa110_contimg.core.imaging.params import (
+    from dsa110_continuum.imaging.params import (
         ImagingParams,
         image_ms_with_params,
     )

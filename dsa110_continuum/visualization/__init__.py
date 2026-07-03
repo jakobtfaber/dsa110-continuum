@@ -18,7 +18,7 @@ Adapted from:
 - eht-imaging/comp_plots.py (image comparison patterns)
 
 Usage:
-    from dsa110_contimg.core.visualization import (
+    from dsa110_continuum.visualization import (
         plot_fits_image,
         plot_cutout,
         save_quicklook_png,
@@ -33,20 +33,20 @@ Usage:
                 output="cutout.pdf", config=FigureConfig(style="publication"))
 
     # UV coverage plot
-    from dsa110_contimg.core.visualization import plot_uv_coverage
+    from dsa110_continuum.visualization import plot_uv_coverage
     plot_uv_coverage(u_lambda, v_lambda, output="uv_coverage.png")
 
     # Image comparison
-    from dsa110_contimg.core.visualization import plot_image_comparison
+    from dsa110_continuum.visualization import plot_image_comparison
     plot_image_comparison(image1, image2, output="comparison.png")
 
     # Generate diagram for a directory
-    from dsa110_contimg.core.visualization import generate_structure_diagram
+    from dsa110_continuum.visualization import generate_structure_diagram
     generate_structure_diagram("/path/to/source", "output_diagram.svg")
 """
 
 try:
-    from dsa110_contimg.core.visualization.antenna_correlation import (
+    from dsa110_continuum.visualization.antenna_correlation import (
         AntennaGainData,
         CorrelationStatistics,
         compute_gain_correlation_matrix,
@@ -58,14 +58,14 @@ try:
         plot_gain_correlation_matrix,
         plot_temporal_correlation_evolution,
     )
-    from dsa110_contimg.core.visualization.antenna_plots import (
+    from dsa110_continuum.visualization.antenna_plots import (
         compute_antenna_statistics_from_ms,
         plot_antenna_flagging_summary,
         plot_antenna_gain_spectrum,
         plot_antenna_gain_time_series,
         plot_antenna_statistics_grid,
     )
-    from dsa110_contimg.core.visualization.beam_plots import (
+    from dsa110_continuum.visualization.beam_plots import (
         fit_2d_gaussian,
         plot_beam_comparison,
         plot_primary_beam_pattern,
@@ -73,7 +73,7 @@ try:
         plot_psf_radial_profile,
         plot_sidelobe_analysis,
     )
-    from dsa110_contimg.core.visualization.calibration_plots import (
+    from dsa110_continuum.visualization.calibration_plots import (
         plot_bandpass,
         plot_delays,
         plot_dterm_scatter,
@@ -83,7 +83,7 @@ try:
         plot_gain_snr,
         plot_gains,
     )
-    from dsa110_contimg.core.visualization.calibration_stability_plots import (
+    from dsa110_continuum.visualization.calibration_stability_plots import (
         plot_calibration_stability,
     )
 except ImportError:
@@ -91,7 +91,7 @@ except ImportError:
 
 # CARTA integration and HDF5 IDIA conversion
 try:
-    from dsa110_contimg.core.visualization.carta_scripting import (
+    from dsa110_continuum.visualization.carta_scripting import (
         CARTARegion,
         CARTAScriptingClient,
         CARTASessionState,
@@ -99,7 +99,7 @@ try:
         MomentType,
         RegionStatistics,
     )
-    from dsa110_contimg.core.visualization.closure_phase_plots import (
+    from dsa110_continuum.visualization.closure_phase_plots import (
         compute_closure_phases,
         extract_closure_phases_from_ms,
         plot_closure_phase_antenna_contribution,
@@ -107,8 +107,8 @@ try:
         plot_closure_phase_per_triangle,
         plot_closure_phase_vs_time,
     )
-    from dsa110_contimg.core.visualization.config import FigureConfig, PlotStyle
-    from dsa110_contimg.core.visualization.convergence_plots import (
+    from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
+    from dsa110_continuum.visualization.convergence_plots import (
         ConvergenceData,
         TimeFreqConvergenceData,
         compute_convergence_quality_score,
@@ -124,7 +124,7 @@ try:
         plot_time_freq_convergence_heatmap,
         plot_time_freq_difference_heatmap,
     )
-    from dsa110_contimg.core.visualization.elevation_plots import (
+    from dsa110_continuum.visualization.elevation_plots import (
         compute_azimuth,
         compute_elevation,
         compute_parallactic_angle,
@@ -137,13 +137,13 @@ try:
         plot_observation_summary,
         plot_parallactic_angle_vs_time,
     )
-    from dsa110_contimg.core.visualization.fits_plots import (
+    from dsa110_continuum.visualization.fits_plots import (
         plot_cutout,
         plot_fits_image,
         plot_mosaic_overview,
         save_quicklook_png,
     )
-    from dsa110_contimg.core.visualization.fits_viewer import (
+    from dsa110_continuum.visualization.fits_viewer import (
         AVAILABLE_COLORMAPS,
         DEFAULT_COLORMAP,
         VIEWER_ALADIN,
@@ -160,7 +160,7 @@ try:
         get_file_size_mb,
         validate_fits_file,
     )
-    from dsa110_contimg.core.visualization.fits_viewer_templates import (
+    from dsa110_continuum.visualization.fits_viewer_templates import (
         get_css_styles,
         render_download_button,
         render_fits_image_block,
@@ -170,54 +170,54 @@ try:
         render_viewer_button,
         render_viewer_button_group,
     )
-    from dsa110_contimg.core.visualization.hdf5_idia import (
+    from dsa110_continuum.visualization.hdf5_idia import (
         ConversionResult,
         check_idia_format,
         convert_fits_to_idia_hdf5,
         find_fits2idia,
     )
-    from dsa110_contimg.core.visualization.hdf5_idia import (
+    from dsa110_continuum.visualization.hdf5_idia import (
         batch_convert as batch_convert_to_idia,
     )
-    from dsa110_contimg.core.visualization.image_comparison import (
+    from dsa110_continuum.visualization.image_comparison import (
         compare_fits_images,
         compute_comparison_metrics,
         plot_image_comparison,
         plot_pixel_scatter,
         plot_residual_map,
     )
-    from dsa110_contimg.core.visualization.mosaic_plots import (
+    from dsa110_continuum.visualization.mosaic_plots import (
         plot_coverage_map,
         plot_mosaic_footprints,
         plot_tile_grid,
     )
-    from dsa110_contimg.core.visualization.photometry_plots import (
+    from dsa110_continuum.visualization.photometry_plots import (
         plot_aperture_photometry,
         plot_catalog_comparison,
         plot_field_sources,
         plot_photometry_summary,
         plot_snr_map,
     )
-    from dsa110_contimg.core.visualization.plot_context import (
+    from dsa110_continuum.visualization.plot_context import (
         PerformanceLogger,
         PlotContext,
         detect_context_from_path,
         get_file_extension,
         should_generate_interactive,
     )
-    from dsa110_contimg.core.visualization.qa_plots import (
+    from dsa110_continuum.visualization.qa_plots import (
         plot_dynamic_range_map,
         plot_psf_correlation,
         plot_residual_histogram,
     )
-    from dsa110_contimg.core.visualization.report import (
+    from dsa110_continuum.visualization.report import (
         ReportMetadata,
         ReportSection,
         create_diagnostic_report,
         generate_html_report,
         generate_pdf_report,
     )
-    from dsa110_contimg.core.visualization.residual_diagnostics import (
+    from dsa110_continuum.visualization.residual_diagnostics import (
         ResidualData,
         ResidualStatistics,
         compute_residual_statistics,
@@ -228,21 +228,21 @@ try:
         plot_residual_per_antenna,
         plot_residual_phase_vs_time,
     )
-    from dsa110_contimg.core.visualization.residual_diagnostics import (
+    from dsa110_continuum.visualization.residual_diagnostics import (
         plot_residual_histogram as plot_visibility_residual_histogram,
     )
-    from dsa110_contimg.core.visualization.rfi_plots import (
+    from dsa110_continuum.visualization.rfi_plots import (
         plot_rfi_spectrum,
         plot_rfi_waterfall,
     )
-    from dsa110_contimg.core.visualization.source_plots import (
+    from dsa110_continuum.visualization.source_plots import (
         plot_lightcurve,
         plot_monitoring_lightcurve,
         plot_source_comparison,
         plot_spectrum,
     )
-    from dsa110_contimg.core.visualization.lightcurve_data import get_photometry_data
-    from dsa110_contimg.core.visualization.spectral_plots import (
+    from dsa110_continuum.visualization.lightcurve_data import get_photometry_data
+    from dsa110_continuum.visualization.spectral_plots import (
         compute_spectral_index,
         compute_spectral_index_from_fits,
         plot_multi_frequency_mosaic,
@@ -251,7 +251,7 @@ try:
         plot_spectral_index_histogram,
         plot_spectral_index_map,
     )
-    from dsa110_contimg.core.visualization.tsys_plots import (
+    from dsa110_continuum.visualization.tsys_plots import (
         detect_tsys_anomalies,
         extract_tsys_from_ms,
         plot_tsys_elevation,
@@ -261,7 +261,7 @@ try:
         plot_tsys_time_series,
         plot_tsys_vs_elevation,
     )
-    from dsa110_contimg.core.visualization.uv_plots import (
+    from dsa110_continuum.visualization.uv_plots import (
         extract_uv_from_ms,
         plot_baseline_distribution,
         plot_uv_coverage,
@@ -270,14 +270,17 @@ try:
         plot_visibility_amplitude_vs_uvdist,
         plot_visibility_phase_vs_time,
     )
-    from dsa110_contimg.core.visualization.vega_specs import (
+    from dsa110_continuum.visualization.vega_specs import (
         create_residual_histogram_spec,
         create_rfi_spectrum_spec,
         create_rfi_waterfall_spec,
         create_scatter_spec,
         save_vega_spec,
     )
-    from dsa110_contimg.core.visualization.structure import generate_structure_diagram
+    from dsa110_continuum.visualization.structure import (
+        MermaidRenderer,
+        generate_structure_diagram,
+    )
 except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)
 

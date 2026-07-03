@@ -1,7 +1,7 @@
 """Photometry utilities for DSA-110 (forced photometry on FITS images)."""
 
 try:
-    from dsa110_contimg.core.photometry.condon_errors import (
+    from dsa110_continuum.photometry.condon_errors import (
         CondonErrors,
         CondonFluxErrors,
         CondonPositionErrors,
@@ -10,7 +10,7 @@ try:
         calc_condon_position_errors,
         simple_position_error,
     )
-    from dsa110_contimg.core.photometry.forced import (
+    from dsa110_continuum.photometry.forced import (
         ForcedPhotometryResult,
         inject_source,
         measure_forced_peak,
@@ -21,19 +21,19 @@ except ImportError:
 
 # Image and source QA metrics (VAST-style)
 try:
-    from dsa110_contimg.core.photometry.image_qa import (
+    from dsa110_continuum.photometry.image_qa import (
         ImageQAMetrics,
         ImageRMSMetrics,
         compute_image_qa_metrics,
         get_local_rms_at_position,
         get_rms_noise_image_values,
     )
-    from dsa110_contimg.core.photometry.manager import (
+    from dsa110_continuum.photometry.manager import (
         PhotometryConfig,
         PhotometryManager,
         PhotometryResult,
     )
-    from dsa110_contimg.core.photometry.multi_epoch import (
+    from dsa110_continuum.photometry.multi_epoch import (
         FluxAggregateStats,
         MultiEpochSourceStats,
         NewSourceMetrics,
@@ -45,7 +45,7 @@ try:
         compute_multi_epoch_stats,
         get_most_significant_pair,
     )
-    from dsa110_contimg.core.photometry.source_metrics import (
+    from dsa110_continuum.photometry.source_metrics import (
         IslandMetrics,
         SourceMorphologyMetrics,
         SourceQAMetrics,

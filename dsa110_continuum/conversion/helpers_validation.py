@@ -11,7 +11,7 @@ import dsa110_continuum.conversion.helpers as _helpers
 # Use canonical angular_separation with numba→astropy fallback chain
 from dsa110_continuum.conversion.helpers_coordinates import angular_separation
 
-logger = logging.getLogger("dsa110_contimg.conversion.helpers")
+logger = logging.getLogger("dsa110_continuum.conversion.helpers")
 
 
 def validate_ms_frequency_order(ms_path: str) -> None:

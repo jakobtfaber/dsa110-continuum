@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Package Health Check for dsa110_contimg.
+Package Health Check for dsa110_continuum.
 
 This script performs comprehensive validation of the package installation,
 dependencies, and runtime environment.
@@ -74,17 +74,17 @@ def check_python_version() -> bool:
 
 
 def check_package_installed() -> tuple[bool, str]:
-    """Check if dsa110_contimg package is installed."""
+    """Check if dsa110_continuum package is installed."""
     print_info("Checking package installation...")
 
     try:
-        import dsa110_contimg
+        import dsa110_continuum
 
-        version = getattr(dsa110_contimg, "__version__", "unknown")
-        print_pass(f"dsa110_contimg v{version} installed")
+        version = getattr(dsa110_continuum, "__version__", "unknown")
+        print_pass(f"dsa110_continuum v{version} installed")
         return True, version
     except ImportError as e:
-        print_fail(f"Cannot import dsa110_contimg: {e}")
+        print_fail(f"Cannot import dsa110_continuum: {e}")
         return False, "unknown"
 
 
@@ -135,18 +135,17 @@ def check_casa() -> bool:
 
 
 def check_critical_modules() -> tuple[int, list[str]]:
-    """Check critical dsa110_contimg modules can be imported."""
+    """Check critical dsa110_continuum modules can be imported."""
     print_info("Checking critical modules...")
 
     modules = [
-        "dsa110_contimg.public_api",
-        "dsa110_contimg.unified_config",
-        "dsa110_contimg.conversion",
+        "dsa110_continuum.config",
+        "dsa110_continuum.conversion",
         "dsa110_continuum.calibration",
         "dsa110_continuum.imaging",
-        "dsa110_contimg.workflow.pipeline",
-        "dsa110_contimg.workflow.dagster",
-        "dsa110_contimg.infrastructure.database",
+        "dsa110_continuum.photometry",
+        "dsa110_continuum.workflow.registry",
+        "dsa110_continuum.database.unified",
         "dsa110_continuum.utils",
     ]
 
@@ -228,20 +227,6 @@ def check_file_permissions() -> bool:
     return all_ok
 
 
-def check_cli_entrypoint() -> bool:
-    """Check if CLI entrypoint is available."""
-    print_info("Checking CLI entrypoint...")
-
-    try:
-        from dsa110_contimg.interfaces.cli.main import cli
-
-        print_pass("CLI entrypoint available (dsa110)")
-        return True
-    except ImportError as e:
-        print_fail(f"CLI entrypoint not available: {e}")
-        return False
-
-
 def run_diagnostics() -> int:
     """Run all diagnostic checks and return exit code."""
     print_header("DSA-110 Package Health Check")
@@ -300,14 +285,6 @@ def run_diagnostics() -> int:
 
     # File permissions
     if check_file_permissions():
-        total_passed += 1
-    else:
-        total_failed += 1
-
-    print()
-
-    # CLI
-    if check_cli_entrypoint():
         total_passed += 1
     else:
         total_failed += 1

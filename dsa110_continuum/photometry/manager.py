@@ -30,10 +30,6 @@ from dsa110_continuum.database.data_registry import (
     link_photometry_to_data,
 )
 
-try:
-    from dsa110_contimg.interfaces.api.batch import create_batch_photometry_job
-except ImportError:
-    pass  # legacy batch API retired in Phase 6 (cloud/test env)
 from dsa110_continuum.photometry.ese_pipeline import auto_detect_ese_for_new_measurements
 from dsa110_continuum.photometry.forced import ForcedPhotometryResult, measure_many
 from dsa110_continuum.photometry.helpers import (
@@ -642,33 +638,10 @@ class PhotometryManager:
             logger.info(f"DRY-RUN MODE: Would create batch job for {len(fits_paths)} file(s)")
             return None
 
-        try:
-            conn = ensure_pipeline_db()
-
-            # Prepare batch job parameters
-            params = {
-                "method": config.method,
-                "normalize": config.normalize,
-            }
-
-            # Create batch photometry job
-            batch_job_id = create_batch_photometry_job(
-                conn=conn,
-                job_type="batch_photometry",
-                fits_paths=[str(p) for p in fits_paths],
-                coordinates=coordinates,
-                params=params,
-                data_id=data_id,
-            )
-
-            logger.info(
-                f"Created photometry batch job {batch_job_id} for {len(fits_paths)} file(s)"
-            )
-            return batch_job_id
-
-        except Exception as e:
-            logger.error(f"Failed to create batch photometry job: {e}", exc_info=True)
-            return None
+        raise RuntimeError(
+            "Legacy dsa110_contimg batch-photometry API retired; "
+            "use scripts/batch_pipeline.py --photometry-workers N."
+        )
 
     def _link_to_data_registry(self, data_id: str, photometry_job_id: str) -> bool:
         """Link photometry job to data registry.

@@ -15,7 +15,7 @@ except ImportError:
         """No-op stub: CASA 6 runtime guard not available in cloud/test env."""
         return fn
 
-logger = logging.getLogger("dsa110_contimg.conversion.helpers")
+logger = logging.getLogger("dsa110_continuum.conversion.helpers")
 
 
 @require_casa6_python

@@ -12,7 +12,7 @@ from dsa110_continuum.calibration import BeamConfig, primary_beam_response
 
 table = casatables.table  # noqa: N816
 
-logger = logging.getLogger("dsa110_contimg.conversion.helpers")
+logger = logging.getLogger("dsa110_continuum.conversion.helpers")
 
 
 def amplitude_sky_model(

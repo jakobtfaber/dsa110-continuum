@@ -22,7 +22,7 @@ try:
 except ImportError:
     _USE_NUMBA_ANGULAR_SEP = False
 
-logger = logging.getLogger("dsa110_contimg.conversion.helpers")
+logger = logging.getLogger("dsa110_continuum.conversion.helpers")
 
 # Log fallback warning once at import time, not every function call
 if not _USE_NUMBA_ANGULAR_SEP:

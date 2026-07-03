@@ -57,7 +57,7 @@ def get_default_figures_dir() -> Path:
 F = TypeVar("F", bound=Callable)
 
 _TMP_WARNINGS_ENABLED = os.environ.get("DSA_TMP_WARNINGS", "1") != "0"
-_tmp_warning_logger = logging.getLogger("dsa110_contimg.tmp_policy")
+_tmp_warning_logger = logging.getLogger("dsa110_continuum.tmp_policy")
 
 
 def warn_tmp_usage(path: str | Path, operation: str = "write") -> None:

@@ -56,7 +56,7 @@ class ReportMetadata:
     def __post_init__(self):
         if self.pipeline_version is None:
             try:
-                from dsa110_contimg import __version__
+                from dsa110_continuum import __version__
 
                 self.pipeline_version = __version__
             except ImportError:

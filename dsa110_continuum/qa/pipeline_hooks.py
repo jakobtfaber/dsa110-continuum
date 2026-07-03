@@ -37,11 +37,6 @@ import numpy as np
 
 from dsa110_continuum.config import get_env_path
 
-try:
-    from dsa110_contimg.interfaces.api.db_adapters.query_builder import QueryBuilder
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
-
 logger = logging.getLogger(__name__)
 
 # Default database path - use PIPELINE_DB env var if set
@@ -402,10 +397,10 @@ def ingest_calibration_metrics(
 
     row = record.to_db_row()
 
-    # Build INSERT statement using QueryBuilder for SQL injection safety
-    qb = QueryBuilder()
+    # Parameterized INSERT (column names come from the dataclass, values are bound)
     columns = list(row.keys())
-    sql = qb.insert("calibration_metrics", columns)
+    placeholders = ", ".join("?" * len(columns))
+    sql = f"INSERT INTO calibration_metrics ({', '.join(columns)}) VALUES ({placeholders})"
 
     try:
         conn = sqlite3.connect(str(db_path), timeout=30.0)

@@ -14,3 +14,11 @@ Core astronomy processing modules:
 - selfcal: Self-calibration workflows
 - visualization: FITS viewers and diagnostics
 """
+
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("dsa110-continuum")
+except PackageNotFoundError:
+    # Running from a source checkout (PYTHONPATH) without an installed dist
+    __version__ = "0.0.0+unknown"

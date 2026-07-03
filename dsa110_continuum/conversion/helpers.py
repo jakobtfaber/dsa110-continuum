@@ -18,7 +18,7 @@ from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore
 # Expose as module attribute so tests can patch dsa110_contimg.conversion.helpers.table
 table = casatables.table if casatables is not None else None  # noqa: N816
 
-logger = logging.getLogger("dsa110_contimg.conversion.helpers")
+logger = logging.getLogger("dsa110_continuum.conversion.helpers")
 
 # Import all functions from specialized modules for backward compatibility
 from .helpers_antenna import (
