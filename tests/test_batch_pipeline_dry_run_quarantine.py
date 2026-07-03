@@ -12,6 +12,7 @@ Behavior under test:
 from __future__ import annotations
 
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -228,6 +229,114 @@ def test_format_plan_includes_quarantine_lines():
     assert "QUARANTINED: /ms/q.ms" in text
     assert "Pipeline NOT executed" in text
     assert "rebuild (x)" in text
+
+
+# ─── Indexed HDF5 → MS prerequisite preflight ───────────────────────────────
+
+
+def _write_hdf5_index(
+    db_path: Path,
+    *,
+    timestamp: str,
+    n_subbands: int,
+) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hdf5_files (
+                path TEXT NOT NULL,
+                group_id TEXT NOT NULL,
+                subband_code TEXT NOT NULL,
+                timestamp_iso TEXT NOT NULL
+            )
+            """
+        )
+        for subband in range(n_subbands):
+            code = f"sb{subband:02d}"
+            conn.execute(
+                """
+                INSERT INTO hdf5_files (path, group_id, subband_code, timestamp_iso)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    f"/data/incoming/{timestamp}_{code}.hdf5",
+                    timestamp,
+                    code,
+                    timestamp,
+                ),
+            )
+
+
+def test_indexed_hdf5_preflight_reports_complete_groups_without_ms(tmp_path):
+    import batch_pipeline as bp
+
+    db_path = tmp_path / "pipeline.sqlite3"
+    _write_hdf5_index(db_path, timestamp="2026-01-25T22:26:05", n_subbands=16)
+    _write_hdf5_index(db_path, timestamp="2026-01-25T22:31:14", n_subbands=15)
+    _write_hdf5_index(db_path, timestamp="2026-01-25T23:00:00", n_subbands=16)
+
+    missing = bp._find_missing_ms_for_indexed_hdf5(
+        db_path=str(db_path),
+        date="2026-01-25",
+        start_hour=22,
+        end_hour=23,
+        ms_paths=[],
+    )
+
+    assert missing == ["2026-01-25T22:26:05"]
+
+
+def test_indexed_hdf5_preflight_accepts_matching_base_ms(tmp_path):
+    import batch_pipeline as bp
+
+    db_path = tmp_path / "pipeline.sqlite3"
+    _write_hdf5_index(db_path, timestamp="2026-01-25T22:26:05", n_subbands=16)
+    ms_path = tmp_path / "ms" / "2026-01-25T22:26:05.ms"
+
+    missing = bp._find_missing_ms_for_indexed_hdf5(
+        db_path=str(db_path),
+        date="2026-01-25",
+        start_hour=22,
+        end_hour=23,
+        ms_paths=[str(ms_path)],
+    )
+
+    assert missing == []
+
+
+def test_indexed_hdf5_preflight_skips_unavailable_dev_database(tmp_path):
+    import batch_pipeline as bp
+
+    missing = bp._find_missing_ms_for_indexed_hdf5(
+        db_path=str(tmp_path / "missing.sqlite3"),
+        date="2026-01-25",
+        start_hour=22,
+        end_hour=23,
+        ms_paths=[],
+    )
+
+    assert missing == []
+
+
+def test_indexed_hdf5_preflight_aborts_before_compute(tmp_path, monkeypatch):
+    import batch_pipeline as bp
+
+    db_path = tmp_path / "pipeline.sqlite3"
+    _write_hdf5_index(db_path, timestamp="2026-01-25T22:26:05", n_subbands=16)
+    monkeypatch.setattr(bp, "MS_DIR", str(tmp_path / "ms"))
+
+    try:
+        bp._abort_if_indexed_hdf5_missing_ms(
+            db_path=str(db_path),
+            date="2026-01-25",
+            start_hour=22,
+            end_hour=23,
+            ms_paths=[],
+        )
+    except SystemExit as exc:
+        assert exc.code == 1
+    else:
+        raise AssertionError("missing converted MS should abort before compute")
 
 
 # ─── --dry-run end-to-end: no side effects ──────────────────────────────────
