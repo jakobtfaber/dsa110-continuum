@@ -45,3 +45,13 @@ def test_default_basetemp_is_rooted_in_current_checkout_uid_namespace(
     # so consecutive/concurrent runs cannot collide on cleanup.
     assert basetemp.name.startswith("run-")
     assert basetemp != expected_parent
+
+
+def test_default_casa_log_dir_is_test_local(pytestconfig: pytest.Config) -> None:
+    """Tests should not create CASA logs under production /data defaults."""
+    if os.environ.get("DSA110_TEST_DEFAULT_CASA_LOG_DIR") != "1":
+        pytest.skip("external CASA log configuration in effect")
+
+    casa_log_dir = Path(os.environ["CASA_LOG_DIR"]).resolve()
+    basetemp = Path(pytestconfig.getoption("basetemp")).resolve()
+    assert casa_log_dir.is_relative_to(basetemp)

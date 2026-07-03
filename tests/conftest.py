@@ -49,6 +49,15 @@ def pytest_configure(config: pytest.Config) -> None:
         ):
             tmp_path_factory._given_basetemp = basetemp
 
+    if (
+        "CASA_LOG_DIR" not in os.environ
+        and "CONTIMG_PATHS__CASA_LOGS_DIR" not in os.environ
+        and "CONTIMG_BASE_DIR" not in os.environ
+    ):
+        casa_log_dir = Path(config.option.basetemp, "casa-logs")
+        os.environ["CASA_LOG_DIR"] = str(casa_log_dir)
+        os.environ["DSA110_TEST_DEFAULT_CASA_LOG_DIR"] = "1"
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     """Register ``--run-slow`` to opt into ``@pytest.mark.slow`` tests."""
