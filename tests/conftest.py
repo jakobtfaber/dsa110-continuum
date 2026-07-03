@@ -10,11 +10,53 @@ so the default ``pytest tests/`` run finishes in seconds, not minutes.
 """
 from __future__ import annotations
 
+import os
 import sys
 import types
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Re-root pytest's temp tree under the current checkout (issue #47).
+
+    A hard-coded ``--basetemp=/data/dsa110-continuum/.pytest_tmp`` broke any
+    checkout not at that path and made runs from multiple checkouts share one
+    directory, so pytest's start-of-session wipe raced live runs
+    (``OSError [Errno 39] Directory not empty``) and contaminated consecutive
+    full-suite runs.
+
+    Instead, set pytest's explicit ``basetemp`` to a per-process path under
+    ``<rootdir>/.pytest_tmp/uid-<uid>``.  This keeps tmp_path output on the
+    checkout's filesystem (not tiny /tmp on H17), avoids the shared
+    ``pytest-of-<user>`` owner check that fails on H17's root-owned /data
+    mount, and prevents consecutive/concurrent runs from wiping each other's
+    temp trees.  An explicit user-provided ``--basetemp`` still wins.
+    """
+    if config.option.basetemp is None:
+        uid = getattr(os, "getuid", lambda: "unknown")()
+        basetemp = Path(config.rootpath, ".pytest_tmp", f"uid-{uid}", f"run-{os.getpid()}")
+        basetemp.parent.mkdir(parents=True, exist_ok=True)
+        config.option.basetemp = str(basetemp)
+
+        tmp_path_factory = getattr(config, "_tmp_path_factory", None)
+        if (
+            tmp_path_factory is not None
+            and tmp_path_factory._given_basetemp is None
+            and tmp_path_factory._basetemp is None
+        ):
+            tmp_path_factory._given_basetemp = basetemp
+
+    if (
+        "CASA_LOG_DIR" not in os.environ
+        and "CONTIMG_PATHS__CASA_LOGS_DIR" not in os.environ
+        and "CONTIMG_BASE_DIR" not in os.environ
+    ):
+        casa_log_dir = Path(config.option.basetemp, "casa-logs")
+        os.environ["CASA_LOG_DIR"] = str(casa_log_dir)
+        os.environ["DSA110_TEST_DEFAULT_CASA_LOG_DIR"] = "1"
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
