@@ -19,6 +19,7 @@ Exit codes:
     1 – stale imports remain (or import failures when --check-imports used)
 """
 import argparse
+import ast
 import subprocess
 import sys
 from pathlib import Path
@@ -28,25 +29,44 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parent.parent
 SCAN_DIR = REPO_ROOT / "dsa110_continuum"
 STALE_PATTERN = "dsa110_contimg"  # old package name
-IMPORT_PREFIXES = ("from dsa110_contimg", "import dsa110_contimg")
 CASA6_PYTHON = "/opt/miniforge/envs/casa6/bin/python"
 
 
 # ── Scanning ──────────────────────────────────────────────────────────────────
 
+def _stale_import_nodes(tree: ast.AST) -> list[tuple[int, str]]:
+    """Return (lineno, rendered-import) for every real dsa110_contimg import."""
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == STALE_PATTERN or alias.name.startswith(STALE_PATTERN + "."):
+                    found.append((node.lineno, f"import {alias.name}"))
+        elif isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            # level>0 (relative) imports cannot target the old absolute package
+            if node.level == 0 and (
+                mod == STALE_PATTERN or mod.startswith(STALE_PATTERN + ".")
+            ):
+                names = ", ".join(a.name for a in node.names)
+                found.append((node.lineno, f"from {mod} import {names}"))
+    return found
+
+
 def scan_stale_imports(root: Path) -> dict[Path, list[tuple[int, str]]]:
-    """Return {file: [(lineno, line), ...]} for files with stale imports."""
+    """Return {file: [(lineno, stmt), ...]} for files with real stale imports.
+
+    AST-based: docstring/comment mentions are never counted; imports at any
+    nesting depth (module, function, try/except) are.
+    """
     hits: dict[Path, list[tuple[int, str]]] = {}
     for py_file in sorted(root.rglob("*.py")):
-        file_hits: list[tuple[int, str]] = []
         try:
-            lines = py_file.read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError:
+            source = py_file.read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(source, filename=str(py_file))
+        except (OSError, SyntaxError):
             continue
-        for lineno, line in enumerate(lines, 1):
-            stripped = line.strip()
-            if any(stripped.startswith(p) for p in IMPORT_PREFIXES):
-                file_hits.append((lineno, line.rstrip()))
+        file_hits = sorted(_stale_import_nodes(tree))
         if file_hits:
             hits[py_file] = file_hits
     return hits
@@ -155,6 +175,11 @@ def main() -> None:
         "--check-imports",
         action="store_true",
         help="Also attempt to import each affected module and report pass/fail",
+    )
+    parser.add_argument(
+        "--fail-on-any",
+        action="store_true",
+        help="Exit 1 if any stale import exists (CI gate mode)",
     )
     args = parser.parse_args()
 
