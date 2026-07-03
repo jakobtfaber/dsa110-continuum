@@ -134,17 +134,7 @@ Telescope data paths (`/data/incoming/`, `/stage/dsa110-contimg/ms/`) do not exi
 
 <important if="you are importing, testing, or running anything under `dsa110_continuum.mosaic.*`">
 
-The mosaic subsystem requires `/dev/shm/dsa110-contimg/` to be writable by the current user **at import time**. `dsa110_continuum/mosaic/__init__.py` → `mosaic/pipeline.py` → `mosaic/science_jobs.py` reaches into the legacy `dsa110_contimg.workflow.dagster.definitions`, which calls `_validate_pipeline_prerequisites()` on module load — a hard requirement, not lazy. Symptom: `RuntimeError: Pipeline validation failed: [DIR] /dev/shm/dsa110-contimg: Not writable`, raised the moment the import chain is touched (including by pure-Python WCS tests).
-
-Fix when blocked: either (a) make the directory writable for your user, or (b) bypass the import chain by loading `dsa110_continuum.mosaic.builder` directly with `importlib.util.spec_from_file_location` — but if you do (b), resolve the path relative to `__file__`, NEVER hard-code an absolute path.
-
-</important>
-
-<important if="you are debugging test failures or interpreting suite results">
-
-Environment-dependent tests:
-
-- `tests/test_simulated_pipeline.py::TestSimulatedMosaic` — class-level `skipif` skips all 3 tests when `/dev/shm/dsa110-contimg/` isn't writable by the current user. The tests would otherwise hit the legacy import-time validator described in the mosaic block above. If you need them to run, get write access to that directory (e.g., as the host's pipeline service user).
+Pure-Python `dsa110_continuum.mosaic.*` imports (including the whole package `__init__`) do NOT require `/dev/shm/dsa110-contimg/` or the legacy Dagster bootstrap. The legacy `dsa110_contimg.workflow.dagster.definitions` module (which validates runtime prerequisites at module load) is only imported lazily inside `ScienceMosaicBridgeJob.execute()` in `mosaic/science_jobs.py` — so the science-mosaic execution path still requires those runtime prerequisites, but plain imports and unit tests do not. Regression test: `tests/test_mosaic_import_no_dagster.py`. Do NOT reintroduce module-level `dsa110_contimg.workflow.dagster` imports anywhere under `dsa110_continuum/mosaic/` — the validator raises `RuntimeError`, which `except ImportError` guards do not catch.
 
 </important>
 
