@@ -30,11 +30,13 @@ import json
 import logging
 import os
 import shutil
-import sys
+import sqlite3
 import subprocess
+import sys
 import time
-from concurrent.futures import ProcessPoolExecutor, TimeoutError as FuturesTimeoutError
-from datetime import datetime, timezone
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # ── Load scripts/.env before anything else ───────────────────────────────────
@@ -55,7 +57,6 @@ sys.path.insert(0, str(Path(__file__).parent))  # enables `import mosaic_day`
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
-
 from dsa110_continuum.photometry.epoch_qa import EpochQAResult, measure_epoch_qa
 from dsa110_continuum.photometry.epoch_qa_plot import plot_epoch_qa
 from dsa110_continuum.qa.provenance import RunManifest, try_load_prior_manifest
@@ -72,10 +73,12 @@ log = logging.getLogger(__name__)
 
 DEFAULT_DATE = "2026-01-25"
 MS_DIR = os.environ.get("DSA110_MS_DIR", "/stage/dsa110-contimg/ms")
+PIPELINE_DB = os.environ.get("PIPELINE_DB", "/data/dsa110-contimg/state/db/pipeline.sqlite3")
 STAGE_IMAGE_BASE = os.environ.get("DSA110_STAGE_IMAGE_BASE", "/stage/dsa110-contimg/images")
 PRODUCTS_BASE = os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics")
 CELL_ARCSEC = 6.0  # must match mosaic_day.py
 TILE_TIMEOUT_SEC = 1800  # 30 min max per tile before we kill & skip
+EXPECTED_HDF5_SUBBANDS = 16
 
 # QA summary CSV schema (expanded for three-gate epoch QA)
 QA_SUMMARY_CSV = os.environ.get(
@@ -117,6 +120,190 @@ def timestamp_from_fits(fits_path: str) -> datetime | None:
         return datetime.strptime(ts_str, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
     except ValueError:
         return None
+
+
+def _request_time_bounds(
+    date: str,
+    start_hour: int | None,
+    end_hour: int | None,
+) -> tuple[datetime, datetime]:
+    """Return the half-open UTC-hour window requested by the batch run."""
+    base = datetime.strptime(date, "%Y-%m-%d")
+    start = base + timedelta(hours=start_hour or 0)
+    if end_hour is None:
+        end = base + timedelta(days=1)
+    else:
+        end = base + timedelta(hours=end_hour)
+    return start, end
+
+
+def _complete_hdf5_groups_for_window(
+    *,
+    db_path: str,
+    date: str,
+    start_hour: int | None,
+    end_hour: int | None,
+    expected_subbands: int = EXPECTED_HDF5_SUBBANDS,
+) -> list[str]:
+    """Return complete indexed HDF5 group IDs in the requested time window.
+
+    Missing or old dev databases are treated as "no indexed inventory" so local
+    dry-run tests keep working. Production H17 has the DB, so indexed complete
+    HDF5 groups become the authoritative prerequisite for converted base MSs.
+    """
+    if not os.path.exists(db_path):
+        log.warning("HDF5 inventory DB not found at %s; skipping MS prerequisite check", db_path)
+        return []
+
+    start, end = _request_time_bounds(date, start_hour, end_hour)
+    start_iso = start.strftime("%Y-%m-%dT%H:%M:%S")
+    end_iso = end.strftime("%Y-%m-%dT%H:%M:%S")
+
+    try:
+        with sqlite3.connect(db_path, timeout=10) as conn:
+            cur = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='hdf5_files'"
+            )
+            if cur.fetchone() is None:
+                log.warning("HDF5 inventory DB %s has no hdf5_files table; skipping check", db_path)
+                return []
+
+            columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(hdf5_files)").fetchall()
+            }
+            if not {"group_id", "timestamp_iso"}.issubset(columns):
+                log.warning(
+                    "HDF5 inventory DB %s lacks group_id/timestamp_iso columns; skipping check",
+                    db_path,
+                )
+                return []
+            subband_expr = "subband_code" if "subband_code" in columns else "path"
+            if subband_expr not in columns:
+                subband_expr = "rowid"
+
+            rows = conn.execute(
+                f"""
+                SELECT group_id, MIN(timestamp_iso) AS first_ts,
+                       COUNT(DISTINCT {subband_expr}) AS n_subbands
+                FROM hdf5_files
+                WHERE timestamp_iso >= ? AND timestamp_iso < ?
+                GROUP BY group_id
+                HAVING n_subbands >= ?
+                ORDER BY first_ts
+                """,
+                (start_iso, end_iso, expected_subbands),
+            ).fetchall()
+    except sqlite3.Error as exc:
+        log.warning("Could not query HDF5 inventory DB %s (%s); skipping check", db_path, exc)
+        return []
+
+    return [str(group_id) for group_id, _first_ts, _n_subbands in rows]
+
+
+def _find_missing_ms_for_indexed_hdf5(
+    *,
+    db_path: str,
+    date: str,
+    start_hour: int | None,
+    end_hour: int | None,
+    ms_paths: list[str],
+) -> list[str]:
+    """Return complete indexed HDF5 group IDs lacking matching base MS files."""
+    expected_groups = _complete_hdf5_groups_for_window(
+        db_path=db_path,
+        date=date,
+        start_hour=start_hour,
+        end_hour=end_hour,
+    )
+    if not expected_groups:
+        return []
+
+    converted = {
+        Path(ms_path).stem
+        for ms_path in ms_paths
+        if Path(ms_path).suffix == ".ms"
+        and not Path(ms_path).stem.endswith(("_meridian", "_flagversion"))
+    }
+    return [group_id for group_id in expected_groups if group_id not in converted]
+
+
+def _list_base_ms_for_request(
+    ms_dir: str,
+    date: str,
+    start_hour: int | None,
+    end_hour: int | None,
+) -> list[str]:
+    """List base Measurement Set paths for the requested date/hour window."""
+    try:
+        names = os.listdir(ms_dir)
+    except (FileNotFoundError, NotADirectoryError, PermissionError):
+        return []
+
+    paths: list[str] = []
+    for name in names:
+        if not name.endswith(".ms") or not name.startswith(date):
+            continue
+        stem = Path(name).stem
+        if stem.endswith(("_meridian", "_flagversion")):
+            continue
+        try:
+            ts = datetime.strptime(stem, "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            continue
+        if start_hour is not None and ts.hour < start_hour:
+            continue
+        if end_hour is not None and ts.hour >= end_hour:
+            continue
+        paths.append(os.path.join(ms_dir, name))
+    return sorted(paths)
+
+
+def _abort_if_indexed_hdf5_missing_ms(
+    *,
+    db_path: str,
+    date: str,
+    start_hour: int | None,
+    end_hour: int | None,
+    ms_paths: list[str],
+) -> None:
+    """Fail loudly when indexed complete HDF5 groups have not been converted."""
+    missing = _find_missing_ms_for_indexed_hdf5(
+        db_path=db_path,
+        date=date,
+        start_hour=start_hour,
+        end_hour=end_hour,
+        ms_paths=ms_paths,
+    )
+    if not missing:
+        return
+
+    window = (
+        f"{date}T{start_hour or 0:02d}:00:00"
+        f" to {date}T{end_hour:02d}:00:00" if end_hour is not None
+        else f"{date}T{start_hour or 0:02d}:00:00 to next UTC day"
+    )
+    preview = ", ".join(missing[:5])
+    if len(missing) > 5:
+        preview += f", ... ({len(missing)} total)"
+    log.error(
+        "ABORT: indexed HDF5 inventory has complete groups without converted base MSs "
+        "for %s: %s",
+        window,
+        preview,
+    )
+    log.error(
+        "Run conversion first, for example: dsa110 convert --input-dir /data/incoming "
+        "--output-dir %s --start-time %sT%02d:00:00 --end-time %s",
+        MS_DIR,
+        date,
+        start_hour or 0,
+        (
+            f"{date}T{end_hour:02d}:00:00"
+            if end_hour is not None
+            else f"{date}T23:59:59"
+        ),
+    )
+    sys.exit(1)
 
 
 # ── Run logging ───────────────────────────────────────────────────────────────
@@ -928,7 +1115,13 @@ def check_cal_gate(manifest: RunManifest, cal_date: str, date: str, strict: bool
 def main() -> None:
     _main_start = time.time()
     parser = argparse.ArgumentParser(
-        description="Hourly-epoch mosaic pipeline for DSA-110 drift observations."
+        description="Hourly-epoch mosaic pipeline for DSA-110 drift observations.",
+        epilog=(
+            "Prerequisite: this batch driver consumes pre-converted hourly tile "
+            "Measurement Sets. Index HDF5 files with `dsa110 index add`, then run "
+            "`dsa110 convert` for the requested date/hour window before launching "
+            "batch_pipeline.py."
+        ),
     )
     parser.add_argument("--date", default=DEFAULT_DATE, help="Observation date (YYYY-MM-DD)")
     parser.add_argument(
@@ -1141,6 +1334,17 @@ def main() -> None:
         log.warning("No MS files found for %s yet — using --expected-dec for cal selection", date)
         _obs_dec = args.expected_dec
     log.info("Observation Dec for calibrator selection: %.1f°", _obs_dec)
+
+    _preflight_ms_paths = _list_base_ms_for_request(
+        MS_DIR, date, args.start_hour, args.end_hour,
+    )
+    _abort_if_indexed_hdf5_missing_ms(
+        db_path=PIPELINE_DB,
+        date=date,
+        start_hour=args.start_hour,
+        end_hour=args.end_hour,
+        ms_paths=_preflight_ms_paths,
+    )
 
     # ── Dry-run plan (Batch E) ───────────────────────────────────────────────
     # Read-only inspection: resolve existing cal tables (glob only — no
