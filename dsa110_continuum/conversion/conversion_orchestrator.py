@@ -20,53 +20,18 @@ from pathlib import Path
 import numpy as np
 import pyuvdata
 
-try:
-    from dsa110_continuum.unified_config import settings
-    from dsa110_continuum.utils import FastMeta, timed, timed_debug
-    from dsa110_continuum.utils.antpos_local import get_itrf
-    from dsa110_continuum.utils.exceptions import (
-        ConversionError,
-        IncompleteSubbandGroupError,
-        MSWriteError,
-        UVH5ReadError,
-        is_recoverable,
-        wrap_exception,
-    )
-    from dsa110_continuum.utils.logging import log_context, log_exception
-except ImportError:
-    # dsa110_contimg not installed (cloud/test env) — minimal stubs so module loads
-    def timed(name):  # type: ignore[misc]
-        def decorator(fn): return fn
-        return decorator
-
-    def timed_debug(name):  # type: ignore[misc]
-        def decorator(fn): return fn
-        return decorator
-
-    class FastMeta(type): pass  # type: ignore[no-redef]
-
-    class ConversionError(Exception): pass  # type: ignore[no-redef]
-    class IncompleteSubbandGroupError(ConversionError): pass  # type: ignore[no-redef]
-    class MSWriteError(ConversionError): pass  # type: ignore[no-redef]
-    class UVH5ReadError(ConversionError): pass  # type: ignore[no-redef]
-    def is_recoverable(e): return False  # type: ignore[misc]
-    def wrap_exception(e, cls, **kw): return e  # type: ignore[misc]
-    def log_context(**kw):  # type: ignore[misc]
-        from contextlib import nullcontext; return nullcontext()
-    def log_exception(logger, e, **kw): logger.exception(str(e))  # type: ignore[misc]
-
-    class _Settings:  # type: ignore[misc]
-        class conversion:
-            cluster_tolerance_s = 120.0
-            skip_incomplete = True
-            skip_existing = True
-            stage_to_tmpfs = False
-            expected_subbands = 16
-            writer = "direct-subband"
-            parallel_loading = False
-            io_max_workers = 4
-    settings = _Settings()  # type: ignore[assignment]
-    get_itrf = None  # type: ignore[assignment]
+from dsa110_continuum.unified_config import settings
+from dsa110_continuum.utils import FastMeta, timed, timed_debug
+from dsa110_continuum.utils.antpos_local import get_itrf
+from dsa110_continuum.utils.exceptions import (
+    ConversionError,
+    IncompleteSubbandGroupError,
+    MSWriteError,
+    UVH5ReadError,
+    is_recoverable,
+    wrap_exception,
+)
+from dsa110_continuum.utils.logging import log_context, log_exception
 from dsa110_continuum.conversion.file_validator import (
     MissingInputFilesError,
     RollingFileValidator,

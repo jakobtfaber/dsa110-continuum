@@ -17,7 +17,7 @@ try:
         measure_many,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Image and source QA metrics (VAST-style)
 try:
@@ -56,7 +56,7 @@ try:
         compute_source_qa_metrics,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # two_stage module (no heavy optional dependencies)
 from dsa110_continuum.photometry.two_stage import (

@@ -37,7 +37,7 @@ try:
         GroundTruthSource,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Metrics
 try:
@@ -57,7 +57,7 @@ try:
         generate_multi_epoch_uvh5,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Validation
 try:
@@ -69,7 +69,7 @@ try:
         validate_photometry,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Variability models
 try:
@@ -83,7 +83,7 @@ try:
         create_variability_model,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # pyuvsim integration for accurate visibility simulation (genuinely optional:
 # requires pyuvdata/pyuvsim/pyradiosky; __all__ gains these names only when
@@ -146,7 +146,7 @@ try:
         get_test_config,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 __all__ = [
     # Configuration

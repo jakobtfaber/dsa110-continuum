@@ -87,7 +87,7 @@ try:
         plot_calibration_stability,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # CARTA integration and HDF5 IDIA conversion
 try:
@@ -282,7 +282,7 @@ try:
         generate_structure_diagram,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 __all__ = [
     # Config

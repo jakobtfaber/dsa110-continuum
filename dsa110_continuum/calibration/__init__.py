@@ -29,7 +29,7 @@ try:
         get_recovery_recommendations,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Bandpass diagnostics report
 try:
@@ -38,7 +38,7 @@ try:
         generate_bandpass_report,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Beam model
 try:
@@ -69,7 +69,7 @@ try:
         validate_ms_integrity,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Preflight checks and fail-fast validation
 # OPENBLAS_NUM_THREADS is managed by WSClean execution paths to avoid oversubscription.
@@ -87,7 +87,7 @@ try:
         preflight_check_wsclean,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Adaptive flagging
 try:
@@ -103,7 +103,7 @@ try:
         check_model_corrected_ratio,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Flux calibration (CASA fluxscale bootstrap)
 try:
@@ -124,7 +124,7 @@ try:
         update_calibrator_catalog_flux,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Pipeline guardrails for calibration quality
 try:
@@ -138,7 +138,7 @@ try:
         get_quality_tier,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Pipeline jobs and orchestration
 try:
@@ -157,7 +157,7 @@ try:
         run_calibration_pipeline,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Pre-calibration validation gate
 try:
@@ -168,7 +168,7 @@ try:
         validate_bandpass_preconditions,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # QA module
 try:
@@ -184,7 +184,7 @@ try:
     )
     from dsa110_continuum.calibration.qa_compare import compare_caltables
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Self-calibration
 try:
@@ -198,7 +198,7 @@ try:
         selfcal_ms,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Self-calibration diagnostics
 try:
@@ -207,7 +207,7 @@ try:
         generate_selfcal_diagnostics,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Production self-calibration routine
 try:
@@ -228,7 +228,7 @@ try:
         upcoming_transits,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 __all__ = [
     # Beam model

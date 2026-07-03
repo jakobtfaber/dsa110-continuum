@@ -43,19 +43,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-try:
-    from dsa110_continuum.utils.exceptions import (
-        ConversionError,
-        ErrorCode,
-    )
-except ImportError:
-    # dsa110_contimg not installed (cloud/test env) — provide minimal stubs
-    class ConversionError(Exception):  # type: ignore[no-redef]
-        """Fallback conversion error for cloud/test environments."""
-
-    class ErrorCode:  # type: ignore[no-redef]
-        """Fallback error-code stub."""
-        UNKNOWN = "UNKNOWN"
+from dsa110_continuum.utils.exceptions import (
+    ConversionError,
+    ErrorCode,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -63,7 +63,7 @@ try:
         validate_uvw_geometry,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 __all__ = [
     # Catalog validation
