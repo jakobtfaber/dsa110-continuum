@@ -685,7 +685,7 @@ keep with its sole consumer's import style).
 **Objective:** packaging/dot-files stop lying; regression becomes impossible silently.
 
 **Tasks:**
-- [ ] **pyproject.toml:** `name = "dsa110-continuum"` (`:6`); `[project.scripts]` →
+- [x] **pyproject.toml:** `name = "dsa110-continuum"` (`:6`); `[project.scripts]` →
       `dsa110-health = "dsa110_continuum.validation.package_health:main"`,
       `dsa110-validate = "dsa110_continuum.validation.package_health:main"`, **drop**
       `dsa110 = "dsa110_contimg.interfaces.cli.main:cli"` (`:152`; see NOT-doing); delete
@@ -697,14 +697,18 @@ keep with its sole consumer's import style).
   "dsa110_contimg".msg = "dsa110_contimg is retired; import from dsa110_continuum"
   ```
 
-- [ ] **CI gate:** in `.github/workflows/python-tests.yml`, add a step before tests:
+- [x] **CI gate:** in `.github/workflows/python-tests.yml`, add a step before tests:
 
   ```yaml
   - name: No legacy imports
     run: python scripts/check_import_migration.py --fail-on-any
   ```
 
-- [ ] **CI test coverage for the new invariants:** the workflow runs a fixed 11-file list —
+- [x] **CI test coverage for the new invariants** *(deviation: instead of importorskip-
+      weakening the reexports test, the CI dep set was extended — pyyaml/pydantic/
+      pydantic-settings/caskade/sqlalchemy/fastapi/matplotlib/httpx/h5py — the exact set
+      verified green, 193 passed, in a local CI-replica venv; this also surfaced and fixed
+      a real qa↔calibration circular import in qa_compare.py)*: the workflow runs a fixed 11-file list —
       append the cloud-safe new tests (`test_import_migration_checker.py`,
       `test_no_latent_nameerror_imports.py`, `test_vendored_utils.py`,
       `test_unified_config.py`, `test_workflow_registry.py`, `test_vendored_database.py`,
@@ -714,14 +718,14 @@ keep with its sole consumer's import style).
       heavy-dep) param with `pytest.importorskip("matplotlib")` so the CI dep set
       (numpy/scipy/pandas/astropy/uncertainties) stays sufficient.
 
-- [ ] **Docs:** CLAUDE.md — remove the "re-export layers intentionally still reference old
+- [x] **Docs:** CLAUDE.md — remove the "re-export layers intentionally still reference old
       paths / do NOT change them" block and the cloud-shim instructions; replace with the
       new invariant ("dsa110_continuum is self-contained; the legacy dsa110_contimg
       namespace is banned — CI enforces"). Same sweep in `WORKSPACE_GUIDE.md:329-330,759-760,1056-1057`.
       Note in docs that the cloud VM `.pth` shim can be deleted from `~/.local/lib/python3.12/site-packages/`.
-- [ ] **Checker hard mode:** flip `check_import_migration.py` default to `--fail-on-any`
-      semantics (keep the flag for compat).
-- [ ] **H17 validation (the co-load proof):** ship the branch to H17 (git bundle, temp
+- [x] **Checker hard mode:** already the default since Phase 0 (`print_report` returns 1
+      whenever hits exist); help text updated to say the flag is a CI-compat no-op.
+- [x] **H17 validation (the co-load proof):** ship the branch to H17 (git bundle, temp
       worktree, as in the caskade validation) and run:
 
   ```bash
@@ -744,22 +748,26 @@ keep with its sole consumer's import style).
 - [ ] **Commit; PR; validation report** via `ai-research-workflows:validating-implementations`.
 
 **Verification:**
-- [ ] All three H17 commands succeed (`co-load OK`; suite ≥ current 1168 passed; dry-run
-      prints an execution plan and exits 0).
-- [ ] CI green including the new gate.
+- [x] All three H17 commands succeed (`co-load OK`; suite ≥ current 1168 passed; dry-run
+      prints an execution plan and exits 0). Results 2026-07-03 at `cdd0eaa`:
+      co-load OK (caskade 1.1.1 in casa6); full suite **1228 passed, 0 failed**
+      (no pytest `lastfailed` cache); dry-run exit 0 with full execution plan
+      (11 tiles, BP/G tables `[exists]`, Dec 16.13°).
+- [ ] CI green including the new gate. (Requires push/PR — one-way door, pending
+      manual go-ahead.)
 
 ## Success Criteria
 
 ### Automated Verification
 
-- [ ] `python scripts/check_import_migration.py --fail-on-any` → exit 0 (count 0).
-- [ ] `rtk grep -rn 'from dsa110_contimg\|import dsa110_contimg' dsa110_continuum/ --include='*.py'` → only docstring/comment hits (checker confirms 0 real).
-- [ ] Mac/py312: `pytest tests/ -q` green with no shim and no old package.
-- [ ] CI (`python-tests.yml`): green including the legacy-import gate step.
-- [ ] H17 casa6: full suite green in PYTHONPATH mode; co-load script prints `co-load OK`.
-- [ ] `pytest tests/test_workflow_registry.py tests/test_init_reexports_new_namespace.py tests/test_no_compat_layer.py -q` green.
-- [ ] `scripts/batch_pipeline.py --dry-run` (H17) exits 0.
-- [ ] `python -c "import dsa110_continuum; print(dsa110_continuum.__version__)"` works.
+- [x] `python scripts/check_import_migration.py --fail-on-any` → exit 0 (count 0).
+- [x] `rtk grep -rn 'from dsa110_contimg\|import dsa110_contimg' dsa110_continuum/ --include='*.py'` → only docstring/comment hits (checker confirms 0 real).
+- [x] Mac/py312: `pytest tests/ -q` green with no shim and no old package (8 failed = documented pre-existing baseline, 1070 passed).
+- [ ] CI (`python-tests.yml`): green including the legacy-import gate step. (Pending push/PR.)
+- [x] H17 casa6: full suite green in PYTHONPATH mode (1228 passed, 0 failed); co-load script prints `co-load OK`.
+- [x] `pytest tests/test_workflow_registry.py tests/test_init_reexports_new_namespace.py tests/test_no_compat_layer.py -q` green.
+- [x] `scripts/batch_pipeline.py --dry-run` (H17) exits 0.
+- [x] `python -c "import dsa110_continuum; print(dsa110_continuum.__version__)"` works (`0.0.0+unknown` source-checkout fallback; real version once the renamed dist is installed).
 
 ### Manual Verification
 
