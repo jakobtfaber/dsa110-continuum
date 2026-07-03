@@ -135,6 +135,9 @@ docs = [
 ]
 # Fast visibility simulator (OOM speedup over pyuvsim; unpolarized)
 matvis = ["matvis"]
+# Caskade simulation-control DAG (dsa110_continuum.simulation.control);
+# numpy backend by default, torch/jax optional upstream extras
+caskade = ["caskade>=1.1"]
 # GPU-accelerated tests and runtime (CuPy). For a specific CUDA version use e.g. cupy-cuda12x.
 gpu = ["cupy"]
 qa = [
