@@ -745,7 +745,8 @@ keep with its sole consumer's import style).
     scripts/batch_pipeline.py --date 2026-01-25 --start-hour 22 --end-hour 23 --dry-run
   ```
 
-- [ ] **Commit; PR; validation report** via `ai-research-workflows:validating-implementations`.
+- [x] **Commit; PR** — dsa110/dsa110-continuum#93 (CI green). Validation report
+      via `ai-research-workflows:validating-implementations` is the next step.
 
 **Verification:**
 - [x] All three H17 commands succeed (`co-load OK`; suite ≥ current 1168 passed; dry-run
@@ -753,8 +754,8 @@ keep with its sole consumer's import style).
       co-load OK (caskade 1.1.1 in casa6); full suite **1228 passed, 0 failed**
       (no pytest `lastfailed` cache); dry-run exit 0 with full execution plan
       (11 tiles, BP/G tables `[exists]`, Dec 16.13°).
-- [ ] CI green including the new gate. (Requires push/PR — one-way door, pending
-      manual go-ahead.)
+- [x] CI green including the new gate. PR dsa110/dsa110-continuum#93, run
+      28685268908: step "No legacy imports: success", subset "success" (43 s).
 
 ## Success Criteria
 
@@ -763,7 +764,7 @@ keep with its sole consumer's import style).
 - [x] `python scripts/check_import_migration.py --fail-on-any` → exit 0 (count 0).
 - [x] `rtk grep -rn 'from dsa110_contimg\|import dsa110_contimg' dsa110_continuum/ --include='*.py'` → only docstring/comment hits (checker confirms 0 real).
 - [x] Mac/py312: `pytest tests/ -q` green with no shim and no old package (8 failed = documented pre-existing baseline, 1070 passed).
-- [ ] CI (`python-tests.yml`): green including the legacy-import gate step. (Pending push/PR.)
+- [x] CI (`python-tests.yml`): green including the legacy-import gate step (PR #93, run 28685268908).
 - [x] H17 casa6: full suite green in PYTHONPATH mode (1228 passed, 0 failed); co-load script prints `co-load OK`.
 - [x] `pytest tests/test_workflow_registry.py tests/test_init_reexports_new_namespace.py tests/test_no_compat_layer.py -q` green.
 - [x] `scripts/batch_pipeline.py --dry-run` (H17) exits 0.

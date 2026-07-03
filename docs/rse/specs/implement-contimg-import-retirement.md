@@ -185,7 +185,8 @@ unwraps, the nine `__init__` flips), `pyproject.toml`,
   16.13°, 11 tiles planned.
 - ✅ H17 casa6 full suite (`PYTHONPATH=/tmp/contimg-migration-validate`) —
   **1228 passed, 0 failed** (no pytest `lastfailed` cache; plan bar was ≥1168).
-- ⏳ CI green including the gate — requires push; part of the PR step.
+- ✅ CI green including the gate — PR dsa110/dsa110-continuum#93, run
+  28685268908: "No legacy imports: success", subset success (43 s).
 
 ### Manual Verification (human required)
 
@@ -260,8 +261,8 @@ py312).
 
 ## Remaining Work
 
-- [ ] Push branch; open PR; confirm CI green including the "No legacy imports"
-  gate (one-way door — awaiting go-ahead).
+- [x] Push branch; open PR; confirm CI green including the "No legacy imports"
+  gate — done: dsa110/dsa110-continuum#93.
 - [ ] Follow-up (out of scope, noted): `pyproject.toml` still carries Dagster
   and other legacy-era runtime dependencies; `[project.urls]` still points at
   `dsa110/dsa110-contimg`. Candidates for a separate dependency-diet pass.
