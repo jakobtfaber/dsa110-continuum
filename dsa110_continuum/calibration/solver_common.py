@@ -10,10 +10,7 @@ from typing import Any
 
 import numpy as np
 
-try:
-    from dsa110_continuum.utils import timed
-except ImportError:
-    from dsa110_continuum._compat import timed
+from dsa110_continuum.utils import timed
 
 from dsa110_continuum.calibration.casa_service import CASAService
 from dsa110_continuum.conversion.merge_spws import get_spw_count

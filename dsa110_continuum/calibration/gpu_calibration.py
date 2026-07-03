@@ -23,18 +23,11 @@ from typing import Any
 
 import numpy as np
 
-try:
-    from dsa110_continuum.utils.gpu_safety import (
-        gpu_safe,
-        memory_safe,
-        safe_gpu_context,
-    )
-except ImportError:
-    from dsa110_continuum._compat import (
-        gpu_safe,
-        memory_safe,
-        safe_gpu_context,
-    )
+from dsa110_continuum.utils.gpu_safety import (
+    gpu_safe,
+    memory_safe,
+    safe_gpu_context,
+)
 
 logger = logging.getLogger(__name__)
 

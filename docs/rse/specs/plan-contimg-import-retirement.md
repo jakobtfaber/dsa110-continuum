@@ -192,7 +192,7 @@ record the delta in the PR body.
 has a mechanical exit criterion.
 
 **Tasks:**
-- [ ] **Failing test first** — `tests/test_import_migration_checker.py` (new):
+- [x] **Failing test first** — `tests/test_import_migration_checker.py` (new):
 
   ```python
   import subprocess, sys, textwrap
@@ -226,21 +226,21 @@ has a mechanical exit criterion.
       assert r.returncode == 1
   ```
 
-- [ ] **Run, watch fail:** `pytest tests/test_import_migration_checker.py -v` → first test
+- [x] **Run, watch fail:** `pytest tests/test_import_migration_checker.py -v` → first test
       FAILS today (checker is line-prefix based, `scripts/check_import_migration.py:31`,
       and flags docstrings; `--fail-on-any` doesn't exist).
-- [ ] **Implement** in `scripts/check_import_migration.py`: replace `scan_stale_imports`
+- [x] **Implement** in `scripts/check_import_migration.py`: replace `scan_stale_imports`
       (`:37-52`) with an `ast.walk` visitor collecting `ast.Import`/`ast.ImportFrom` whose
       module root is `dsa110_contimg`; add `--fail-on-any` (exit 1 if count > 0); keep the
       existing per-file report format and `--check-imports`.
-- [ ] **Run, watch pass**, then record the authoritative baseline:
+- [x] **Run, watch pass**, then record the authoritative baseline:
       `python scripts/check_import_migration.py | tail -3` → expect **349 stale imports /
       126 distinct files** (not the old line-grep 361/129).
-- [ ] **Commit.**
+- [x] **Commit.**
 
 **Verification:**
-- [ ] `pytest tests/test_import_migration_checker.py -q` → 2 passed.
-- [ ] Checker on repo prints 349/126.
+- [x] `pytest tests/test_import_migration_checker.py -q` → 2 passed.
+- [x] Checker on repo prints 349/126.
 
 ### Phase 1: Quick wins — retargets to ports that already exist + dead code
 
@@ -259,7 +259,7 @@ Retarget table (old → new, verified REAL this session):
 | `resources.files("dsa110_contimg.simulation.pyuvsim")` | `resources.files("dsa110_continuum.simulation.pyuvsim")` | `imaging/fov.py:35,39` |
 
 **Tasks:**
-- [ ] **Failing test first** — `tests/test_no_latent_nameerror_imports.py` (new; grows over
+- [x] **Failing test first** — `tests/test_no_latent_nameerror_imports.py` (new; grows over
       later phases; start with the modules fixed here):
 
   ```python
@@ -282,14 +282,14 @@ Retarget table (old → new, verified REAL this session):
       importlib.import_module(mod)  # NameError/ImportError = fail
   ```
 
-- [ ] **Run, watch fail** on the Mac (no old package): the Category-A modules raise
+- [x] **Run, watch fail** on the Mac (no old package): the Category-A modules raise
       `NameError: name 'get_env_path' is not defined`.
-- [ ] **Implement:** per file, replace the try/except import block with the direct new
+- [x] **Implement:** per file, replace the try/except import block with the direct new
       import (e.g. in `evaluation/database.py:33`:
       `from dsa110_continuum.config import get_env_path` — delete the try/except entirely).
       For `fov.py`, change the two `resources.files(...)` strings and retarget
       `load_yaml_with_env` later (Phase 2) — leave its guard in place until then.
-- [ ] **Delete dead code — surgically.** `imaging/worker.py:325-380` is the whole body of
+- [x] **Delete dead code — surgically.** `imaging/worker.py:325-380` is the whole body of
       `_submit_imaging_tasks` (live deep-imaging + GPU submission included), consumed at
       `worker.py:458` as the 3-tuple `future_deep, future_fast, future_gpu` and by
       `_wait_for_imaging_results`. Only the fast-imaging leg is dead (import at `:332`
@@ -308,11 +308,11 @@ Retarget table (old → new, verified REAL this session):
       assert "dsa110_contimg.core.imaging.fast_imaging" not in src
   ```
 
-- [ ] **Run, watch pass; commit** (one commit per retarget group is fine).
+- [x] **Run, watch pass; commit** (one commit per retarget group is fine).
 
 **Verification:**
-- [ ] `pytest tests/test_no_latent_nameerror_imports.py tests/test_imaging_worker_no_fast_imaging.py -q` → all pass.
-- [ ] Checker count drops by ≥ 25.
+- [x] `pytest tests/test_no_latent_nameerror_imports.py tests/test_imaging_worker_no_fast_imaging.py -q` → all pass.
+- [x] Checker count drops by ≥ 25.
 
 ### Phase 2: Vendor `common.utils` subset → `dsa110_continuum/utils/`
 
@@ -340,7 +340,7 @@ estimate_calibration_time/estimate_imaging_time, get_2d_data_and_wcs lives in fi
 get_itrf in antpos_local, get_env_int/get_env_list → extend `config.py`).
 
 **Tasks (repeat this unit per vendored module; concrete example shown for `constants`):**
-- [ ] **Failing test first** — extend `tests/test_vendored_utils.py` (new):
+- [x] **Failing test first** — extend `tests/test_vendored_utils.py` (new):
 
   ```python
   def test_constants_present_and_sane():
@@ -361,12 +361,12 @@ get_itrf in antpos_local, get_env_int/get_env_list → extend `config.py`).
       assert abs(dms_to_deg("-30:00:00") + 30.0) < 1e-9
   ```
 
-- [ ] **Run, watch fail** (`ModuleNotFoundError: dsa110_continuum.utils`).
-- [ ] **Vendor:** copy the module from H17 (`scp h17:$OLD/common/utils/constants.py dsa110_continuum/utils/`),
+- [x] **Run, watch fail** (`ModuleNotFoundError: dsa110_continuum.utils`).
+- [x] **Vendor:** copy the module from H17 (`scp h17:$OLD/common/utils/constants.py dsa110_continuum/utils/`),
       add the provenance header, rewrite any internal `dsa110_contimg.*` imports to already-
       vendored peers (dependency-order the copies; `constants` first — it has none).
-- [ ] **Run, watch pass.**
-- [ ] **Retarget consumers in one mechanical batch per module** — from the inventory mapping,
+- [x] **Run, watch pass.**
+- [x] **Retarget consumers in one mechanical batch per module** — from the inventory mapping,
       e.g. for constants:
 
   ```bash
@@ -381,9 +381,9 @@ get_itrf in antpos_local, get_env_int/get_env_list → extend `config.py`).
       `visualization/elevation_plots.py:48` (DSA110_LATITUDE/LONGITUDE),
       `photometry/ese_detection_enhanced.py:19` (get_logger — see Phase 4 note; if its
       logger comes from workflow structured_logging, that site moves to Phase 4).
-- [ ] **Extend `tests/test_no_latent_nameerror_imports.py`** with this phase's modules;
+- [x] **Extend `tests/test_no_latent_nameerror_imports.py`** with this phase's modules;
       run; commit per module batch: `git commit -m "Vendor utils.constants; retarget N sites"`.
-- [ ] Special case `visibility_models.py:18-38` + `_compat` consumers: once
+- [x] Special case `visibility_models.py:18-38` + `_compat` consumers: once
       `utils/gpu_safety.py`, `utils/decorators.py`, `utils/ms_permissions.py` are vendored,
       swap each `try old / except: from _compat import ...` block for the direct vendored
       import (e.g. `calibration/applycal.py:28-47` becomes
@@ -395,9 +395,9 @@ get_itrf in antpos_local, get_env_int/get_env_list → extend `config.py`).
 **Dependencies:** Phase 0 (ratchet), Phase 1 recommended first (removes overlap).
 
 **Verification:**
-- [ ] `pytest tests/test_vendored_utils.py tests/test_no_latent_nameerror_imports.py -q` green on Mac.
-- [ ] Checker: `common.*` count ≤ 30 (residual = unified_config + templates stragglers mid-phase; 0 at phase end except `unified_config`).
-- [ ] `pytest tests/ -q` full local suite green.
+- [x] `pytest tests/test_vendored_utils.py tests/test_no_latent_nameerror_imports.py -q` green on Mac.
+- [x] Checker: `common.*` count ≤ 30 (residual = unified_config + templates stragglers mid-phase; 0 at phase end except `unified_config`).
+- [x] `pytest tests/ -q` full local suite green.
 
 ### Phase 3: Vendor `unified_config` (the `settings` singleton)
 
@@ -407,7 +407,7 @@ get_itrf in antpos_local, get_env_int/get_env_list → extend `config.py`).
 `settings.paths.pipeline_db` at module scope).
 
 **Tasks:**
-- [ ] **Failing test first** — `tests/test_unified_config.py` (new):
+- [x] **Failing test first** — `tests/test_unified_config.py` (new):
 
   ```python
   def test_settings_singleton_paths():
@@ -417,24 +417,24 @@ get_itrf in antpos_local, get_env_int/get_env_list → extend `config.py`).
       assert settings.paths.pipeline_db  # non-empty path-like
   ```
 
-- [ ] **Run, watch fail.**
-- [ ] **Vendor** `common/unified_config.py` (1,492 lines, single file) →
+- [x] **Run, watch fail.**
+- [x] **Vendor** `common/unified_config.py` (1,492 lines, single file) →
       `dsa110_continuum/unified_config.py`; rewrite its internal imports to vendored
       utils/constants; default paths must respect the same env vars the old one read (the
       module is env-driven; the test above must pass on a machine with none of the H17
       paths present — if the old module hard-fails without env, wrap defaults with the repo
       convention from `config.py:73`'s `get_env_path`).
-- [ ] **Run, watch pass.**
-- [ ] **Retarget the 13 importers**; delete their guards; extend the NameError test module
+- [x] **Run, watch pass.**
+- [x] **Retarget the 13 importers**; delete their guards; extend the NameError test module
       list with the 4 Category-A files.
-- [ ] **Commit.**
+- [x] **Commit.**
 
 **Dependencies:** Phase 2 (utils/constants for path defaults).
 
 **Verification:**
-- [ ] `pytest tests/test_unified_config.py -q` green on Mac; the 4 catalog/calibration
+- [x] `pytest tests/test_unified_config.py -q` green on Mac; the 4 catalog/calibration
       modules import cleanly.
-- [ ] Checker: `common.*` = 0.
+- [x] Checker: `common.*` = 0.
 
 ### Phase 4: Vendor the job/pipeline framework → `dsa110_continuum/workflow/`
 

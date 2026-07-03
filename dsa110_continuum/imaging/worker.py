@@ -37,22 +37,12 @@ try:
 except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)
 from dsa110_continuum._lazy_init import require_gpu_safety
-try:
-    from dsa110_continuum.utils.gpu_safety import (
-        check_gpu_memory_available,
-        gpu_safe,
-        is_gpu_available,
-        memory_safe,
-    )
-except ImportError:
-    # Fall back to centralized stubs that match the contimg signatures so
-    # ``gpu_ok, reason = check_gpu_memory_available(...)`` keeps unpacking.
-    from dsa110_continuum._compat import (
-        check_gpu_memory_available,
-        gpu_safe,
-        is_gpu_available,
-        memory_safe,
-    )
+from dsa110_continuum.utils.gpu_safety import (
+    check_gpu_memory_available,
+    gpu_safe,
+    is_gpu_available,
+    memory_safe,
+)
 from dsa110_continuum.conversion.ms_utils import (
     inject_provenance_metadata,
 )

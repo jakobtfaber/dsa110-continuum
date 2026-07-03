@@ -5,10 +5,7 @@ from astropy.coordinates import Angle, EarthLocation
 from astropy.time import Time
 
 # Use DSA-110 coordinates from constants.py (single source of truth)
-try:
-    from dsa110_continuum.utils.constants import DSA110_LOCATION
-except ImportError:
-    from dsa110_continuum._compat import DSA110_LOCATION  # OVRO fallback stub
+from dsa110_continuum.utils.constants import DSA110_LOCATION
 
 DSA110_LON_DEG = DSA110_LOCATION.lon.to(u.deg).value
 DSA110_LAT_DEG = DSA110_LOCATION.lat.to(u.deg).value

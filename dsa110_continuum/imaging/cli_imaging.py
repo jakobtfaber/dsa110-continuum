@@ -76,34 +76,22 @@ except ImportError:  # pragma: no cover - defensive import
 from dsa110_continuum.imaging.cli_utils import default_cell_arcsec, detect_datacolumn  # noqa: E402
 from dsa110_continuum.imaging.fov import derive_extent_deg  # noqa: E402
 
-try:
-    from dsa110_continuum.unified_config import settings  # noqa: E402
-    from dsa110_continuum.utils.error_context import (
-        format_ms_error_with_suggestions,  # noqa: E402
-    )
-    from dsa110_continuum.utils.gpu_utils import (  # noqa: E402
-        build_docker_command,
-        get_gpu_config,
-    )
-    from dsa110_continuum.utils.performance import track_performance  # noqa: E402
-    from dsa110_continuum.utils.runtime_safeguards import require_casa6_python  # noqa: E402
-    from dsa110_continuum.utils.validation import ValidationError, validate_ms  # noqa: E402
-except ImportError:
-    from dsa110_continuum._compat import (  # fallback stubs
-        ValidationError,
-        get_gpu_config,
-        require_casa6_python,
-        track_performance,
-        validate_ms,
-    )
-    settings = None  # type: ignore[assignment]
-    format_ms_error_with_suggestions = None  # type: ignore[assignment]
-    build_docker_command = None  # type: ignore[assignment]
+from dsa110_continuum.unified_config import settings  # noqa: E402
+from dsa110_continuum.utils.error_context import (
+    format_ms_error_with_suggestions,  # noqa: E402
+)
+from dsa110_continuum.utils.gpu_utils import (  # noqa: E402
+    build_docker_command,
+    get_gpu_config,
+)
+from dsa110_continuum.utils.performance import track_performance  # noqa: E402
+from dsa110_continuum.utils.runtime_safeguards import require_casa6_python  # noqa: E402
+from dsa110_continuum.utils.validation import ValidationError, validate_ms  # noqa: E402
 
 LOG = logging.getLogger(__name__)
 
 # Fixed image extent: defaults to 3.5° x 3.5° unless config opts into derivation
-FIXED_IMAGE_EXTENT_DEG = getattr(getattr(settings, 'imaging', None), 'fixed_extent_deg', 3.5) if 'settings' in dir() else 3.5
+FIXED_IMAGE_EXTENT_DEG = getattr(getattr(settings, 'imaging', None), 'fixed_extent_deg', 3.5)
 
 
 def _write_imaging_provenance(

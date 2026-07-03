@@ -32,22 +32,12 @@ from dsa110_continuum.simulation.source_selection import (
     SyntheticSource,
     summarize_sources,
 )
-try:
-    from dsa110_continuum.utils.antpos_local import get_itrf
-    from dsa110_continuum.utils.constants import DSA110_ALT, DSA110_LAT, DSA110_LON
-    from dsa110_continuum.utils.paths import get_repo_root as _gr
-    _REPO_ROOT_FROM_CONTIMG = _gr()
-except ImportError:
-    get_itrf = None
-    # DSA-110 at OVRO: 37.2339°N, 118.2825°W, 1222 m
-    DSA110_LAT = 37.2339          # degrees N
-    DSA110_LON = -118.2825        # degrees E
-    DSA110_ALT = 1222.0           # metres
-    _REPO_ROOT_FROM_CONTIMG = None
-    from dsa110_continuum._compat import get_repo_root
+from dsa110_continuum.utils.antpos_local import get_itrf
+from dsa110_continuum.utils.constants import DSA110_ALT, DSA110_LAT, DSA110_LON
+from dsa110_continuum.utils.paths import get_repo_root
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
-REPO_ROOT = _REPO_ROOT_FROM_CONTIMG if _REPO_ROOT_FROM_CONTIMG is not None else get_repo_root()
+REPO_ROOT = get_repo_root()
 if (REPO_ROOT / "backend" / "src" / "dsa110_contimg").exists():
     REPO_ROOT = REPO_ROOT / "backend"
 CONFIG_DIR = PACKAGE_ROOT / "config"
