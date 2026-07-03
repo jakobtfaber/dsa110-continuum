@@ -1010,8 +1010,10 @@ def main() -> None:
         default=False,
         help=(
             "Force full re-calibration and re-imaging of every tile, even when FITS outputs "
-            "already exist. Also clears the epoch_gaincal ap.G cache so the fallback check "
-            "runs fresh. Use when re-running a date after code changes (e.g. BP-only fallback)."
+            "already exist. Also forces BP/G table re-acquisition (ensure_bandpass force=True, "
+            "skipping same-date table reuse) and clears the epoch_gaincal ap.G cache so the "
+            "fallback check runs fresh. Use when re-running a date after code changes "
+            "(e.g. BP-only fallback)."
         ),
     )
     parser.add_argument(
@@ -1156,6 +1158,7 @@ def main() -> None:
             from dsa110_continuum.calibration.ensure import ensure_bandpass
             _auto_cal_result = ensure_bandpass(
                 cal_date, ms_dir=MS_DIR, refant="103", obs_dec_deg=_obs_dec,
+                force=args.force_recal,
             )
             log.info(
                 "Auto-cal: %s tables from %s (calibrator=%s, source=%s)",
