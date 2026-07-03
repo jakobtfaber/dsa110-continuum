@@ -24,8 +24,9 @@ passed.
 from __future__ import annotations
 
 import numpy as np
-import pyuvdata
 import pytest
+
+pyuvdata = pytest.importorskip("pyuvdata")
 
 from dsa110_continuum.simulation.harness import SimulationHarness
 

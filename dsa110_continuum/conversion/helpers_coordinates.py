@@ -6,11 +6,6 @@ import astropy.units as u
 import numpy as np
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
-
-from pyuvdata.utils.phasing import calc_uvw as _PU_CALC_UVW
-from pyuvdata.utils.phasing import calc_app_coords as _calc_app_coords
-from pyuvdata.utils.phasing import calc_frame_pos_angle as _calc_frame_pos_angle
-
 from dsa110_continuum.conversion.helpers_antenna import (
     _ensure_antenna_diameters,
     set_antenna_positions,
@@ -32,6 +27,20 @@ logger = logging.getLogger("dsa110_contimg.conversion.helpers")
 # Log fallback warning once at import time, not every function call
 if not _USE_NUMBA_ANGULAR_SEP:
     logger.warning("Numba angular separation not available, using pure numpy (2-5x slower)")
+
+
+def _load_pyuvdata_phasing_helpers():
+    """Load pyuvdata phasing helpers only for UVW recomputation paths."""
+    try:
+        from pyuvdata.utils.phasing import calc_app_coords, calc_frame_pos_angle
+        from pyuvdata.utils.phasing import calc_uvw as pu_calc_uvw
+    except ImportError as exc:
+        raise ImportError(
+            "pyuvdata is required for conversion UVW recomputation. "
+            "Install pyuvdata or run inside the casa6 pipeline environment."
+        ) from exc
+
+    return pu_calc_uvw, calc_app_coords, calc_frame_pos_angle
 
 
 def angular_separation(ra1, dec1, ra2, dec2):
@@ -63,6 +72,7 @@ def angular_separation(ra1, dec1, ra2, dec2):
     # REFACTOR: Usage of astropy.coordinates.angular_separation instead of manual implementation
     # astropy.coordinates.angular_separation accepts radians for unitless float inputs
     from astropy.coordinates import angular_separation as astropy_sep
+
     return astropy_sep(ra1, dec1, ra2, dec2)
 
 
@@ -255,6 +265,8 @@ def compute_and_set_uvw(uvdata, pt_dec: u.Quantity) -> None:
     import numpy as _np
     from astropy.time import Time as _Time
 
+    pu_calc_uvw, calc_app_coords, calc_frame_pos_angle = _load_pyuvdata_phasing_helpers()
+
     # Telescope metadata (lat, lon, alt; frame)
     tel_latlonalt = getattr(uvdata, "telescope_location_lat_lon_alt", None)
     if tel_latlonalt is None and hasattr(uvdata, "telescope"):
@@ -303,7 +315,7 @@ def compute_and_set_uvw(uvdata, pt_dec: u.Quantity) -> None:
         ra_icrs, dec_icrs = get_meridian_coords(pt_dec, float(mjd), fast=False)
         try:
             # pyuvdata 3.2+ uses keyword-only lon_coord/lat_coord
-            new_app_ra, new_app_dec = _calc_app_coords(
+            new_app_ra, new_app_dec = calc_app_coords(
                 lon_coord=ra_icrs.to_value(u.rad),
                 lat_coord=dec_icrs.to_value(u.rad),
                 coord_frame="icrs",
@@ -319,7 +331,7 @@ def compute_and_set_uvw(uvdata, pt_dec: u.Quantity) -> None:
                 telescope_loc=tel_latlonalt,
                 telescope_frame=tel_frame,
             )
-            new_frame_pa = _calc_frame_pos_angle(
+            new_frame_pa = calc_frame_pos_angle(
                 time_array=uvdata.time_array[uinvert == i],
                 app_ra=new_app_ra,
                 app_dec=new_app_dec,
@@ -347,7 +359,7 @@ def compute_and_set_uvw(uvdata, pt_dec: u.Quantity) -> None:
     tel_lat = float(tel_latlonalt[0])
     tel_lon = float(tel_latlonalt[1])
 
-    uvw_all = _PU_CALC_UVW(
+    uvw_all = pu_calc_uvw(
         app_ra=app_ra_all,
         app_dec=app_dec_all,
         frame_pa=frame_pa_all,

@@ -1,7 +1,11 @@
 # tests/test_simulated_pipeline.py
+from pathlib import Path
+
 import numpy as np
 import pytest
-from pathlib import Path
+
+pytest.importorskip("pyuvdata")
+
 from dsa110_continuum.simulation.harness import SimulationHarness
 
 

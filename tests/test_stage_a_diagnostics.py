@@ -1,15 +1,14 @@
-# tests/test_stage_a_diagnostics.py
-import matplotlib
-matplotlib.use("Agg")
-
 import csv
 import os
 import tempfile
 
 import numpy as np
 import pytest
-import matplotlib.pyplot as plt
 from astropy.io import fits
+
+matplotlib = pytest.importorskip("matplotlib")
+matplotlib.use("Agg")
+plt = pytest.importorskip("matplotlib.pyplot")
 
 from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
 

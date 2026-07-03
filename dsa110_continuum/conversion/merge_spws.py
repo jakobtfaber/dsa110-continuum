@@ -10,8 +10,6 @@ import os
 import shutil
 
 import numpy as np
-
-
 from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore[import]
 
 table = casatables.table  # noqa: N816
@@ -20,7 +18,7 @@ table = casatables.table  # noqa: N816
 try:
     from dsa110_contimg.common.utils.runtime_safeguards import require_casa6_python
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    from dsa110_continuum._compat import require_casa6_python
 
 # Use canonical angular_separation with numba→astropy fallback chain
 from dsa110_continuum.conversion.helpers_coordinates import angular_separation
