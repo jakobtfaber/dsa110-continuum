@@ -140,7 +140,7 @@ def _solve_calibration(
     """
     from dsa110_continuum.calibration.ensure import CalibrationError
     from dsa110_continuum.calibration.presets import get_preset
-    from dsa110_contimg.workflow.pipeline.stages.calibration_helpers import (
+    from dsa110_continuum.calibration.solve_orchestration import (
         solve_calibration_tables,
     )
 

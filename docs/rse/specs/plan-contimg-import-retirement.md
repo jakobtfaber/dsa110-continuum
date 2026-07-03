@@ -451,7 +451,7 @@ the mosaic no-op fallbacks; make the calibration `__init__` flip (Phase 6) safe.
 mirroring old file boundaries.
 
 **Tasks:**
-- [ ] **Failing test first** — `tests/test_workflow_registry.py` (new):
+- [x] **Failing test first** — `tests/test_workflow_registry.py` (new):
 
   ```python
   import pytest
@@ -476,18 +476,18 @@ mirroring old file boundaries.
       assert "calibration_validate" in job_registry
   ```
 
-- [ ] **Run, watch fail** (no `dsa110_continuum.workflow`; today
+- [x] **Run, watch fail** (no `dsa110_continuum.workflow`; today
       `calibration/jobs.py` doesn't even import on the Mac — `register_job` undefined at
       `jobs.py:96` after the `except: pass` at `:24`).
-- [ ] **Vendor + `workflow/__init__.py`** exporting `Job, JobResult, register_job,
+- [x] **Vendor + `workflow/__init__.py`** exporting `Job, JobResult, register_job,
       job_registry, Pipeline, register_pipeline, RetryPolicy, RetryBackoff,
       NotificationConfig, PipelineExecutor`.
-- [ ] **Flip consumers to hard imports:** `calibration/jobs.py:24`,
+- [x] **Flip consumers to hard imports:** `calibration/jobs.py:24`,
       `calibration/pipeline.py:21` → `from dsa110_continuum.workflow import ...` (no
       guard); delete the no-op fallbacks in `mosaic/jobs.py:28`, `mosaic/jobs_wsclean.py:34`,
       `mosaic/science_jobs.py:21` and their try/excepts.
-- [ ] **Run, watch pass.**
-- [ ] **Retire the Dagster bridge exec path:** in `mosaic/science_jobs.py:157-212`, replace
+- [x] **Run, watch pass.**
+- [x] **Retire the Dagster bridge exec path:** in `mosaic/science_jobs.py:157-212`, replace
       the lazy `from dsa110_contimg.workflow.dagster...` block with
 
   ```python
@@ -500,13 +500,13 @@ mirroring old file boundaries.
 
       keeping `SciencePlanningJob` intact. Update `tests/test_mosaic_import_no_dagster.py`
       expectations if it asserts on the bridge; the poison-finder guard stays valid.
-- [ ] **Commit.**
+- [x] **Commit.**
 
 **Dependencies:** Phase 2 (structured_logging may use utils exceptions/logging helpers).
 
 **Verification:**
-- [ ] `pytest tests/test_workflow_registry.py tests/test_mosaic_import_no_dagster.py -q` green.
-- [ ] Checker: `workflow.*` = 0.
+- [x] `pytest tests/test_workflow_registry.py tests/test_mosaic_import_no_dagster.py -q` green.
+- [x] Checker: `workflow.*` = 0.
 
 ### Phase 5: Vendor the database layer subset → `dsa110_continuum/database/`
 

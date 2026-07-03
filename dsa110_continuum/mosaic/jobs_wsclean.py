@@ -27,19 +27,7 @@ from pathlib import Path
 
 from astropy.time import Time
 
-try:
-    from dsa110_contimg.workflow.pipeline import Job, JobResult, register_job
-except ImportError:
-    # dsa110_contimg not installed (cloud/test env) — define no-op stubs
-    def register_job(cls):  # type: ignore[misc]
-        """No-op decorator when dsa110_contimg is unavailable."""
-        return cls
-
-    class JobResult:  # type: ignore[no-redef]
-        pass
-
-    class Job:  # type: ignore[no-redef]
-        pass
+from dsa110_continuum.workflow import Job, JobResult, register_job
 
 from .wsclean_mosaic import (
     WSCleanMosaicConfig,

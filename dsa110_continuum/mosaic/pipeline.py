@@ -16,31 +16,13 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-try:
-    from dsa110_contimg.workflow.pipeline import (
-        NotificationConfig,
-        Pipeline,
-        RetryBackoff,
-        RetryPolicy,
-        register_pipeline,
-    )
-except ImportError:
-    # dsa110_contimg not installed (cloud/test env) — define no-op stubs
-    def register_pipeline(cls):  # type: ignore[misc]
-        """No-op decorator when dsa110_contimg is unavailable."""
-        return cls
-
-    class Pipeline:  # type: ignore[no-redef]
-        pass
-
-    class RetryPolicy:  # type: ignore[no-redef]
-        pass
-
-    class RetryBackoff:  # type: ignore[no-redef]
-        pass
-
-    class NotificationConfig:  # type: ignore[no-redef]
-        pass
+from dsa110_continuum.workflow import (
+    NotificationConfig,
+    Pipeline,
+    RetryBackoff,
+    RetryPolicy,
+    register_pipeline,
+)
 
 from .jobs import (
     MosaicBuildJob,
@@ -302,7 +284,7 @@ def run_on_demand_mosaic(
     """
     import asyncio
 
-    from dsa110_contimg.workflow.pipeline import PipelineExecutor
+    from dsa110_continuum.workflow import PipelineExecutor
 
     pipeline = OnDemandMosaicPipeline(
         config=config,
@@ -444,7 +426,7 @@ async def execute_mosaic_pipeline_task(params: dict[str, Any]) -> dict[str, Any]
         dict
         Task result dict with status, outputs, and execution metadata
     """
-    from dsa110_contimg.workflow.pipeline import PipelineExecutor
+    from dsa110_continuum.workflow import PipelineExecutor
 
     # Build config
     config = MosaicPipelineConfig(
