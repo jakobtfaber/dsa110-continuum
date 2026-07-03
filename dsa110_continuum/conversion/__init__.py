@@ -35,39 +35,47 @@ Writers:
         writer.write()
 """
 
-from . import helpers_coordinates  # Make coordinate helpers accessible via the package
+from __future__ import annotations
 
-# Downsampling utilities
-from .downsample_uvh5 import (
-    downsample_uvh5,
-    get_downsampling_info,
-)
+from importlib import import_module
+from typing import Any
 
-# Flattened exports - main conversion API
-from .conversion_orchestrator import convert_subband_groups_to_ms
+_LAZY_EXPORTS = {
+    # Submodules
+    "helpers_coordinates": ".helpers_coordinates",
+    # Batch conversion
+    "convert_subband_groups_to_ms": ".conversion_orchestrator",
+    # Normalization
+    "build_subband_filename": ".normalize",
+    "normalize_directory": ".normalize",
+    "normalize_subband_on_ingest": ".normalize",
+    "normalize_subband_path": ".normalize",
+    # Writers
+    "MSWriter": ".writers",
+    "DirectSubbandWriter": ".writers",
+    "get_writer": ".writers",
+    # Downsampling
+    "downsample_uvh5": ".downsample_uvh5",
+    "get_downsampling_info": ".downsample_uvh5",
+    # Calibrator MS generation
+    "CalibratorMSGenerator": ".calibrator_ms_generator",
+    "CalibratorMSResult": ".calibrator_ms_generator",
+    "CalibratorInfo": ".calibrator_ms_generator",
+    "TransitInfo": ".calibrator_ms_generator",
+}
 
-# File normalization utilities (formerly in streaming submodule)
-from .normalize import (
-    build_subband_filename,
-    normalize_directory,
-    normalize_subband_on_ingest,
-    normalize_subband_path,
-)
 
-# Writers
-from .writers import (
-    DirectSubbandWriter,
-    MSWriter,
-    get_writer,
-)
+def __getattr__(name: str) -> Any:
+    """Lazily load conversion exports so package import stays cloud-collectable."""
+    module_name = _LAZY_EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-# Calibrator transit-based MS generation
-from .calibrator_ms_generator import (
-    CalibratorInfo,
-    CalibratorMSGenerator,
-    CalibratorMSResult,
-    TransitInfo,
-)
+    module = import_module(module_name, __name__)
+    value = module if name == "helpers_coordinates" else getattr(module, name)
+    globals()[name] = value
+    return value
+
 
 __all__ = [
     # Submodules

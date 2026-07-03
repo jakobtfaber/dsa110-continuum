@@ -1,13 +1,19 @@
-import pandas as pd
-import numpy as np
 import sys
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+pytest.importorskip("matplotlib")
+pytest.importorskip("scienceplots")
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 from plot_lightcurves import (
-    plot_source_lightcurve,
     build_summary_html,
+    plot_source_lightcurve,
 )
 
 
