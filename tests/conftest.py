@@ -10,11 +10,34 @@ so the default ``pytest tests/`` run finishes in seconds, not minutes.
 """
 from __future__ import annotations
 
+import os
 import sys
 import types
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Re-root pytest's temp tree under the current checkout (issue #47).
+
+    A hard-coded ``--basetemp=/data/dsa110-continuum/.pytest_tmp`` broke any
+    checkout not at that path and made runs from multiple checkouts share one
+    directory, so pytest's start-of-session wipe raced live runs
+    (``OSError [Errno 39] Directory not empty``) and contaminated consecutive
+    full-suite runs.
+
+    Instead, point ``PYTEST_DEBUG_TEMPROOT`` at ``<rootdir>/.pytest_tmp`` so
+    tmp_path lands on the checkout's filesystem (not tiny /tmp on H17) while
+    each run gets its own numbered ``pytest-N`` dir with pytest's built-in
+    lock-guarded, retention-based cleanup.  Explicit ``--basetemp`` or a
+    pre-set ``PYTEST_DEBUG_TEMPROOT`` still win.
+    """
+    if config.option.basetemp is None and "PYTEST_DEBUG_TEMPROOT" not in os.environ:
+        temproot = Path(config.rootpath, ".pytest_tmp")
+        temproot.mkdir(exist_ok=True)
+        os.environ["PYTEST_DEBUG_TEMPROOT"] = str(temproot)
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
