@@ -24,9 +24,18 @@ try:
     from dsa110_continuum.adapters import casa_tables as _casatables  # type: ignore
 
     table = _casatables.table  # noqa: N816
-except ImportError:
+    _CASA_TABLES_IMPORT_ERROR: ImportError | None = None
+except ImportError as _exc:
     _casatables = None
-    table = None
+    _CASA_TABLES_IMPORT_ERROR = _exc
+
+    def table(*args: Any, **kwargs: Any):  # noqa: N816
+        raise ImportError(
+            "dsa110_continuum.adapters.casa_tables is unavailable, so CASA table "
+            "access is not possible. Run inside the casa6 conda environment "
+            "(/opt/miniforge/envs/casa6/bin/python)."
+        ) from _CASA_TABLES_IMPORT_ERROR
+
 
 def _call_gaincal(**kwargs) -> None:
     """Call gaincal task via CASAService."""
