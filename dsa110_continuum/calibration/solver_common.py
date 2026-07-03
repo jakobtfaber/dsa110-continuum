@@ -36,6 +36,7 @@ except ImportError as _exc:
             "(/opt/miniforge/envs/casa6/bin/python)."
         ) from _CASA_TABLES_IMPORT_ERROR
 
+
 def _call_gaincal(**kwargs) -> None:
     """Call gaincal task via CASAService."""
     service = CASAService()
