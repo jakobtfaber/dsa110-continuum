@@ -311,6 +311,8 @@ class CalibratorMSGenerator:
         source_dec_deg: float,
         beam_radius_deg: float = 1.75,
         n_groups: int = 12,
+        transit_time: Time | None = None,
+        max_transit_offset_minutes: float = 360.0,
     ) -> list:
         """Select HDF5 groups where a source is within the primary beam.
 
@@ -329,23 +331,70 @@ class CalibratorMSGenerator:
             DSA-110 primary beam FWHM ≈ 3.5° at 1.4 GHz).
         n_groups : int
             Maximum number of groups to return.  Default 12.
+        transit_time : Time, optional
+            If given, keep only groups within ``max_transit_offset_minutes``
+            of this time.  The same RA transits every sidereal day, so
+            positional matching alone can return groups from a different
+            date than the requested transit.
+        max_transit_offset_minutes : float
+            Time-scoping tolerance around ``transit_time``.  Only needs to
+            separate transits one sidereal day (~1436 min) apart; must stay
+            well above the beam-crossing time (tens of minutes).
 
         Returns
         -------
         list
-            List of group representative timestamps (ISO format).
+            List of group representative timestamps (ISO format), ordered
+            by angular proximity to the source.
+
+        Raises
+        ------
+        ValueError
+            If ``transit_time`` is given and no positionally matched group
+            falls within the tolerance.
         """
         from dsa110_contimg.infrastructure.database.hdf5_index import (
             select_hdf5_groups_by_position,
         )
 
-        return select_hdf5_groups_by_position(
+        # The legacy selector caps to n_groups BEFORE we can time-scope, so
+        # wrong-date candidates could crowd out the requested date. When
+        # time-scoping, fetch effectively uncapped and re-apply n_groups after.
+        uncapped_n_groups = 1_000_000
+
+        groups = select_hdf5_groups_by_position(
             db_path=str(self.db_path),
             source_ra_deg=source_ra_deg,
             source_dec_deg=source_dec_deg,
             beam_radius_deg=beam_radius_deg,
-            n_groups=n_groups,
+            n_groups=n_groups if transit_time is None else uncapped_n_groups,
         )
+
+        if transit_time is None:
+            return groups
+
+        max_offset_sec = max_transit_offset_minutes * 60.0
+        scoped = [g for g in groups if abs((Time(str(g)) - transit_time).sec) <= max_offset_sec]
+
+        if not scoped:
+            raise ValueError(
+                f"{len(groups)} HDF5 group(s) match the source position "
+                f"(RA={source_ra_deg:.3f}°, Dec={source_dec_deg:.3f}°) but none "
+                f"fall within {max_transit_offset_minutes:.0f} min of the "
+                f"requested transit {transit_time.iso}. The matched groups are "
+                f"from a different transit date — refusing to select them."
+            )
+
+        if len(scoped) < len(groups):
+            logger.info(
+                "Transit-time scoping kept %d/%d positionally matched groups within %.0f min of %s",
+                len(scoped),
+                len(groups),
+                max_transit_offset_minutes,
+                transit_time.iso,
+            )
+
+        return scoped[:n_groups]
 
     def convert_groups(
         self,
@@ -490,7 +539,9 @@ class CalibratorMSGenerator:
                 transit_time_mjd=transit_time.mjd,
             )
 
-            # Select groups by spatial position (preferred for drift-scan)
+            # Select groups by spatial position (preferred for drift-scan),
+            # scoped to the requested transit so same-RA groups from other
+            # dates are never selected.
             n_groups = max(1, window_minutes // 5)
 
             groups = self.select_groups_by_position(
@@ -498,6 +549,7 @@ class CalibratorMSGenerator:
                 source_dec_deg=calibrator.dec_deg,
                 beam_radius_deg=1.75,
                 n_groups=n_groups,
+                transit_time=transit_time,
             )
 
             if not groups:
@@ -665,6 +717,7 @@ class CalibratorMSGenerator:
                 source_dec_deg=calibrator.dec_deg,
                 beam_radius_deg=1.75,
                 n_groups=n_groups,
+                transit_time=transit_time,
             )
 
             if not groups:
