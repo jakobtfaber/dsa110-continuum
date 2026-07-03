@@ -43,16 +43,6 @@ from .jobs_wsclean import (
     MosaicWSCleanBuildJob,
     MosaicWSCleanJobConfig,
 )
-from .wsclean_mosaic import (
-    WSCleanMosaicConfig,
-    WSCleanMosaicResult,
-    build_wsclean_mosaic,
-    cleanup_scratch,
-    compute_mean_meridian,
-    copy_ms_to_scratch,
-    run_chgcentre,
-    run_wsclean_mosaic,
-)
 from .orchestrator import (
     MosaicOrchestrator,
     OrchestratorConfig,
@@ -69,6 +59,13 @@ from .pipeline import (
     execute_mosaic_pipeline_task,
     run_mosaic_pipeline,
     run_on_demand_mosaic,
+)
+from .production import (
+    PB_CUTOFF,
+    build_common_wcs,
+    build_epoch_coadd,
+    coadd_tiles,
+    group_tiles_by_ra,
 )
 from .qa import (
     ArtifactResult,
@@ -102,6 +99,16 @@ from .trigger import (
     TileRecordResult,
     TriggerState,
 )
+from .wsclean_mosaic import (
+    WSCleanMosaicConfig,
+    WSCleanMosaicResult,
+    build_wsclean_mosaic,
+    cleanup_scratch,
+    compute_mean_meridian,
+    copy_ms_to_scratch,
+    run_chgcentre,
+    run_wsclean_mosaic,
+)
 
 __all__ = [
     # Tiers
@@ -114,6 +121,11 @@ __all__ = [
     "MosaicResult",
     "build_mosaic",
     "compute_rms",
+    "PB_CUTOFF",
+    "build_common_wcs",
+    "build_epoch_coadd",
+    "coadd_tiles",
+    "group_tiles_by_ra",
     # WSClean (visibility-domain - preferred)
     "WSCleanMosaicConfig",
     "WSCleanMosaicResult",
