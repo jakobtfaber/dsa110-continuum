@@ -54,10 +54,10 @@ Each entry that names a code-level fact ends with a citation in `<path>::<Symbol
 
 ## Mosaicking
 
-- **Quicklook** — image-domain mosaic on pre-deconvolved tile FITS; nearest-neighbour regridding, weighted coadd with `weight = w_rms × w_PB²` (Airy-disk primary beam, dish diameter 4.65 m). Pixels below 10% peak beam response blanked. Fast (`dsa110_continuum/mosaic/builder.py::build_mosaic`; see `docs/reference/mosaicking.md` for parameters).
+- **Quicklook** — image-domain mosaic on pre-deconvolved tile FITS. The package builder does nearest-neighbour regridding and PB-weighted coadd from an analytic Airy-disk model; the production day-batch path additionally blanks pixels where WSClean's per-tile beam map is below 20% of peak response. ADR 0001 makes the package the canonical home for the production hourly-epoch coadd by absorbing that production behavior, not by treating the 10% PB-correction floor as default coadd blanking (`dsa110_continuum/mosaic/builder.py::build_mosaic`; `scripts/mosaic_day.py::PB_CUTOFF`).
 - **Science / Deep** — visibility-domain joint deconvolution: all tile MS files phaseshifted to a common centre and jointly imaged with WSClean+IDG using `-grid-with-beam` for direction-dependent beam correction. Slower; scientifically correct for wide fields (see `docs/reference/mosaicking.md`).
 - **RA-wrap (circular mean)** — when tiles span 0° RA, the mosaic centre is computed as `arctan2(mean(sin(RA)), mean(cos(RA)))` rather than arithmetic mean. Fixes the bug where a [350°, 5°, 10°] tile set centred at 121.7° instead of 1.7° (`dsa110_continuum/mosaic/builder.py::build_mosaic`).
-- **Coadd** — combine reprojected tiles into a single mosaic FITS. Uses `reproject.reproject_interp` per tile (full-grid; optimisation deferred) (`dsa110_continuum/mosaic/builder.py::build_mosaic`).
+- **Coadd** — combine regridded tile images into a single mosaic FITS. The canonical hourly-epoch coadd is moving into `dsa110_continuum.mosaic` while preserving production batch semantics for beam-map blanking and strip grouping (`dsa110_continuum/mosaic/builder.py::build_mosaic`; `scripts/mosaic_day.py::coadd_tiles`).
 - **Strip grouping** (legacy day-batch) — `scripts/mosaic_day.py::group_tiles_by_ra` partitions a day's tiles into contiguous RA strips with a 10° gap threshold. Used by the per-day batch path; the streaming path does not partition (it produces sliding-window mosaics directly).
 
 ## Photometry and variability
