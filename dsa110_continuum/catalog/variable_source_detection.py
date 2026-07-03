@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 try:
-    from dsa110_contimg.common.unified_config import settings
+    from dsa110_continuum.unified_config import settings
 except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)
 

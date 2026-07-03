@@ -77,7 +77,7 @@ from dsa110_continuum.imaging.cli_utils import default_cell_arcsec, detect_datac
 from dsa110_continuum.imaging.fov import derive_extent_deg  # noqa: E402
 
 try:
-    from dsa110_contimg.common.unified_config import settings  # noqa: E402
+    from dsa110_continuum.unified_config import settings  # noqa: E402
     from dsa110_continuum.utils.error_context import (
         format_ms_error_with_suggestions,  # noqa: E402
     )
@@ -840,7 +840,7 @@ def image_ms(
     # Prepare temp dirs and working directory to keep TempLattice* off the repo
     try:
         if prepare_temp_environment is not None:
-            from dsa110_contimg.common.unified_config import settings
+            from dsa110_continuum.unified_config import settings
 
             out_dir = os.path.dirname(os.path.abspath(imagename))
             root = os.getenv("CONTIMG_TMPFS_DIR") or str(settings.paths.tmpfs_dir)

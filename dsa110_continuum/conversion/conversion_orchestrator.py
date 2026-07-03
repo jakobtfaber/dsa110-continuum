@@ -21,7 +21,7 @@ import numpy as np
 import pyuvdata
 
 try:
-    from dsa110_contimg.common.unified_config import settings
+    from dsa110_continuum.unified_config import settings
     from dsa110_continuum.utils import FastMeta, timed, timed_debug
     from dsa110_continuum.utils.antpos_local import get_itrf
     from dsa110_continuum.utils.exceptions import (

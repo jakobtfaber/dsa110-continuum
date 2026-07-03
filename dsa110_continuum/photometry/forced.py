@@ -29,7 +29,7 @@ from astropy.wcs import WCS  # type: ignore[reportMissingTypeStubs]
 from astropy.wcs.utils import proj_plane_pixel_scales
 
 try:
-    from dsa110_contimg.common.unified_config import settings
+    from dsa110_continuum.unified_config import settings
     from dsa110_continuum.utils.gpu_utils import get_array_module
 except ImportError:
     # dsa110_contimg not installed (cloud/test env). Keep this module usable

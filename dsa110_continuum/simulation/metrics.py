@@ -45,7 +45,7 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 
 try:
-    from dsa110_contimg.common.unified_config import settings
+    from dsa110_continuum.unified_config import settings
     from dsa110_continuum.utils.gpu_utils import get_array_module
 except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)

@@ -21,6 +21,15 @@ PHASE1_MODULES = [
     "dsa110_continuum.imaging.fov",
 ]
 
+PHASE3_MODULES = [
+    "dsa110_continuum.calibration.rfi_adaptive_thresholds",
+    "dsa110_continuum.catalog.flux_monitoring",
+    "dsa110_continuum.catalog.spectral_index",
+    "dsa110_continuum.catalog.variable_source_detection",
+    "dsa110_continuum.unified_config",
+]
+PHASE1_MODULES += PHASE3_MODULES
+
 
 @pytest.mark.parametrize("mod", PHASE1_MODULES)
 def test_module_imports_without_legacy_package(mod):

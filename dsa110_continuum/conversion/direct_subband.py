@@ -224,7 +224,7 @@ class DirectSubbandWriter(MSWriter):
                 base_dir = ms_final_path.parent
             else:
                 # Fallback to configured global staging directory instead of CWD
-                from dsa110_contimg.common.unified_config import get_config
+                from dsa110_continuum.unified_config import get_config
 
                 base_dir = get_config().paths.staging_dir
 
@@ -466,7 +466,7 @@ class DirectSubbandWriter(MSWriter):
                     ms_dir = ms_stage_path.parent
                 else:
                     # Fallback to configured global staging directory instead of CWD
-                    from dsa110_contimg.common.unified_config import get_config
+                    from dsa110_continuum.unified_config import get_config
 
                     ms_dir = get_config().paths.staging_dir
 

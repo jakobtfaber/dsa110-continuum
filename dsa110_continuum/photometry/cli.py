@@ -73,7 +73,7 @@ def _get_pipeline_db_path(cli_arg: str | None = None) -> Path:
 
     # Try centralized settings
     try:
-        from dsa110_contimg.common.unified_config import get_settings
+        from dsa110_continuum.unified_config import get_settings
 
         settings = get_settings()
         if hasattr(settings, "database") and hasattr(settings.database, "path"):
