@@ -567,7 +567,7 @@ keep with its sole consumer's import style).
 **Objective:** `core.*` → 0; `interfaces.*` → 0; bare refs → 0.
 
 **Tasks:**
-- [ ] **Failing test first** — `tests/test_init_reexports_new_namespace.py` (new):
+- [x] **Failing test first** — `tests/test_init_reexports_new_namespace.py` (new):
 
   ```python
   import importlib, pytest
@@ -587,9 +587,9 @@ keep with its sole consumer's import style).
       assert not missing, f"{pkg}: unresolved __all__ entries {missing}"
   ```
 
-- [ ] **Run, watch fail** (today, on the Mac, many `__all__` names are absent because the
+- [x] **Run, watch fail** (today, on the Mac, many `__all__` names are absent because the
       old-path try-blocks silently passed).
-- [ ] **Flip each `__init__.py`** to relative imports of the existing siblings —
+- [x] **Flip each `__init__.py`** to relative imports of the existing siblings —
       e.g. `calibration/__init__.py:145` block becomes `from .jobs import CalibrationSolveJob,
       CalibrationApplyJob, CalibrationValidateJob` and `from .pipeline import ...` (safe now:
       Phase 4 gave them their own registry); `photometry/__init__.py:4-48` →
@@ -597,7 +597,7 @@ keep with its sole consumer's import style).
       symbols) → relative siblings; `simulation/__init__.py` old lines `:35-120` → relative;
       keep genuinely-optional guards only where the *new* module has heavy deps (matplotlib,
       pyuvdata) — mirror each package's existing soft-import style for those.
-- [ ] **Interfaces sites:** `photometry/manager.py:25` + `photometry/worker.py:13` →
+- [x] **Interfaces sites:** `photometry/manager.py:25` + `photometry/worker.py:13` →
       replace legacy batch-API calls with
 
   ```python
@@ -612,24 +612,34 @@ keep with its sole consumer's import style).
       if `pipeline_hooks` actually calls it (read at implementation; if unused at runtime,
       delete the import and the dependent branch); `validation/package_health.py:239` →
       probe `dsa110_continuum` CLI absence gracefully (drop the old-CLI probe).
-- [ ] **Bare refs:** `validation/package_health.py:84,145-153` — probe list becomes new
+- [x] **Bare refs:** `validation/package_health.py:84,145-153` — probe list becomes new
       modules (`dsa110_continuum.config`, `.workflow.registry`, `.database.unified`,
       `.utils`, …); `visualization/report.py:62` → `from dsa110_continuum import __version__`
       (add `__version__ = "0.x.y"` to `dsa110_continuum/__init__.py` if absent, sourced from
       `importlib.metadata` with fallback).
-- [ ] **Cosmetics with runtime effect:** 6 logger namespaces
+- [x] **Cosmetics with runtime effect:** 6 logger namespaces (7 including
+      `utils/paths/utils.py` `tmp_policy`) renamed. *Deviation:* `catalogs.py` /
+      `make_synthetic_uvh5.py` disk-layout probes left as harmless legacy-layout
+      fallbacks — no `state/` tree exists in the new repo, and the `CONTIMG_BASE_DIR`
+      env candidate already targets the live H17 catalog data. *Deviation (no-op):*
+      the smoke-script provenance check at `:380` already accepts the new namespace
+      (default owner `dsa110_continuum.config.PathConfig`) and deliberately flags
+      legacy ownership — left intact. Original text:
       `getLogger("dsa110_contimg.conversion.helpers")` → `"dsa110_continuum.conversion..."`
       (`conversion/helpers*.py`, 6 files); `calibration/catalogs.py` 7 path probes and
       `simulation/make_synthetic_uvh5.py:51` — keep the old path probes as *fallback* disk
       locations (they point at real H17 catalog data dirs) but add the new-repo path first;
       `evidence/hdf5_calibrator_tile_smoke.py:380` provenance string check — accept both.
-- [ ] **Run, watch pass; commit per package.**
+- [x] **Run, watch pass; commit per package.** (Committed as one Phase 6 commit
+      `871c4b1` — the nine flips + interfaces + stragglers are interdependent
+      through the shared reexports test.)
 
 **Dependencies:** Phases 2–5 complete.
 
 **Verification:**
-- [ ] `pytest tests/test_init_reexports_new_namespace.py -q` green on the Mac.
-- [ ] Checker: `core.*` = 0, `interfaces.*` = 0, bare = 0 → **total = 0**.
+- [x] `pytest tests/test_init_reexports_new_namespace.py -q` green on the Mac (9/9).
+- [x] Checker: `core.*` = 0, `interfaces.*` = 0, bare = 0 → **total = 0**. Full suite:
+      8 failed = pre-existing baseline, 1078 passed.
 
 ### Phase 7: Delete the interop machinery
 
