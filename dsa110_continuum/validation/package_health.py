@@ -21,10 +21,7 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
-try:
-    from dsa110_contimg.common.utils import get_env_path
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.config import get_env_path
 
 
 # ANSI color codes

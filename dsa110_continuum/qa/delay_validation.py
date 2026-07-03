@@ -411,7 +411,7 @@ def check_delay_solutions(
     logger.info(str(result))
 
     if not result.is_valid and raise_on_failure:
-        from dsa110_contimg.common.utils.exceptions import CalibrationError
+        from dsa110_continuum.calibration.ensure import CalibrationError
 
         msg = (
             f"Delay calibration validation failed for {caltable_path}:\n"

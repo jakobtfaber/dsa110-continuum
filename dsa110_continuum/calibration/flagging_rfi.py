@@ -14,11 +14,7 @@ from pathlib import Path
 
 from dsa110_continuum._lazy_init import require_headless
 
-try:
-    from dsa110_contimg.common.utils import get_env_path
-except ImportError:
-    def get_env_path(name: str, default: str) -> Path:
-        return Path(os.environ.get(name, default))
+from dsa110_continuum.config import get_env_path
 
 try:
     from dsa110_contimg.common.utils.error_context import format_ms_error_with_suggestions

@@ -32,11 +32,11 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 def _default_telescope_path() -> Path:
     """Return packaged telescope YAML path."""
-    return Path(resources.files("dsa110_contimg.simulation.pyuvsim") / "telescope.yaml")
+    return Path(resources.files("dsa110_continuum.simulation.pyuvsim") / "telescope.yaml")
 
 
 def _default_beam_path() -> Path:
-    return Path(resources.files("dsa110_contimg.simulation.pyuvsim") / "beams.yaml")
+    return Path(resources.files("dsa110_continuum.simulation.pyuvsim") / "beams.yaml")
 
 
 def derive_extent_deg() -> float:

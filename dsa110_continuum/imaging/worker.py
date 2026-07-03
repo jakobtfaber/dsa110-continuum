@@ -329,7 +329,6 @@ def _submit_imaging_tasks(
     """
     # Lazy import to avoid triggering casatools auto-update at module import time
     from dsa110_continuum.imaging.cli import image_ms
-    from dsa110_contimg.core.imaging.fast_imaging import run_fast_imaging
 
     # Configure catalog masking parameters for image_ms
     # The image_ms function already has built-in catalog masking support
@@ -364,15 +363,6 @@ def _submit_imaging_tasks(
         **imaging_kwargs,
     )
 
-    future_fast = executor.submit(
-        run_fast_imaging,
-        ms_path,
-        interval_seconds=None,
-        threshold_sigma=6.0,
-        datacolumn="CORRECTED_DATA",
-        work_dir=str(out_dir),
-    )
-
     future_gpu = None
     if use_gpu and GPU_GRIDDING_AVAILABLE:
         future_gpu = executor.submit(
@@ -383,10 +373,10 @@ def _submit_imaging_tasks(
             cell_size_arcsec=12.0,
         )
 
-    return future_deep, future_fast, future_gpu
+    return future_deep, future_gpu
 
 
-def _wait_for_imaging_results(future_deep, future_fast, future_gpu, artifacts: list[str]) -> None:
+def _wait_for_imaging_results(future_deep, future_gpu, artifacts: list[str]) -> None:
     """Wait for imaging futures and collect results."""
     # Deep imaging is critical
     try:
@@ -394,12 +384,6 @@ def _wait_for_imaging_results(future_deep, future_fast, future_gpu, artifacts: l
     except (RuntimeError, OSError, ValueError) as e:
         logger.error("Deep imaging failed: %s", e)
         raise
-
-    # Fast imaging is auxiliary
-    try:
-        future_fast.result()
-    except Exception as e:
-        logger.warning("Fast imaging failed (non-fatal): %s", e)
 
     # GPU dirty image is auxiliary
     if future_gpu is not None:
@@ -455,7 +439,7 @@ def _apply_and_image(
         imgroot = out_dir / (Path(ms_path).stem + ".img")
 
         with ThreadPoolExecutor(max_workers=3) as executor:
-            future_deep, future_fast, future_gpu = _submit_imaging_tasks(
+            future_deep, future_gpu = _submit_imaging_tasks(
                 executor,
                 ms_path,
                 imgroot,
@@ -466,7 +450,7 @@ def _apply_and_image(
                 catalog_min_flux_mjy=catalog_min_flux_mjy,
                 catalog_mask_radius_arcsec=catalog_mask_radius_arcsec,
             )
-            _wait_for_imaging_results(future_deep, future_fast, future_gpu, artifacts)
+            _wait_for_imaging_results(future_deep, future_gpu, artifacts)
 
         # Collect CASA artifacts
         for ext in [".image", ".image.pbcor", ".residual", ".psf", ".pb"]:

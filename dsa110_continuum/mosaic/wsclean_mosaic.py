@@ -138,7 +138,7 @@ def _solve_calibration(
     CalibrationError
         If calibration solve fails.
     """
-    from dsa110_contimg.common.utils.exceptions import CalibrationError
+    from dsa110_continuum.calibration.ensure import CalibrationError
     from dsa110_continuum.calibration.presets import get_preset
     from dsa110_contimg.workflow.pipeline.stages.calibration_helpers import (
         solve_calibration_tables,
@@ -212,7 +212,7 @@ def _apply_to_mosaic_copies(
     CalibrationError
         If calibration apply fails for any MS.
     """
-    from dsa110_contimg.common.utils.exceptions import CalibrationError
+    from dsa110_continuum.calibration.ensure import CalibrationError
     from dsa110_continuum.calibration.applycal import apply_to_target
 
     logger.info(f"Applying calibration to {len(mosaic_copies)} mosaic copies")
