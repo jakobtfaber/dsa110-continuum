@@ -154,12 +154,12 @@ dsa110-validate = "dsa110_contimg.validation.package_health:main"
 where = ["."]
 
 [tool.pytest.ini_options]
-# pytest temp dirs are re-rooted under <rootdir>/.pytest_tmp/uid-<uid> by
-# tests/conftest.py (PYTEST_DEBUG_TEMPROOT), keeping large tmp_path output on
-# the checkout's filesystem (not tiny /tmp on H17) while avoiding stale
-# root-owned pytest temp dirs and staying per-checkout. Do NOT pin an absolute
-# --basetemp here: a shared path breaks checkouts/worktrees and races on cleanup
-# (issue #47).
+# pytest temp dirs are re-rooted under
+# <rootdir>/.pytest_tmp/uid-<uid>/run-<pid> by tests/conftest.py, keeping large
+# tmp_path output on the checkout's filesystem (not tiny /tmp on H17) while
+# avoiding stale root-owned pytest temp dirs and staying per-run/per-checkout.
+# Do NOT pin an absolute --basetemp here: a shared path breaks
+# checkouts/worktrees and races on cleanup (issue #47).
 testpaths = ["tests"]
 norecursedirs = [".git", ".hypothesis", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", "node_modules", ".idea", ".vscode", "dist", "build", ".tox", ".eggs", "*.egg", ".archive", ".stale", "manual"]
 python_files = ["test_*.py"]

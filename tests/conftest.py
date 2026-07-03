@@ -28,19 +28,26 @@ def pytest_configure(config: pytest.Config) -> None:
     (``OSError [Errno 39] Directory not empty``) and contaminated consecutive
     full-suite runs.
 
-    Instead, point ``PYTEST_DEBUG_TEMPROOT`` at
-    ``<rootdir>/.pytest_tmp/uid-<uid>`` so tmp_path lands on the checkout's
-    filesystem (not tiny /tmp on H17) while avoiding stale root-owned
-    ``pytest-of-<user>`` directories from previous runs.  Each run still gets
-    its own numbered ``pytest-N`` dir with pytest's built-in lock-guarded,
-    retention-based cleanup.  Explicit ``--basetemp`` or a pre-set
-    ``PYTEST_DEBUG_TEMPROOT`` still win.
+    Instead, set pytest's explicit ``basetemp`` to a per-process path under
+    ``<rootdir>/.pytest_tmp/uid-<uid>``.  This keeps tmp_path output on the
+    checkout's filesystem (not tiny /tmp on H17), avoids the shared
+    ``pytest-of-<user>`` owner check that fails on H17's root-owned /data
+    mount, and prevents consecutive/concurrent runs from wiping each other's
+    temp trees.  An explicit user-provided ``--basetemp`` still wins.
     """
-    if config.option.basetemp is None and "PYTEST_DEBUG_TEMPROOT" not in os.environ:
+    if config.option.basetemp is None:
         uid = getattr(os, "getuid", lambda: "unknown")()
-        temproot = Path(config.rootpath, ".pytest_tmp", f"uid-{uid}")
-        temproot.mkdir(parents=True, exist_ok=True)
-        os.environ["PYTEST_DEBUG_TEMPROOT"] = str(temproot)
+        basetemp = Path(config.rootpath, ".pytest_tmp", f"uid-{uid}", f"run-{os.getpid()}")
+        basetemp.parent.mkdir(parents=True, exist_ok=True)
+        config.option.basetemp = str(basetemp)
+
+        tmp_path_factory = getattr(config, "_tmp_path_factory", None)
+        if (
+            tmp_path_factory is not None
+            and tmp_path_factory._given_basetemp is None
+            and tmp_path_factory._basetemp is None
+        ):
+            tmp_path_factory._given_basetemp = basetemp
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
