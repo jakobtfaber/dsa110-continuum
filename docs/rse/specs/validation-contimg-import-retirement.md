@@ -5,9 +5,11 @@
 > (branch `agent/contimg-import-retirement`, PR
 > [dsa110/dsa110-continuum#93](https://github.com/dsa110/dsa110-continuum/pull/93))
 > on 2026-07-03. All command output below was produced fresh by the validator
-> in this session; H17 results were produced at `cdd0eaa`, whose diff to
-> `aaa721c` is docs-only (`git diff --stat cdd0eaa..HEAD` → 2 files, both under
-> `docs/rse/specs/`), with the co-load proof re-run fresh at validation time.
+> in this session. **Correction (post-merge, §6):** the H17 review-worktree
+> runs cited in §2 exercised `487e342` (end-of-Phase-7) content, not
+> `cdd0eaa` as originally stated — the second bundle fetch advanced the
+> branch ref without refreshing the checkout. The gap is closed by a fresh
+> full-suite run at the merge commit `baef485` on H17 main (§6).
 
 **Verdict: ✅ PASS** — every automated success criterion met with fresh
 evidence; zero regressions (the 8 Mac-baseline failures reproduce identically
@@ -61,10 +63,11 @@ in-place (checker hard mode was already default since Phase 0).
   (revalidation)` (old `dsa110_contimg` bootstrap + new
   `dsa110_continuum.calibration` + `calibration_solve` in the vendored
   registry, one process).
-- ✅ H17 casa6 full suite (`/tmp/contimg-migration-validate` @ `cdd0eaa`,
-  `PYTHONPATH` mode) — 1228 collected, **no `.pytest_cache/v/cache/lastfailed`
-  file ⇒ 0 failures** (plan bar: ≥ 1168 passed). Code content identical to
-  `aaa721c` (docs-only diff).
+- ✅ H17 casa6 full suite (review worktree, `PYTHONPATH` mode) — 1228
+  collected, **no `.pytest_cache/v/cache/lastfailed` file ⇒ 0 failures**
+  (plan bar: ≥ 1168 passed). ⚠️ Corrected: this run exercised `487e342`
+  content, not `cdd0eaa` (see §6) — superseded by the post-merge run at
+  `baef485` in §6, which is the authoritative H17 suite result.
 - ✅ H17 `scripts/batch_pipeline.py --date 2026-01-25 --start-hour 22
   --end-hour 23 --dry-run --quarantine-after-failures 3` — `EXIT=0`, full
   execution plan (11 tiles, BP/G tables `[exists]`, Dec 16.128°, resume plan,
@@ -125,12 +128,19 @@ documented in CLAUDE.md.
 - [x] Confirm `dsa110 index add …` on H17 still works via the old install
   (this repo no longer ships the `dsa110` entry point).
   **Executed on H17 2026-07-03 — PASS (see §4a).**
-- [ ] Approve deleting the obsolete `.pth` shim from cloud-VM images
+- [x] Approve deleting the obsolete `.pth` shim from cloud-VM images
   (`~/.local/lib/python3.12/site-packages/dsa110_contimg_shim.py` + loader).
+  **Approved by user and executed 2026-07-03 — shim found NOWHERE (§6):
+  h17/h23/calibration/dsacamera all clean; digocean and jakobtfaber-ai
+  unreachable (apparently decommissioned); no repo provisioning installs it,
+  so ephemeral cloud VMs are born clean. Nothing to delete.**
 - [x] Check no deploy tooling pins the old dist name `dsa110_contimg`.
   **Executed on H17 2026-07-03 — PASS (see §4a).**
-- [ ] Merge decision on PR #93; after merge, remove the H17 review worktree:
+- [x] Merge decision on PR #93; after merge, remove the H17 review worktree:
   `cd /data/dsa110-continuum && git worktree remove /tmp/contimg-migration-validate`.
+  **Merged 2026-07-04T00:38Z as `baef485` (merge commit, repo convention);
+  worktree removed, H17 branch + bundle cleaned, H17 main fast-forwarded to
+  `baef485` (§6).**
 
 ### 4a. H17 execution evidence (items 1, 2, 4 — run 2026-07-03)
 
@@ -202,9 +212,56 @@ documented in CLAUDE.md.
   against future guard-swallowed circular imports.
 
 **Follow-Up:**
-- Delete the cloud-VM `.pth` shim (manual item 3).
-- After merge, retire the H17 temp worktree and the fetched branch ref in
-  `/data/dsa110-continuum` per normal lane hygiene.
+- ~~Delete the cloud-VM `.pth` shim (manual item 3)~~ — done 2026-07-03:
+  shim absent on every reachable host; nothing provisions it (§6).
+- ~~After merge, retire the H17 temp worktree and the fetched branch ref~~ —
+  done 2026-07-03 (§6).
+
+## 6. Post-merge addendum (2026-07-03/04)
+
+PR #93 merged as `baef485` (2026-07-04T00:38Z). During post-merge worktree
+removal, the validator discovered a provenance error in this report's H17
+evidence and corrected it:
+
+**Worktree content mismatch (correction).** `git worktree remove` refused on
+"modified files"; the staged diff *reverted* the `qa_compare.py`
+circular-import fix — proof the checkout was older than its `cdd0eaa` HEAD.
+Reflog + timestamps confirm: the worktree was created 13:06:14 PDT from the
+first bundle (tip `487e342`); `cdd0eaa` was committed 13:07:19 PDT and the
+second bundle fetch fast-forwarded the branch ref in place without refreshing
+the checkout (`fetch … -f: fast-forward` in the branch reflog); pytest cache
+written 13:11:35 PDT. Therefore every H17 run in that worktree (1228-test
+suite, co-load revalidation, batch dry-run) exercised **`487e342`**
+(end-of-Phase-7) content. The Phase-8 tail deltas never exercised on casa6
+were: the `qa_compare.py` function-scope-import fix, `calibration/__init__.py`
+export additions, `utils/logging/pipeline.py` category-mapping rewrite,
+`pyproject.toml` packaging rename, `scripts/check_import_migration.py` tweak,
+CI workflow, and docstring touches — each already machine-verified on Mac
+(full suite, 12× permutation sweep) and GitHub CI at `aaa721c`.
+
+**Gap closure — authoritative H17 suite at the merge commit.** H17
+`/data/dsa110-continuum` main fast-forwarded `82e3d96` → `baef485` (clean;
+untracked `.emdash/` separate lane preserved) and the full casa6 suite re-run
+there: **`1226 passed, 2 skipped` (0 failed) in 771.64 s** (12:51) —
+`/opt/miniforge/envs/casa6/bin/python -m pytest tests/ -q` with
+`PYTHONPATH=/data/dsa110-continuum`, log `/tmp/pytest-baef485.log` on H17.
+This exceeds the plan bar (≥ 1168 passed) at the exact merged SHA, on the
+production casa6 environment, covering every Phase-8 tail delta.
+
+**Shim sweep (manual item 3, executed).** Probed every reachable host for
+`dsa110_contimg_shim.py` / its `.pth` loader under `~/.local/lib/python*/…`:
+h17 (full `find` across all python versions), h23, calibration, dsacamera —
+**absent everywhere**. digocean (144.126.219.142) timed out and
+jakobtfaber-ai (tailnet) refused connections — both apparently
+decommissioned. Repo-side grep: no provisioning (no `.cursor/environment.json`,
+no Dockerfile) installs the shim, so fresh/ephemeral cloud VMs are born
+clean. Result: nothing to delete; the follow-up is closed by absence.
+
+**Lane cleanup.** H17: review worktree force-removed (content proven to be
+the `487e342` checkout — nothing unique), `agent/contimg-import-retirement`
+branch deleted (`git branch -d` succeeded ⇒ merged), `/tmp/contimg-retirement.bundle`
+removed. Mac: local branch deleted (`-d`, merged). Preserved separate lanes on
+H17: `.emdash/` worktree and two `.windsurf` worktrees (not this task's).
 
 ## References
 
