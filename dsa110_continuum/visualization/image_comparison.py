@@ -614,7 +614,7 @@ def compare_fits_images(
         Tuple of (Figure, metrics_dict)
 
     """
-    from dsa110_contimg.common.utils.fits_utils import get_2d_data_and_wcs
+    from dsa110_continuum.utils.fits_utils import get_2d_data_and_wcs
 
     fits_path1 = Path(fits_path1)
     fits_path2 = Path(fits_path2)

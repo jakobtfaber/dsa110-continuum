@@ -24,7 +24,7 @@ visibility simulation. pyuvsim provides:
 - MPI parallelization for large simulations
 
 To use pyuvsim for visibility generation:
-    >>> from dsa110_contimg.core.simulation import simulate_visibilities
+    >>> from dsa110_continuum.simulation import simulate_visibilities
     >>> uvdata_sim = simulate_visibilities(uvdata, sources)
 
 """
@@ -32,16 +32,16 @@ To use pyuvsim for visibility generation:
 # Time-domain simulation
 # Ground truth tracking
 try:
-    from dsa110_contimg.core.simulation.ground_truth import (
+    from dsa110_continuum.simulation.ground_truth import (
         GroundTruthRegistry,
         GroundTruthSource,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Metrics
 try:
-    from dsa110_contimg.core.simulation.metrics import (
+    from dsa110_continuum.simulation.metrics import (
         astrometric_offset,
         compute_variability_metrics,
         detection_completeness,
@@ -51,17 +51,17 @@ try:
         mean_absolute_percentage_error,
         rms_flux_error,
     )
-    from dsa110_contimg.core.simulation.time_domain import (
+    from dsa110_continuum.simulation.time_domain import (
         EpochData,
         MultiEpochResult,
         generate_multi_epoch_uvh5,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Validation
 try:
-    from dsa110_contimg.core.simulation.validation import (
+    from dsa110_continuum.simulation.validation import (
         ValidationReport,
         validate_all,
         validate_ese_detection,
@@ -69,11 +69,11 @@ try:
         validate_photometry,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Variability models
 try:
-    from dsa110_contimg.core.simulation.variability_models import (
+    from dsa110_continuum.simulation.variability_models import (
         ConstantFlux,
         ESEScattering,
         FlareModel,
@@ -83,23 +83,51 @@ try:
         create_variability_model,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
-# pyuvsim integration for accurate visibility simulation
+# pyuvsim integration for accurate visibility simulation (genuinely optional:
+# requires pyuvdata/pyuvsim/pyradiosky; __all__ gains these names only when
+# the stack is installed)
+_PYUVSIM_EXPORTS = [
+    "check_mpi_available",
+    "check_pyuvsim_available",
+    "create_dsa110_beam",
+    "simulate_visibilities",
+    "sources_to_skymodel",
+]
 try:
-    from dsa110_contimg.core.simulation.pyuvsim_adapter import (
-        check_mpi_available,
-        check_pyuvsim_available,
-        create_dsa110_beam,
-        simulate_visibilities,
-        sources_to_skymodel,
+    # noqa comments: names join __all__ only via the conditional append below,
+    # which ruff cannot see statically
+    from dsa110_continuum.simulation.pyuvsim_adapter import (
+        check_mpi_available,  # noqa: F401
+        check_pyuvsim_available,  # noqa: F401
+        create_dsa110_beam,  # noqa: F401
+        simulate_visibilities,  # noqa: F401
+        sources_to_skymodel,  # noqa: F401
     )
+
+    _HAVE_PYUVSIM_ADAPTER = True
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    _HAVE_PYUVSIM_ADAPTER = False
+
+# Caskade-based simulation control DAG (optional; requires `pip install caskade`)
+from dsa110_continuum.simulation.control import (
+    ConstantFluxModule,
+    ESEScatteringModule,
+    FlareModule,
+    GainCorruptionModule,
+    PeriodicVariationModule,
+    SimulationControl,
+    ThermalNoiseModule,
+    VariabilityModule,
+    create_variability_module,
+    from_legacy,
+    to_legacy,
+)
 
 # Configuration and constants
 try:
-    from dsa110_contimg.core.simulation.simulation_config import (
+    from dsa110_continuum.simulation.simulation_config import (
         DSA110_CHANNEL_WIDTH_HZ,
         DSA110_CHANNELS_PER_SUBBAND,
         DSA110_FREQ_MAX_HZ,
@@ -118,7 +146,7 @@ try:
         get_test_config,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 __all__ = [
     # Configuration
@@ -151,6 +179,18 @@ __all__ = [
     "PeriodicVariation",
     "compute_flux_at_time",
     "create_variability_model",
+    # Caskade control DAG (available when caskade is installed)
+    "VariabilityModule",
+    "ConstantFluxModule",
+    "FlareModule",
+    "ESEScatteringModule",
+    "PeriodicVariationModule",
+    "GainCorruptionModule",
+    "ThermalNoiseModule",
+    "SimulationControl",
+    "create_variability_module",
+    "from_legacy",
+    "to_legacy",
     # Ground truth
     "GroundTruthSource",
     "GroundTruthRegistry",
@@ -169,10 +209,8 @@ __all__ = [
     "mean_absolute_percentage_error",
     "compute_variability_metrics",
     "match_sources_by_position",
-    # pyuvsim integration
-    "simulate_visibilities",
-    "sources_to_skymodel",
-    "create_dsa110_beam",
-    "check_pyuvsim_available",
-    "check_mpi_available",
 ]
+
+# pyuvsim integration (only when the optional stack imported above)
+if _HAVE_PYUVSIM_ADAPTER:
+    __all__ += _PYUVSIM_EXPORTS

@@ -27,41 +27,25 @@ from pathlib import Path
 
 import numpy as np
 
-try:
-    from dsa110_contimg.infrastructure.database import (
-        ensure_pipeline_db,
-        get_active_applylist,
-        images_insert,
-        ms_index_upsert,
-    )
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.database import (
+    ensure_pipeline_db,
+    get_active_applylist,
+    images_insert,
+    ms_index_upsert,
+)
 from dsa110_continuum._lazy_init import require_gpu_safety
-try:
-    from dsa110_contimg.common.utils.gpu_safety import (
-        check_gpu_memory_available,
-        gpu_safe,
-        is_gpu_available,
-        memory_safe,
-    )
-except ImportError:
-    # Fall back to centralized stubs that match the contimg signatures so
-    # ``gpu_ok, reason = check_gpu_memory_available(...)`` keeps unpacking.
-    from dsa110_continuum._compat import (
-        check_gpu_memory_available,
-        gpu_safe,
-        is_gpu_available,
-        memory_safe,
-    )
+from dsa110_continuum.utils.gpu_safety import (
+    check_gpu_memory_available,
+    gpu_safe,
+    is_gpu_available,
+    memory_safe,
+)
 from dsa110_continuum.conversion.ms_utils import (
     inject_provenance_metadata,
 )
-try:
-    from dsa110_contimg.infrastructure.tracking.provenance import (
-        ProvenanceTracker,
-    )
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.database.tracking import (
+    ProvenanceTracker,
+)
 
 logger = logging.getLogger("imaging_worker")
 
@@ -81,7 +65,7 @@ except ImportError:
     GriddingConfig = None  # type: ignore[assignment,misc]
 
 try:
-    from dsa110_contimg.common.utils.run_isolation import prepare_temp_environment
+    from dsa110_continuum.utils.run_isolation import prepare_temp_environment
 except ImportError:  # pragma: no cover
     prepare_temp_environment = None  # type: ignore[assignment]
 
@@ -97,7 +81,7 @@ def setup_logging(level: str) -> None:
 
 def _get_wavelength_from_ms(ms_path: str) -> float:
     """Get wavelength from MS SPECTRAL_WINDOW table."""
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
     from dsa110_continuum.adapters import casa_tables as casatables
@@ -147,7 +131,7 @@ def _read_ms_visibilities(
     datacolumn: str = "CORRECTED_DATA",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Read visibilities from MS for GPU gridding."""
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
     from dsa110_continuum.adapters import casa_tables as casatables
@@ -282,7 +266,7 @@ def _setup_temp_environment(out_dir: Path) -> None:
     """Set up temp environment for imaging."""
     try:
         if prepare_temp_environment is not None:
-            from dsa110_contimg.common.utils.paths import resolve_paths
+            from dsa110_continuum.utils.paths import resolve_paths
 
             prepare_temp_environment(
                 str(resolve_paths().tmpfs_dir),
@@ -329,7 +313,6 @@ def _submit_imaging_tasks(
     """
     # Lazy import to avoid triggering casatools auto-update at module import time
     from dsa110_continuum.imaging.cli import image_ms
-    from dsa110_contimg.core.imaging.fast_imaging import run_fast_imaging
 
     # Configure catalog masking parameters for image_ms
     # The image_ms function already has built-in catalog masking support
@@ -364,15 +347,6 @@ def _submit_imaging_tasks(
         **imaging_kwargs,
     )
 
-    future_fast = executor.submit(
-        run_fast_imaging,
-        ms_path,
-        interval_seconds=None,
-        threshold_sigma=6.0,
-        datacolumn="CORRECTED_DATA",
-        work_dir=str(out_dir),
-    )
-
     future_gpu = None
     if use_gpu and GPU_GRIDDING_AVAILABLE:
         future_gpu = executor.submit(
@@ -383,10 +357,10 @@ def _submit_imaging_tasks(
             cell_size_arcsec=12.0,
         )
 
-    return future_deep, future_fast, future_gpu
+    return future_deep, future_gpu
 
 
-def _wait_for_imaging_results(future_deep, future_fast, future_gpu, artifacts: list[str]) -> None:
+def _wait_for_imaging_results(future_deep, future_gpu, artifacts: list[str]) -> None:
     """Wait for imaging futures and collect results."""
     # Deep imaging is critical
     try:
@@ -394,12 +368,6 @@ def _wait_for_imaging_results(future_deep, future_fast, future_gpu, artifacts: l
     except (RuntimeError, OSError, ValueError) as e:
         logger.error("Deep imaging failed: %s", e)
         raise
-
-    # Fast imaging is auxiliary
-    try:
-        future_fast.result()
-    except Exception as e:
-        logger.warning("Fast imaging failed (non-fatal): %s", e)
 
     # GPU dirty image is auxiliary
     if future_gpu is not None:
@@ -455,7 +423,7 @@ def _apply_and_image(
         imgroot = out_dir / (Path(ms_path).stem + ".img")
 
         with ThreadPoolExecutor(max_workers=3) as executor:
-            future_deep, future_fast, future_gpu = _submit_imaging_tasks(
+            future_deep, future_gpu = _submit_imaging_tasks(
                 executor,
                 ms_path,
                 imgroot,
@@ -466,7 +434,7 @@ def _apply_and_image(
                 catalog_min_flux_mjy=catalog_min_flux_mjy,
                 catalog_mask_radius_arcsec=catalog_mask_radius_arcsec,
             )
-            _wait_for_imaging_results(future_deep, future_fast, future_gpu, artifacts)
+            _wait_for_imaging_results(future_deep, future_gpu, artifacts)
 
         # Collect CASA artifacts
         for ext in [".image", ".image.pbcor", ".residual", ".psf", ".pb"]:
@@ -482,7 +450,7 @@ def _apply_and_image(
 
 def _get_ms_time_info(ms: Path) -> tuple[float | None, float | None, float]:
     """Extract time info from MS, with fallback to current time."""
-    from dsa110_contimg.common.utils.time_utils import extract_ms_time_range
+    from dsa110_continuum.utils.time_utils import extract_ms_time_range
 
     start_mjd, end_mjd, mid_mjd = extract_ms_time_range(os.fspath(ms))
     if mid_mjd is None:

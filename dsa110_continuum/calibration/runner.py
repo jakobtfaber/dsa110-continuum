@@ -329,7 +329,7 @@ def _validate_calibrator_transit(
     import astropy.units as u
     from astropy.coordinates import EarthLocation
     from astropy.time import Time
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
     from dsa110_continuum.adapters import casa_tables as ct
@@ -556,13 +556,13 @@ def phaseshift_ms(
         ms_parent = Path(ms_path).parent
         # Create a cal_staging subdirectory alongside the input MS
         cal_staging_dir = ms_parent / "cal_staging"
-        from dsa110_contimg.common.utils.ms_permissions import ensure_dir_writable
+        from dsa110_continuum.utils.ms_permissions import ensure_dir_writable
 
         ensure_dir_writable(cal_staging_dir)
         output_ms = str(cal_staging_dir / f"{ms_stem}_{mode_suffix}.ms")
 
     output_path = Path(output_ms)
-    from dsa110_contimg.common.utils.ms_permissions import ensure_dir_writable
+    from dsa110_continuum.utils.ms_permissions import ensure_dir_writable
 
     ensure_dir_writable(output_path.parent)
 
@@ -590,7 +590,7 @@ def phaseshift_ms(
 
         if use_chgcentre:
             try:
-                from dsa110_contimg.common.utils.wsclean_utils import (
+                from dsa110_continuum.utils.wsclean_utils import (
                     check_chgcentre_available,
                     run_chgcentre,
                 )
@@ -640,7 +640,7 @@ def phaseshift_ms(
 
         if use_chgcentre:
             try:
-                from dsa110_contimg.common.utils.wsclean_utils import (
+                from dsa110_continuum.utils.wsclean_utils import (
                     check_chgcentre_available,
                     run_chgcentre,
                 )

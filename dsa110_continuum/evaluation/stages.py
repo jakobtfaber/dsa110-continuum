@@ -23,10 +23,7 @@ from typing import Any
 import yaml
 
 from .config_loader import load_thresholds_config
-try:
-    from dsa110_contimg.common.utils import get_env_path
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.config import get_env_path
 
 logger = logging.getLogger(__name__)
 
@@ -886,7 +883,7 @@ class StageRegistry:
             dict
             Loaded reference dataset specifications
         """
-        from dsa110_contimg.common.utils.yaml_loader import load_yaml_with_env
+        from dsa110_continuum.utils.yaml_loader import load_yaml_with_env
 
         self._references = load_yaml_with_env(path, expand_vars=True)
 

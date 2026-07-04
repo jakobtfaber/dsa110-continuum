@@ -13,10 +13,7 @@ import time
 import numpy as np
 import pandas as pd
 
-try:
-    from dsa110_contimg.common.unified_config import settings
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.unified_config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +40,7 @@ def create_variable_source_detection_tables(
         bool
         True if successful
     """
-    from dsa110_contimg.infrastructure.database.unified import Database
+    from dsa110_continuum.database.unified import Database
     
     try:
         db = Database(db_path)
@@ -377,7 +374,7 @@ def store_variable_source_candidates(
         list
         List of candidate IDs
     """
-    from dsa110_contimg.infrastructure.database.unified import Database
+    from dsa110_continuum.database.unified import Database
 
     try:
         db = Database(db_path)
@@ -480,7 +477,7 @@ def generate_variable_source_alerts(
         list
         List of alert IDs created
     """
-    from dsa110_contimg.infrastructure.database.unified import Database
+    from dsa110_continuum.database.unified import Database
 
     try:
         db = Database(db_path)
@@ -601,7 +598,7 @@ def get_variable_source_candidates(
         pandas.DataFrame
         DataFrame with candidate information
     """
-    from dsa110_contimg.infrastructure.database.unified import Database
+    from dsa110_continuum.database.unified import Database
 
     db = Database(db_path)
     
@@ -646,7 +643,7 @@ def get_variable_source_alerts(
         pandas.DataFrame
         DataFrame with alert information
     """
-    from dsa110_contimg.infrastructure.database.unified import Database
+    from dsa110_continuum.database.unified import Database
 
     db = Database(db_path)
 
@@ -695,7 +692,7 @@ def acknowledge_alert(
         ValueError
         If alert_id does not exist in database
     """
-    from dsa110_contimg.infrastructure.database.unified import Database
+    from dsa110_continuum.database.unified import Database
     
     db = Database(db_path)
 
@@ -783,7 +780,7 @@ def classify_candidate(
             f"Must be one of: {', '.join(valid_classifications)}"
         )
 
-    from dsa110_contimg.infrastructure.database.unified import Database
+    from dsa110_continuum.database.unified import Database
     db = Database(db_path)
 
     try:
@@ -877,7 +874,7 @@ def update_follow_up_status(
     table_name = "variable_source_alerts" if item_type == "alert" else "variable_source_candidates"
     timestamp_field = "acknowledged_at" if item_type == "alert" else "last_updated"
 
-    from dsa110_contimg.infrastructure.database.unified import Database
+    from dsa110_continuum.database.unified import Database
     db = Database(db_path)
 
     try:
@@ -959,7 +956,7 @@ def add_notes(
     table_name = "variable_source_alerts" if item_type == "alert" else "variable_source_candidates"
     timestamp_field = "acknowledged_at" if item_type == "alert" else "last_updated"
 
-    from dsa110_contimg.infrastructure.database.unified import Database
+    from dsa110_continuum.database.unified import Database
     db = Database(db_path)
 
     try:

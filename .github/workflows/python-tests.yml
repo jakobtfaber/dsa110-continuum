@@ -42,9 +42,10 @@ jobs:
     name: Cloud-safe pytest subset
     runs-on: ubuntu-latest
     # Bound so a future deadlocked test cannot consume the GitHub Actions
-    # default 360-minute ceiling. Current suite runs in ~2.4s; 5 minutes
-    # leaves headroom for cold-start pip install + future expansion.
-    timeout-minutes: 5
+    # default 360-minute ceiling. Current subset runs in ~15s; 10 minutes
+    # leaves headroom for the cold-start pip install (matplotlib/fastapi/
+    # sqlalchemy added by the import-retirement migration) + future expansion.
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -65,9 +66,28 @@ jobs:
         #   - uncertainties: dsa110_continuum.catalog.crossmatch imports
         #     uncertainties.ufloat / AffineScalarFunc at module level
         #     (loaded via forced_photometry CLI -> catalog.query chain).
+        # Added by the contimg-import-retirement migration (the vendored
+        # modules are hard imports now; set verified in a local CI-replica
+        # venv, docs/rse/specs/plan-contimg-import-retirement.md Phase 8):
+        #   - pyyaml/pydantic/pydantic-settings: dsa110_continuum.unified_config
+        #     (hard-imported via photometry.forced).
+        #   - caskade: dsa110_continuum.simulation.control (hard import in
+        #     simulation/__init__).
+        #   - sqlalchemy: dsa110_continuum.database.models.
+        #   - fastapi: dsa110_continuum.mosaic.api (mosaic jobs chain).
+        #   - matplotlib: visualization + utils.plotting re-export layers.
+        #   - httpx: dsa110_continuum.visualization.carta_scripting.
+        #   - h5py: dsa110_continuum.database.hdf5_index.
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy scipy pandas astropy uncertainties pytest
+          python -m pip install numpy scipy pandas astropy uncertainties pytest \
+            pyyaml pydantic pydantic-settings caskade sqlalchemy fastapi \
+            matplotlib httpx h5py
+
+      - name: No legacy imports
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python scripts/check_import_migration.py --fail-on-any
 
       - name: Run focused cloud-safe subset
         # --basetemp overrides the project default in pyproject.toml
@@ -75,6 +95,7 @@ jobs:
         # on the H17 dev workstation. CI runners need a workspace-local tmp.
         env:
           PYTHONPATH: ${{ github.workspace }}
+          CASKADE_BACKEND: numpy
         run: |
           python -m pytest -q --basetemp=${{ runner.temp }}/pytest \
             tests/test_provenance.py \
@@ -87,4 +108,13 @@ jobs:
             tests/test_batch_e1_hygiene.py \
             tests/test_batch_e2_hygiene.py \
             tests/test_skymodel_phase_dir.py \
-            tests/test_epoch_gaincal_field_shape.py
+            tests/test_epoch_gaincal_field_shape.py \
+            tests/test_import_migration_checker.py \
+            tests/test_no_latent_nameerror_imports.py \
+            tests/test_vendored_utils.py \
+            tests/test_unified_config.py \
+            tests/test_workflow_registry.py \
+            tests/test_vendored_database.py \
+            tests/test_init_reexports_new_namespace.py \
+            tests/test_no_compat_layer.py \
+            tests/test_imaging_worker_no_fast_imaging.py

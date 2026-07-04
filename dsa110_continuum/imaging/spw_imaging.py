@@ -282,7 +282,7 @@ def image_all_spws(
     """
     # Import MS locking utility if serialization is enabled
     if serialize_ms_access:
-        from dsa110_contimg.common.utils.ms_locking import cleanup_stale_locks, ms_lock
+        from dsa110_continuum.utils.ms_locking import cleanup_stale_locks, ms_lock
 
         # Clean up any stale locks before starting
         cleanup_stale_locks(ms_path)

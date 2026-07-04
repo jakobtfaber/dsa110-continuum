@@ -15,28 +15,25 @@ from typing import Any
 
 import yaml
 
-try:
-    from dsa110_contimg.common.unified_config import settings
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.unified_config import settings
 from astropy import constants as const
 
 LOG = logging.getLogger(__name__)
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
-    from dsa110_contimg.common.utils.yaml_loader import load_yaml_with_env
+    from dsa110_continuum.utils.yaml_loader import load_yaml_with_env
 
     return load_yaml_with_env(path, expand_vars=True) or {}
 
 
 def _default_telescope_path() -> Path:
     """Return packaged telescope YAML path."""
-    return Path(resources.files("dsa110_contimg.simulation.pyuvsim") / "telescope.yaml")
+    return Path(resources.files("dsa110_continuum.simulation.pyuvsim") / "telescope.yaml")
 
 
 def _default_beam_path() -> Path:
-    return Path(resources.files("dsa110_contimg.simulation.pyuvsim") / "beams.yaml")
+    return Path(resources.files("dsa110_continuum.simulation.pyuvsim") / "beams.yaml")
 
 
 def derive_extent_deg() -> float:

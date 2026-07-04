@@ -47,11 +47,9 @@ from dsa110_continuum.calibration.flagging import (
     flag_rfi,
     flag_zeros,
 )
-try:
-    from dsa110_contimg.common.utils import get_env_path
-    from dsa110_contimg.common.utils.ms_helpers import get_ms_metadata
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.config import get_env_path
+
+from dsa110_continuum.utils.ms_helpers import get_ms_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -346,7 +344,7 @@ def _create_flag_checkpoint(ms: str, checkpoint_name: str) -> bool:
     """
     try:
         from dsa110_continuum.calibration.casa_service import CASAService
-        from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+        from dsa110_continuum.utils.casa_init import ensure_casa_path
 
         ensure_casa_path()
 
@@ -374,7 +372,7 @@ def _restore_flag_checkpoint(ms: str, checkpoint_name: str) -> bool:
     """
     try:
         from dsa110_continuum.calibration.casa_service import CASAService
-        from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+        from dsa110_continuum.utils.casa_init import ensure_casa_path
 
         ensure_casa_path()
 

@@ -326,8 +326,8 @@ Light curve Parquet + Mooley η/Vs/m metrics
 
 ### Known Issues
 - **RA-wrap bug in wsclean_mosaic.py**: Uses arithmetic mean instead of circular mean for tiles crossing 0°/360°
-- **Legacy import migration**: 370 imports migrated from `dsa110_contimg` to `dsa110_continuum`, but compatibility shim still needed
-- **Cloud environment**: CASA unavailable; uses shim at `~/.local/lib/python3.12/site-packages/dsa110_contimg_shim.py`
+- **Legacy import migration**: complete — `dsa110_continuum` is self-contained; the `dsa110_contimg` namespace is banned (CI gate: `scripts/check_import_migration.py`)
+- **Cloud environment**: CASA unavailable; the old `dsa110_contimg_shim.py` `.pth` shim is obsolete and can be deleted from `~/.local/lib/python3.12/site-packages/`
 
 ---
 
@@ -391,7 +391,6 @@ pytest tests/ -n 4 -q
 
 **Areas for Attention**:
 - Large module sizes (calibration/ 352 exports, visualization/ 483 exports)
-- Legacy compatibility layer (dsa110_contimg shim)
 - Known bug in wsclean_mosaic.py (RA-wrap arithmetic mean)
 - Pre-existing ruff violations (~900, tracked separately)
 
@@ -756,8 +755,8 @@ Light curve Parquet + Mooley η/Vs/m metrics
 
 ### Known Issues
 - **RA-wrap bug in wsclean_mosaic.py**: Uses arithmetic mean instead of circular mean for tiles crossing 0°/360°
-- **Legacy import migration**: 370 imports migrated from `dsa110_contimg` to `dsa110_continuum`, but compatibility shim still needed
-- **Cloud environment**: CASA unavailable; uses shim at `~/.local/lib/python3.12/site-packages/dsa110_contimg_shim.py`
+- **Legacy import migration**: complete — `dsa110_continuum` is self-contained; the `dsa110_contimg` namespace is banned (CI gate: `scripts/check_import_migration.py`)
+- **Cloud environment**: CASA unavailable; the old `dsa110_contimg_shim.py` `.pth` shim is obsolete and can be deleted from `~/.local/lib/python3.12/site-packages/`
 
 ---
 

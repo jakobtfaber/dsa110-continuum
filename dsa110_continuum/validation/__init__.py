@@ -1,8 +1,8 @@
-"""Validation utilities for dsa110_contimg package."""
+"""Validation utilities for the dsa110_continuum package."""
 
 try:
-    from dsa110_contimg.core.validation.package_health import run_diagnostics
+    from dsa110_continuum.validation.package_health import run_diagnostics
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 __all__ = ["run_diagnostics"]

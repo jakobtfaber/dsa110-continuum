@@ -12,7 +12,7 @@ Usage:
     generate_stage_report(results, "pipeline_report.html")
 
     # CLI
-    python -m dsa110_contimg.evaluation.html_report input.json output.html
+    python -m dsa110_continuum.evaluation.html_report input.json output.html
 """
 
 from __future__ import annotations

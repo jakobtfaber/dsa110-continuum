@@ -25,7 +25,7 @@ TRANSIT_D1 = Time("2026-01-25T22:30:00")
 
 CAL = CalibratorInfo(name="3C454.3", ra_deg=343.49, dec_deg=16.15, flux_jy=12.5)
 
-LEGACY_SELECTOR = "dsa110_contimg.infrastructure.database.hdf5_index.select_hdf5_groups_by_position"
+LEGACY_SELECTOR = "dsa110_continuum.database.hdf5_index.select_hdf5_groups_by_position"
 
 
 @pytest.fixture

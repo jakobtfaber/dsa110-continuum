@@ -27,22 +27,8 @@ from astropy.wcs import WCS  # type: ignore[reportMissingTypeStubs]
 
 # type: ignore[reportMissingTypeStubs]
 from astropy.wcs.utils import proj_plane_pixel_scales
-
-try:
-    from dsa110_contimg.common.unified_config import settings
-    from dsa110_contimg.common.utils.gpu_utils import get_array_module
-except ImportError:
-    # dsa110_contimg not installed (cloud/test env). Keep this module usable
-    # with safe CPU-only defaults so _weighted_convolution doesn't NameError
-    # when the GPU config and helpers are absent.
-    settings = None  # type: ignore[assignment]
-
-    def get_array_module(prefer_gpu: bool | None = None, min_elements: int | None = None):  # type: ignore[no-redef]
-        """CPU-only fallback for environments without dsa110_contimg.gpu_utils.
-
-        Always returns ``(numpy, False)`` so callers know GPU is unavailable.
-        """
-        return np, False
+from dsa110_continuum.unified_config import settings
+from dsa110_continuum.utils.gpu_utils import get_array_module
 
 try:
     import scipy.spatial  # type: ignore[reportMissingTypeStubs]
@@ -403,7 +389,7 @@ def _weighted_convolution(
         None
     """
     # Resolve GPU defaults from settings when available; fall back to CPU
-    # (prefer_gpu=False, min_elements=large) when dsa110_contimg is absent.
+    # (prefer_gpu=False, min_elements=large) when GPU settings are absent.
     if prefer_gpu is None:
         prefer_gpu = settings.gpu.prefer_gpu if settings is not None else False
     if min_elements is None:

@@ -9,11 +9,7 @@ import threading
 import time
 from pathlib import Path
 
-try:
-    from dsa110_contimg.interfaces.api.job_adapters import run_batch_photometry_job
-    from dsa110_contimg.infrastructure.database import ensure_pipeline_db
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.database import ensure_pipeline_db
 
 logger = logging.getLogger(__name__)
 
@@ -156,10 +152,11 @@ class PhotometryBatchWorker:
             )
             start_time = time.time()
             try:
-                run_batch_photometry_job(
-                    batch_id, fits_paths, coordinates, params, self.products_db_path
+                raise RuntimeError(
+                    "Legacy dsa110_contimg batch-photometry API retired; "
+                    "use scripts/batch_pipeline.py --photometry-workers N."
                 )
-            except (OSError, ValueError, RuntimeError):
+            except (OSError, ValueError):
                 logger.exception(f"Batch photometry job {batch_id} failed")
             duration = time.time() - start_time
             logger.info(

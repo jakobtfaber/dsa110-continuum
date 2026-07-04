@@ -8,10 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-try:
-    from dsa110_contimg.common.utils import get_env_path
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.config import get_env_path
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +30,7 @@ def load_thresholds_config(config_path: Path | None = None) -> dict[str, Any]:
         return {}
 
     try:
-        from dsa110_contimg.common.utils.yaml_loader import load_yaml_with_env
+        from dsa110_continuum.utils.yaml_loader import load_yaml_with_env
 
         config = load_yaml_with_env(config_path, expand_vars=True) or {}
     except (OSError, yaml.YAMLError) as exc:

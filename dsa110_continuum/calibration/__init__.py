@@ -2,13 +2,6 @@
 """
 DSA-110 Continuum Imaging Pipeline - Calibration Module.
 
-.. note::
-    For new code, prefer using the public API which provides a simpler interface:
-
-        from dsa110_contimg.interfaces.public_api import calibrate_ms
-
-    This module is primarily for internal use and advanced customization.
-
 This module provides calibration functionality including:
 - Bandpass and gain calibration
 - Self-calibration
@@ -18,7 +11,7 @@ This module provides calibration functionality including:
 
 # Bandpass diagnostics and auto-recovery
 try:
-    from dsa110_contimg.core.calibration.bandpass_diagnostics import (
+    from dsa110_continuum.calibration.bandpass_diagnostics import (
         DiagnosticReport,
         analyze_flagging_pattern,
         auto_recover_bandpass_calibration,
@@ -29,20 +22,20 @@ try:
         get_recovery_recommendations,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Bandpass diagnostics report
 try:
-    from dsa110_contimg.core.calibration.bandpass_report import (
+    from dsa110_continuum.calibration.bandpass_report import (
         BandpassReportData,
         generate_bandpass_report,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Beam model
 try:
-    from dsa110_contimg.core.calibration.beam_model import (
+    from dsa110_continuum.calibration.beam_model import (
         BeamConfig,
         primary_beam_response,
     )
@@ -55,7 +48,7 @@ except ImportError:
 
 # Catalog registry (unified catalog query interface)
 try:
-    from dsa110_contimg.core.calibration.catalog_registry import (
+    from dsa110_continuum.calibration.catalog_registry import (
         CATALOG_REGISTRY,
         CatalogConfig,
         CatalogName,
@@ -63,18 +56,18 @@ try:
         query_catalog,
         query_multiple_catalogs,
     )
-    from dsa110_contimg.core.calibration.checkpoints import (
+    from dsa110_continuum.calibration.checkpoints import (
         CalibrationCheckpoint,
         MSIntegrityError,
         validate_ms_integrity,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Preflight checks and fail-fast validation
 # OPENBLAS_NUM_THREADS is managed by WSClean execution paths to avoid oversubscription.
 try:
-    from dsa110_contimg.core.calibration.flagging import (
+    from dsa110_continuum.calibration.flagging import (
         PreflightError,
         preflight_check_all,
         preflight_check_aoflagger,
@@ -87,27 +80,27 @@ try:
         preflight_check_wsclean,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Adaptive flagging
 try:
-    from dsa110_contimg.core.calibration.flagging_adaptive import (
+    from dsa110_continuum.calibration.flagging_adaptive import (
         AdaptiveFlaggingResult,
         CalibrationFailure,
         FlaggingStrategy,
         flag_rfi_adaptive,
         flag_rfi_with_gpu_fallback,
     )
-    from dsa110_contimg.core.calibration.flux_validation import (
+    from dsa110_continuum.calibration.flux_validation import (
         FluxScaleCheckResult,
         check_model_corrected_ratio,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Flux calibration (CASA fluxscale bootstrap)
 try:
-    from dsa110_contimg.core.calibration.fluxscale import (
+    from dsa110_continuum.calibration.fluxscale import (
         PRIMARY_FLUX_CALIBRATORS,
         FluxBootstrapResult,
         FluxscaleResult,
@@ -124,11 +117,11 @@ try:
         update_calibrator_catalog_flux,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Pipeline guardrails for calibration quality
 try:
-    from dsa110_contimg.core.calibration.guardrails import (
+    from dsa110_continuum.calibration.guardrails import (
         CalibrationGuardrails,
         QualityAction,
         QualityMetrics,
@@ -138,17 +131,17 @@ try:
         get_quality_tier,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Pipeline jobs and orchestration
 try:
-    from dsa110_contimg.core.calibration.jobs import (
+    from dsa110_continuum.calibration.jobs import (
         CalibrationApplyJob,
         CalibrationJobConfig,
         CalibrationSolveJob,
         CalibrationValidateJob,
     )
-    from dsa110_contimg.core.calibration.pipeline import (
+    from dsa110_continuum.calibration.pipeline import (
         CalibrationPipeline,
         CalibrationPipelineConfig,
         CalibrationResult,
@@ -157,22 +150,22 @@ try:
         run_calibration_pipeline,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Pre-calibration validation gate
 try:
-    from dsa110_contimg.core.calibration.preconditions import (
+    from dsa110_continuum.calibration.preconditions import (
         PreconditionResult,
         ValidationGateResult,
         require_valid_preconditions,
         validate_bandpass_preconditions,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # QA module
 try:
-    from dsa110_contimg.core.calibration.qa import (
+    from dsa110_continuum.calibration.qa import (
         CalibrationMetrics,
         CalibrationQAResult,
         CalibrationQAStore,
@@ -182,13 +175,13 @@ try:
         compute_calibration_metrics,
         get_qa_store,
     )
-    from dsa110_contimg.core.calibration.qa_compare import compare_caltables
+    from dsa110_continuum.calibration.qa_compare import compare_caltables
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Self-calibration
 try:
-    from dsa110_contimg.core.calibration.selfcal import (
+    from dsa110_continuum.calibration.selfcal import (
         SelfCalConfig,
         SelfCalIterationResult,
         SelfCalMode,
@@ -198,20 +191,20 @@ try:
         selfcal_ms,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Self-calibration diagnostics
 try:
-    from dsa110_contimg.core.calibration.selfcal_diagnostics import (
+    from dsa110_continuum.calibration.selfcal_diagnostics import (
         generate_observation_diagnostics,
         generate_selfcal_diagnostics,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 # Production self-calibration routine
 try:
-    from dsa110_contimg.core.calibration.selfcal_routine import (
+    from dsa110_continuum.calibration.selfcal_routine import (
         SelfCalIterationConfig,
         SelfCalIterationResult as SelfCalRoutineIterationResult,
         SelfCalRoutineConfig,
@@ -219,7 +212,7 @@ try:
         SelfCalRoutineResult,
         run_selfcal_routine,
     )
-    from dsa110_contimg.core.calibration.transit import (
+    from dsa110_continuum.calibration.transit import (
         find_observations_containing_transit,
         find_transits_for_source,
         next_transit_time,
@@ -228,7 +221,7 @@ try:
         upcoming_transits,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 __all__ = [
     # Beam model

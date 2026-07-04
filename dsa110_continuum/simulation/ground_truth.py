@@ -41,7 +41,7 @@
     >>> print(f"Expected flux at peak: {expected_flux:.2f} Jy")
     >>>
     >>> # Export for validation
-    >>> from dsa110_contimg.common.utils import TempPaths
+    >>> from dsa110_continuum.utils import TempPaths
     >>> registry.export_to_json(TempPaths.report("ground_truth.json"))
 """
 

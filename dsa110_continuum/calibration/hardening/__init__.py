@@ -8,7 +8,7 @@ Moved from workflow.pipeline.hardening to proper location in core.calibration.
 """
 
 try:
-    from dsa110_contimg.core.calibration.hardening.calibration import (
+    from dsa110_continuum.calibration.hardening.calibration import (
         BP_VALIDITY_DAYS,
         BP_VALIDITY_HOURS,
         DEFAULT_CAL_VALIDITY_DAYS,
@@ -30,13 +30,13 @@ try:
         get_validity_hours_for_type,
         resolve_calibration_overlap,
     )
-    from dsa110_contimg.core.calibration.hardening.rfi import (
+    from dsa110_continuum.calibration.hardening.rfi import (
         RFIStats,
         preflag_rfi,
         preflag_rfi_adaptive,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 __all__ = [
     # Validity constants

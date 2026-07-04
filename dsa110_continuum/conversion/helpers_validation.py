@@ -11,7 +11,7 @@ import dsa110_continuum.conversion.helpers as _helpers
 # Use canonical angular_separation with numba→astropy fallback chain
 from dsa110_continuum.conversion.helpers_coordinates import angular_separation
 
-logger = logging.getLogger("dsa110_contimg.conversion.helpers")
+logger = logging.getLogger("dsa110_continuum.conversion.helpers")
 
 
 def validate_ms_frequency_order(ms_path: str) -> None:
@@ -342,7 +342,7 @@ def validate_antenna_positions(ms_path: str, position_tolerance_m: float = 0.05)
 
         # Load reference DSA-110 positions
         try:
-            from dsa110_contimg.common.utils.antpos_local import get_itrf
+            from dsa110_continuum.utils.antpos_local import get_itrf
 
             ref_df = get_itrf(latlon_center=None)
 

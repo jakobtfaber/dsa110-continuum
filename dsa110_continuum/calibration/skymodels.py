@@ -823,7 +823,7 @@ def predict_from_skymodel_wsclean(
 
     # Create temporary directory for intermediate files
     if temp_dir is None:
-        from dsa110_contimg.common.utils.temp_manager import get_temp_subdir
+        from dsa110_continuum.utils.temp_manager import get_temp_subdir
 
         temp_dir_obj = get_temp_subdir("calibration_wsclean")
         temp_dir = str(temp_dir_obj)
@@ -859,7 +859,7 @@ def predict_from_skymodel_wsclean(
 
         if use_docker:
             # Build Docker command with volume mounts
-            from dsa110_contimg.common.utils.gpu_utils import build_docker_command, get_gpu_config
+            from dsa110_continuum.utils.gpu_utils import build_docker_command, get_gpu_config
 
             gpu_config = get_gpu_config()
             docker_user_flags = None

@@ -184,9 +184,9 @@ class CASAProcessExecutor:
             # We try to use the standard location if available
             # Or just let it be deleted with the temp dir if we don't care (but we usually care)
 
-            # For now, let's copy to dsa110_contimg logs if defined
+            # For now, let's copy to the pipeline CASA log dir if defined
             # We can import this dynamically to avoid circular imports
-            from dsa110_contimg.common.utils.casa_init import CASA_LOG_DIR
+            from dsa110_continuum.utils.casa_init import CASA_LOG_DIR
 
             target_dir = Path(CASA_LOG_DIR)
             target_dir.mkdir(parents=True, exist_ok=True)

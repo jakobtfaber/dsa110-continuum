@@ -69,7 +69,7 @@ Do NOT track Measurement Sets or other large stage/correlation data in Git.
 
 ALWAYS use the casa6 conda env: `/opt/miniforge/envs/casa6/bin/python`. It has numpy, casacore, astropy, CASA. System `python3` is 3.13 (no scientific deps). The `pip` shim points to system 3.8 — if you need pip, use `/opt/miniforge/envs/casa6/bin/python -m pip`.
 
-The editable install is unreliable (console-script entry points still point at the legacy `dsa110_contimg.*` namespace; see `pyproject.toml:150`). Set `PYTHONPATH=/workspace` when running scripts/tests from this workspace context.
+Set `PYTHONPATH=/workspace` when running scripts/tests from this workspace context (no editable install is assumed; console scripts `dsa110-health`/`dsa110-validate` come from `pyproject.toml` when installed).
 
 | Command | What it does |
 | --- | --- |
@@ -91,7 +91,7 @@ The editable install is unreliable (console-script entry points still point at t
 | `scripts/validate_date.py` | Run validation on one date's outputs |
 | `scripts/run_canary.sh` | QA smoke test against a reference FITS tile |
 | `PYTHONPATH=/workspace uvicorn scripts.monitor_server:app --host 0.0.0.0 --port 8765` | Start the monitor API (host-ops service) |
-| `scripts/check_import_migration.py` | List stale `dsa110_contimg` imports remaining under `dsa110_continuum/` |
+| `scripts/check_import_migration.py` | Legacy-import gate: exits 1 if any `dsa110_contimg` import exists under `dsa110_continuum/` (CI runs this on every push/PR) |
 
 Pipeline DB: `dsa110 convert` queries the SQLite DB, NOT the filesystem. New dates must be indexed first:
 
@@ -112,7 +112,7 @@ Fallback: system Python 3.12 with `PYTHONPATH=/workspace` mandatory.
 | `ruff format --check dsa110_continuum/ scripts/ tests/` | Format check |
 | `PYTHONPATH=/workspace uvicorn scripts.monitor_server:app --host 0.0.0.0 --port 8765` | Start monitor API |
 
-A compatibility shim at `~/.local/lib/python3.12/site-packages/dsa110_contimg_shim.py` (auto-loaded via `.pth`) redirects `dsa110_contimg.core.*` imports to `dsa110_continuum.*` and stubs out `dsa110_contimg.common.*`, `dsa110_contimg.infrastructure.*`, and `dsa110_contimg.workflow.*`. Required for the bulk of the test suite to import successfully on cloud VMs.
+The old cloud-VM compatibility shim (`~/.local/lib/python3.12/site-packages/dsa110_contimg_shim.py` + its `.pth` loader) is obsolete: `dsa110_continuum` is self-contained and never imports `dsa110_contimg`. If a cloud VM still has the shim installed, delete both files — nothing depends on them.
 
 All `casacore.tables` imports use `dsa110_continuum.adapters.casa_tables` — a drop-in wrapper over `casatools.table` — to avoid the C++ shared-library conflict that segfaults when both `python-casacore` and `casatools` load. The wrapper handles row-axis layout differences (`_rows_first`/`_rows_last`).
 
@@ -134,7 +134,7 @@ Telescope data paths (`/data/incoming/`, `/stage/dsa110-contimg/ms/`) do not exi
 
 <important if="you are importing, testing, or running anything under `dsa110_continuum.mosaic.*`">
 
-Pure-Python `dsa110_continuum.mosaic.*` imports (including the whole package `__init__`) do NOT require `/dev/shm/dsa110-contimg/` or the legacy Dagster bootstrap. The legacy `dsa110_contimg.workflow.dagster.definitions` module (which validates runtime prerequisites at module load) is only imported lazily inside `ScienceMosaicBridgeJob.execute()` in `mosaic/science_jobs.py` — so the science-mosaic execution path still requires those runtime prerequisites, but plain imports and unit tests do not. Regression test: `tests/test_mosaic_import_no_dagster.py`. Do NOT reintroduce module-level `dsa110_contimg.workflow.dagster` imports anywhere under `dsa110_continuum/mosaic/` — the validator raises `RuntimeError`, which `except ImportError` guards do not catch.
+Pure-Python `dsa110_continuum.mosaic.*` imports (including the whole package `__init__`) do NOT require `/dev/shm/dsa110-contimg/` or any Dagster bootstrap. The legacy Dagster science-mosaic bridge is retired: `ScienceMosaicBridgeJob.execute()` in `mosaic/science_jobs.py` validates its inputs and then raises `RuntimeError` pointing at the visibility-domain coadd via `scripts/batch_pipeline.py`. Regression test: `tests/test_mosaic_import_no_dagster.py`. Do NOT add any `dsa110_contimg` imports under `dsa110_continuum/mosaic/` — the legacy namespace is banned repo-wide (CI enforces via `scripts/check_import_migration.py`).
 
 </important>
 
@@ -146,9 +146,9 @@ Pure-Python `dsa110_continuum.mosaic.*` imports (including the whole package `__
 
 <important if="you are adding or modifying imports, package __init__.py, or anything that runs at import time">
 
-`dsa110_continuum/` is the canonical package. The import rename from `dsa110_contimg.core.*` is complete (~370 imports across 136 files). New code must use `dsa110_continuum.*` imports — do NOT add new `dsa110_contimg` references.
+`dsa110_continuum/` is the canonical package and is **self-contained**: it never imports the retired `dsa110_contimg` namespace, which is banned repo-wide — CI enforces this via `scripts/check_import_migration.py` (exit 1 on any hit) and a ruff `banned-api` rule in `pyproject.toml`. The `__init__.py` re-export layers import from `dsa110_continuum.*` siblings (regression test: `tests/test_init_reexports_new_namespace.py`). The old package installed at `/data/dsa110-contimg/backend/src` on H17 co-loads safely in the same process: the vendored `dsa110_continuum.workflow` registry is a distinct object from the old package's, so double job-registration cannot occur.
 
-The `__init__.py` re-export layers intentionally still reference old paths. Do NOT change them — the old package's bootstrap chain loads `core.calibration.jobs → register_job`, and switching to the new path triggers `ValueError` from double job-registration. The old package is still installed from `/data/dsa110-contimg/backend/src` and is loaded at runtime via those re-exports.
+Cross-package `__init__` chains can circular-import: `qa/__init__` → `qa.calibration_quality` → `calibration/__init__` → `qa_compare` re-enters `qa.calibration_quality` mid-import. The package guards swallow the ImportError, so the symptom is a *silently missing* re-export, order-dependent. `qa_compare` defers its qa import to function scope for this reason; prefer function-scope imports for new cross-package (`calibration` ↔ `qa`, etc.) references from modules reachable at package-init time.
 
 </important>
 

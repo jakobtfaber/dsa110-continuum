@@ -78,7 +78,7 @@ logger = logging.getLogger(__name__)
 
 # Import cached MS metadata helper
 try:
-    from dsa110_contimg.common.utils.ms_helpers import get_ms_metadata
+    from dsa110_continuum.utils.ms_helpers import get_ms_metadata
 except ImportError:
     # Fallback if helper not available
     get_ms_metadata = None
@@ -885,7 +885,7 @@ def export_model_as_fits(
     _ensure_imaging_columns(ms_path)
 
     try:
-        from dsa110_contimg.common.utils.ms_permissions import (
+        from dsa110_continuum.utils.ms_permissions import (
             ensure_dir_writable,
             ensure_ms_writable,
         )
@@ -895,7 +895,7 @@ def export_model_as_fits(
 
         # Build WSClean command to create dirty image from MODEL_DATA
         # Using Docker WSClean for consistency with main imaging pipeline
-        from dsa110_contimg.common.utils.gpu_utils import build_docker_command, get_gpu_config
+        from dsa110_continuum.utils.gpu_utils import build_docker_command, get_gpu_config
 
         gpu_config = get_gpu_config()
 

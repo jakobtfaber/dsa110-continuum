@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FITS Viewers</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      {shared_css}
+
+      /* Template-specific overrides */
+      body {{
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: var(--dsa-spacing-xl);
+      }}
+
+      h1 {{
+        border-bottom: 2px solid var(--dsa-primary);
+        padding-bottom: var(--dsa-spacing-md);
+        font-weight: 600;
+      }}
+
+      .card {{
+        background: var(--dsa-bg-paper);
+        padding: var(--dsa-spacing-lg);
+        margin: var(--dsa-spacing-md) 0;
+        border-radius: var(--dsa-radius-lg);
+        box-shadow: var(--dsa-shadow);
+        border: 1px solid var(--dsa-border);
+      }}
+
+      .card h2 {{
+        margin-top: 0;
+        color: var(--dsa-secondary);
+        font-size: 1.1rem;
+        font-weight: 600;
+        border: none;
+        padding: 0;
+      }}
+
+      .card p,
+      .card li {{
+        color: var(--dsa-text-secondary);
+      }}
+
+      a {{
+        color: var(--dsa-secondary);
+        text-decoration: none;
+      }}
+
+      a:hover {{
+        color: var(--dsa-secondary-light);
+      }}
+
+      code {{
+        background-color: var(--dsa-bg-surface);
+        padding: 0.2rem 0.4rem;
+        border-radius: var(--dsa-radius-sm);
+        font-family: var(--dsa-font-mono);
+        font-size: 0.85em;
+        color: var(--dsa-primary);
+      }}
+
+      ul {{
+        padding-left: var(--dsa-spacing-lg);
+      }}
+
+      li {{
+        margin: var(--dsa-spacing-sm) 0;
+      }}
+
+      strong {{
+        color: var(--dsa-text-primary);
+      }}
+
+      details > summary {{
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }}
+
+      details > summary::-webkit-details-marker {{
+        display: none;
+      }}
+
+      details > summary h2 {{
+        margin: 0;
+        border-bottom: none;
+        padding-bottom: 0;
+      }}
+
+      details > summary::after {{
+        content: '+';
+        font-weight: bold;
+        font-size: 1.5rem;
+        color: var(--dsa-secondary);
+        margin-left: var(--dsa-spacing-md);
+      }}
+
+      details[open] > summary::after {{
+        content: '-';
+      }}
+
+      details[open] > summary {{
+        margin-bottom: var(--dsa-spacing-md);
+        border-bottom: 1px solid var(--dsa-border);
+        padding-bottom: var(--dsa-spacing-sm);
+      }}
+    </style>
+  </head>
+  <body>
+    <h1>FITS Viewers</h1>
+
+    <div class="card">
+      <h2>Web Viewer</h2>
+      <p>Interactive FITS file browser with support for JS9, CARTA, and Aladin viewers.</p>
+      <p>
+        <a href="/api/v1/fits/page">→ Open Web Viewer</a>
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Supported Viewers</h2>
+      <ul>
+        <li><strong>JS9</strong> (default) - Interactive FITS viewer</li>
+        <li><strong>CARTA</strong> - Cube Analysis and Rendering Tool for Astronomy</li>
+        <li><strong>Aladin Lite</strong> - Sky visualization and exploration</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary><h2>API Documentation</h2></summary>
+        <p>The FITS viewer is accessible via REST API endpoints at <code>/api/v1/fits</code>:</p>
+        <ul>
+          <li><code>/api/v1/fits/viewer-urls</code> - Get viewer URLs for a FITS file</li>
+          <li><code>/api/v1/fits/metadata</code> - Extract FITS header metadata</li>
+          <li><code>/api/v1/fits/preview-html</code> - Get HTML preview with viewer buttons</li>
+          <li><code>/api/v1/fits/validate</code> - Validate a FITS file</li>
+          <li><code>/api/v1/fits/config</code> - Get viewer configuration</li>
+          <li><code>/api/v1/fits/css</code> - Get CSS styles</li>
+        </ul>
+      </details>
+    </div>
+  </body>
+</html>

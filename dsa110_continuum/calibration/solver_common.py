@@ -10,10 +10,7 @@ from typing import Any
 
 import numpy as np
 
-try:
-    from dsa110_contimg.common.utils import timed
-except ImportError:
-    from dsa110_continuum._compat import timed
+from dsa110_continuum.utils import timed
 
 from dsa110_continuum.calibration.casa_service import CASAService
 from dsa110_continuum.conversion.merge_spws import get_spw_count
@@ -62,7 +59,7 @@ def _call_gaincal_with_progress(
     **kwargs :
         Arguments to pass to gaincal
     """
-    from dsa110_contimg.common.utils.progress import StageProgressMonitor, estimate_calibration_time
+    from dsa110_continuum.utils.progress import StageProgressMonitor, estimate_calibration_time
 
     # Get MS info for progress estimation
     try:
@@ -295,7 +292,7 @@ def _track_calibration_provenance(
     try:
         from pathlib import Path as PathLib
 
-        from dsa110_contimg.infrastructure.database.provenance import track_calibration_provenance
+        from dsa110_continuum.database.provenance import track_calibration_provenance
 
         # Use CASAService for version and command string
         service = CASAService()

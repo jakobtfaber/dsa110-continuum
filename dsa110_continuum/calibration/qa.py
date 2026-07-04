@@ -188,7 +188,7 @@ def _open_caltable(caltable_path: str):
         Calibration table object.
     """
     # Ensure CASAPATH is set before importing
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
 
@@ -572,7 +572,7 @@ class CalibrationQAStore:
             Path to SQLite database. Uses pipeline.sqlite3 if None.
         """
         if db_path is None:
-            from dsa110_contimg.infrastructure.database.session import get_db_path
+            from dsa110_continuum.database.session import get_db_path
 
             db_path = get_db_path("pipeline")
 

@@ -9,20 +9,18 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from dsa110_continuum.photometry.caching import get_cached_variability_stats
+
 # Import original function
-from dsa110_continuum.photometry.ese_detection import detect_ese_candidates as _detect_ese_candidates
-try:
-    from dsa110_contimg.workflow.pipeline.caching import (
-        get_cached_variability_stats,
-    )
-    from dsa110_contimg.workflow.pipeline.metrics import record_ese_detection
-    from dsa110_contimg.workflow.pipeline.structured_logging import (
-        get_logger,
-        log_ese_detection,
-        set_correlation_id,
-    )
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.photometry.ese_detection import (
+    detect_ese_candidates as _detect_ese_candidates,
+)
+from dsa110_continuum.workflow.metrics import record_ese_detection
+from dsa110_continuum.workflow.structured_logging import (
+    get_logger,
+    log_ese_detection,
+    set_correlation_id,
+)
 
 logger = get_logger(__name__)
 
@@ -151,8 +149,10 @@ def detect_ese_with_caching(
         dict or None
         ESE candidate dict if detected, None otherwise
     """
-    # Try to get cached variability stats
-    cached_stats = get_cached_variability_stats(source_id)
+    # Try to get cached variability stats (the dsa110_continuum cache is
+    # SQLite-backed and needs the products DB, unlike the retired
+    # redis/memory backend which keyed on source_id alone)
+    cached_stats = get_cached_variability_stats(source_id, products_db)
 
     if cached_stats:
         # Use cached stats if sigma deviation meets threshold

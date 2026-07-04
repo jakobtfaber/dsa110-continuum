@@ -39,13 +39,19 @@ class _Block_dsa110_contimg(importlib.abc.MetaPathFinder):
 
 
 def test_forced_convolve_works_without_dsa110_contimg():
-    """When dsa110_contimg is absent, _weighted_convolution falls back to CPU.
+    """When dsa110_contimg is absent, forced.py is fully functional.
 
-    This is the regression test for the ``NameError: settings is not defined``
-    bug that surfaced under PYTHONPATH-only test environments. The test must
-    leave ``sys.modules`` and ``sys.meta_path`` in their original state — a
-    leaked blocker would poison every subsequent test that imports anything
-    under ``dsa110_contimg``.
+    Originally the regression test for the ``NameError: settings is not
+    defined`` bug (settings soft-imported from the legacy package, used
+    unconditionally). Since the contimg-import-retirement migration
+    (docs/rse/specs/plan-contimg-import-retirement.md, Phase 3), ``settings``
+    and ``get_array_module`` come from the vendored
+    ``dsa110_continuum.unified_config`` / ``dsa110_continuum.utils.gpu_utils``
+    — so with the legacy package blocked the module now gets the REAL
+    implementations, not the fallbacks. The test must leave ``sys.modules``
+    and ``sys.meta_path`` in their original state — a leaked blocker would
+    poison every subsequent test that imports anything under
+    ``dsa110_contimg``.
     """
     blocker = _Block_dsa110_contimg()
 
@@ -77,10 +83,10 @@ def test_forced_convolve_works_without_dsa110_contimg():
             "dsa110_continuum.photometry.forced",
         )
 
-        # The fallback values
-        assert forced_mod.settings is None
-        # CPU fallback: get_array_module returns (numpy, False)
-        xp, is_gpu = forced_mod.get_array_module(prefer_gpu=True, min_elements=1)
+        # Vendored settings satisfied in-package — no legacy fallback needed
+        assert forced_mod.settings is not None
+        # CPU path is deterministic regardless of GPU availability
+        xp, is_gpu = forced_mod.get_array_module(prefer_gpu=False, min_elements=1)
         assert xp is np
         assert is_gpu is False
 

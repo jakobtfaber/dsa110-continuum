@@ -14,19 +14,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-try:
-    from dsa110_contimg.workflow.pipeline import Job, JobResult, register_job
-except ImportError:
-    # dsa110_contimg not installed (cloud/test env) — define no-op stubs
-    def register_job(cls):  # type: ignore[misc]
-        """No-op decorator when dsa110_contimg is unavailable."""
-        return cls
-
-    class JobResult:  # type: ignore[no-redef]
-        pass
-
-    class Job:  # type: ignore[no-redef]
-        pass
+from dsa110_continuum.workflow import Job, JobResult, register_job
 
 from dsa110_continuum.mosaic.jobs import MosaicJobConfig
 
@@ -137,113 +125,16 @@ class ScienceMosaicBridgeJob(Job):
         return True, None
 
     def execute(self) -> JobResult:
-        """Execute the Dagster workflow."""
-        from datetime import datetime, timezone
-
+        """Execute the (retired) Dagster workflow."""
         is_valid, error = self.validate()
         if not is_valid:
             return JobResult.fail(error or "Validation failed")
 
-        logger.info(f"Executing Science Mosaic workflow for plan {self.plan_id}")
-
-        # Update status to building
-        self._update_status("building")
-
-        try:
-            # Deferred import: the legacy Dagster definitions module validates
-            # runtime prerequisites (e.g. /dev/shm/dsa110-contimg) at module
-            # load, raising RuntimeError. Importing it here keeps pure-Python
-            # mosaic imports free of that bootstrap (issue #75).
-            from dsa110_contimg.workflow.dagster.jobs.science_mosaic import (
-                science_mosaic_workflow,
-            )
-
-            # Convert timestamps to ISO8601
-            start_iso = datetime.fromtimestamp(self.start_time, tz=timezone.utc).isoformat()
-            end_iso = datetime.fromtimestamp(self.end_time, tz=timezone.utc).isoformat()
-
-            # Construct op config
-            op_config = {
-                "config": {
-                    "start_time": start_iso,
-                    "end_time": end_iso,
-                    "mosaic_name": self.mosaic_name,
-                    "database_path": str(self.config.database_path),
-                    "images_table": self.config.images_table,
-                    "calibrator_name": "0834+555",  # Hardcoded for now, or could be param
-                }
-            }
-
-            # Simplify run_config construction to avoid repetition
-            dagster_ops = [
-                "find_and_convert_data",
-                "select_transit_tile",
-                "solve_transit_calibration",
-                "image_transit",
-                "image_others",
-                "create_science_mosaic",
-                "register_mosaic_result",
-                "apply_calibration",
-                "image_vis",
-                "apply_calibration_with_solve_result",
-            ]
-
-            # We need to ensure the resource config matches the environment
-            # `DSA110PipelineResource` expects config that matches `get_pipeline_resource_config()` in definitions.py
-            # But here we are constructing it manually.
-            from dsa110_contimg.common.utils.paths import resolve_paths
-            paths = resolve_paths()
-
-            run_config = {
-                "ops": {op_name: op_config for op_name in dagster_ops},
-                "resources": {
-                    "dsa110_pipeline": {
-                        "config": {
-                            "input_dir": str(paths.input_dir),  # Default
-                            "output_dir": str(paths.ms_dir),  # Output of conversion is MS
-                            "scratch_dir": str(paths.tmpfs_dir),
-                            "state_dir": str(paths.state_dir),
-                        }
-                    }
-                }
-            }
-
-            # Execute in process
-            result = science_mosaic_workflow.execute_in_process(run_config=run_config)
-
-            if not result.success:
-                raise RuntimeError("Dagster execution failed")
-
-            # Result registration handled by register_mosaic_result op
-            # But we should verify.
-
-            # We can check database or output
-            # For JobResult, we want to return what MosaicBuildJob returns
-
-            mosaic = None
-            with contextlib.closing(sqlite3.connect(str(self.config.database_path))) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.execute("SELECT * FROM mosaics WHERE plan_id = ?", (self.plan_id,))
-                mosaic = cursor.fetchone()
-
-            if mosaic:
-                return JobResult.ok(
-                    outputs={
-                        "mosaic_id": mosaic["id"],
-                        "mosaic_path": mosaic["path"],
-                        "n_images": mosaic["n_images"],
-                        "median_rms": mosaic["median_rms_jy"],
-                    },
-                    message=f"Built Science mosaic: {mosaic['path']}",
-                )
-            else:
-                # Op might have failed to register
-                raise RuntimeError("Mosaic created but not registered in database")
-
-        except Exception as e:
-            logger.exception(f"Science mosaic execution failed: {e}")
-            self._update_status("failed")
-            return JobResult.fail(str(e))
+        raise RuntimeError(
+            "Science-mosaic Dagster bridge retired with dsa110_contimg; "
+            "run the visibility-domain coadd via scripts/batch_pipeline.py "
+            "(see docs/skills/mosaicking.md)."
+        )
 
     def _update_status(self, status: str) -> None:
         """Update plan status in database."""

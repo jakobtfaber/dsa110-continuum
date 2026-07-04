@@ -14,10 +14,7 @@ from typing import Any
 import numpy as np
 
 # Import wrap_phase_deg for angle wrapping
-try:
-    from dsa110_contimg.common.utils.angles import wrap_phase_deg
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.angles import wrap_phase_deg
 from dsa110_continuum.calibration.caltables import discover_caltables
 
 # casacore is only available inside the CASA / casa6 environment. Guard the

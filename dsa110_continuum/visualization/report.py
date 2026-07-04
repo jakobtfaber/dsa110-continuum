@@ -21,10 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-try:
-    from dsa110_contimg.common.utils.templates import render_template
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.templates import render_template
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
@@ -59,7 +56,7 @@ class ReportMetadata:
     def __post_init__(self):
         if self.pipeline_version is None:
             try:
-                from dsa110_contimg import __version__
+                from dsa110_continuum import __version__
 
                 self.pipeline_version = __version__
             except ImportError:

@@ -38,13 +38,10 @@ from astropy.wcs import WCS  # type: ignore[reportMissingTypeStubs]
 from matplotlib.colors import Normalize
 
 from dsa110_continuum.catalog.query import query_sources
-try:
-    from dsa110_contimg.infrastructure.database import (
-        ensure_pipeline_db,
-        photometry_insert,
-    )
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.database import (
+    ensure_pipeline_db,
+    photometry_insert,
+)
 from dsa110_continuum.photometry.ese_detection import detect_ese_candidates
 
 from .adaptive_binning import AdaptiveBinningConfig
@@ -73,7 +70,7 @@ def _get_pipeline_db_path(cli_arg: str | None = None) -> Path:
 
     # Try centralized settings
     try:
-        from dsa110_contimg.common.unified_config import get_settings
+        from dsa110_continuum.unified_config import get_settings
 
         settings = get_settings()
         if hasattr(settings, "database") and hasattr(settings.database, "path"):

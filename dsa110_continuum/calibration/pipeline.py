@@ -17,13 +17,7 @@ from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 
-try:
-    from dsa110_contimg.workflow.pipeline import (
-        Pipeline,
-        register_pipeline,
-    )
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.workflow import Pipeline, register_pipeline
 
 from .jobs import (
     CalibrationApplyJob,
@@ -363,7 +357,7 @@ async def run_calibration_pipeline(
         CalibrationResult
         Execution status and outputs.
     """
-    from dsa110_contimg.workflow.pipeline import PipelineExecutor
+    from dsa110_continuum.workflow import PipelineExecutor
 
     started_at = datetime.now(UTC)
 

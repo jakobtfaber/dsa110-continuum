@@ -1,0 +1,1013 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{escaped_title}</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      {shared_css}
+
+      /* Template-specific overrides for FITS Viewer */
+      a {{
+          color: var(--dsa-secondary);
+          text-decoration: none;
+      }}
+
+      a:hover {{
+          color: var(--dsa-secondary-light);
+      }}
+
+      header {{
+          background-color: var(--dsa-bg-paper);
+          border-bottom: 2px solid var(--dsa-primary);
+          padding: var(--dsa-spacing-lg) var(--dsa-spacing-xl);
+      }}
+
+      header .header-content {{
+          max-width: 1200px;
+          margin: 0 auto;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+      }}
+
+      header .header-left {{
+          display: flex;
+          align-items: center;
+          gap: var(--dsa-spacing-md);
+      }}
+
+      header .logo {{
+          font-size: 1.5rem;
+      }}
+
+      header h1 {{
+          font-size: 1.5rem;
+          font-weight: 600;
+          color: var(--dsa-primary);
+          margin: 0;
+          padding: 0;
+          border: none;
+      }}
+
+      header .subtitle {{
+          font-size: 0.875rem;
+          color: var(--dsa-text-secondary);
+      }}
+
+      header .back-link {{
+          color: var(--dsa-text-secondary);
+          font-size: 0.875rem;
+          display: flex;
+          align-items: center;
+          gap: var(--dsa-spacing-sm);
+      }}
+
+      header .back-link:hover {{
+          color: var(--dsa-secondary);
+      }}
+
+      .container {{
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: var(--dsa-spacing-xl);
+      }}
+
+      .card {{
+          background-color: var(--dsa-bg-default);
+          border: 1px solid var(--dsa-border);
+          border-radius: var(--dsa-radius-lg);
+          padding: var(--dsa-spacing-lg);
+          margin-bottom: var(--dsa-spacing-lg);
+          box-shadow: var(--dsa-shadow);
+          transition: box-shadow 0.2s ease-in-out;
+      }}
+
+      .card:hover {{
+          box-shadow: var(--dsa-shadow-lg);
+      }}
+
+      .card-title {{
+          font-size: 1rem;
+          font-weight: 600;
+          margin-bottom: var(--dsa-spacing-md);
+          color: var(--dsa-primary);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+      }}
+
+      .form-group {{
+          margin-bottom: var(--dsa-spacing-md);
+      }}
+
+      label {{
+          display: block;
+          margin-bottom: var(--dsa-spacing-sm);
+          font-weight: 500;
+          font-size: 0.875rem;
+          color: var(--dsa-text-secondary);
+      }}
+
+      input[type="text"],
+      input[type="file"],
+      select {{
+          width: 100%;
+          padding: 0.75rem 1rem;
+          border: 1px solid var(--dsa-border);
+          border-radius: var(--dsa-radius);
+          font-size: 0.875rem;
+          font-family: inherit;
+          background-color: var(--dsa-bg-paper);
+          color: var(--dsa-text-primary);
+          transition: border-color 0.2s, box-shadow 0.2s;
+      }}
+
+      input[type="text"]::placeholder {{
+          color: var(--dsa-text-disabled);
+      }}
+
+      input[type="text"]:focus,
+      select:focus {{
+          outline: none;
+          border-color: var(--dsa-secondary);
+          box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.25);
+      }}
+
+      .btn {{
+          display: inline-block;
+          padding: 0.75rem 1.5rem;
+          border: 1px solid transparent;
+          border-radius: 9999px;
+          font-size: 0.875rem;
+          font-weight: 500;
+          cursor: pointer;
+          text-decoration: none;
+          transition: all 0.2s ease-in-out;
+          text-align: center;
+          box-shadow: var(--dsa-shadow);
+      }}
+
+      .btn:active {{
+          transform: translateY(1px);
+          box-shadow: none;
+      }}
+
+      .btn-primary {{
+          background-color: var(--dsa-secondary);
+          border-color: var(--dsa-secondary);
+          color: white;
+      }}
+
+      .btn-primary:hover {{
+          background-color: var(--dsa-secondary-light);
+          border-color: var(--dsa-secondary-light);
+          color: white;
+      }}
+
+      .btn-success {{
+          background-color: var(--dsa-success);
+          border-color: var(--dsa-success);
+          color: white;
+      }}
+
+      .btn-success:hover {{
+          background-color: #218838;
+          border-color: #218838;
+          color: white;
+      }}
+
+      .btn-secondary {{
+          background-color: var(--dsa-bg-paper);
+          border-color: var(--dsa-border);
+          color: var(--dsa-text-primary);
+      }}
+
+      .btn-secondary:hover {{
+          background-color: var(--dsa-bg-surface);
+      }}
+
+      .btn-sm {{
+          padding: 0.5rem 1rem;
+          font-size: 0.75rem;
+      }}
+
+      /* Viewer-specific button colors */
+      .btn-js9 {{
+          background-color: var(--dsa-secondary);
+          border-color: var(--dsa-secondary);
+          color: white;
+      }}
+
+      .btn-js9:hover {{
+          background-color: var(--dsa-secondary-light);
+          border-color: var(--dsa-secondary-light);
+      }}
+
+      .btn-carta {{
+          background-color: var(--dsa-success);
+          border-color: var(--dsa-success);
+          color: white;
+      }}
+
+      .btn-carta:hover {{
+          background-color: #218838;
+          border-color: #218838;
+      }}
+
+      .btn-aladin {{
+          background-color: #d97706;
+          border-color: #d97706;
+          color: white;
+      }}
+
+      .btn-aladin:hover {{
+          background-color: #f59e0b;
+          border-color: #f59e0b;
+      }}
+
+      .alert {{
+          padding: var(--dsa-spacing-md);
+          margin-bottom: var(--dsa-spacing-md);
+          border-radius: var(--dsa-radius);
+          border-left: 4px solid;
+      }}
+
+      .alert-info {{
+          background-color: var(--dsa-info-bg);
+          border-color: var(--dsa-info);
+          color: #0c5460;
+      }}
+
+      .alert-danger {{
+          background-color: var(--dsa-error-bg);
+          border-color: var(--dsa-error);
+          color: #721c24;
+      }}
+
+      .alert-success {{
+          background-color: var(--dsa-success-bg);
+          border-color: var(--dsa-success);
+          color: #155724;
+      }}
+
+      .row {{
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: var(--dsa-spacing-lg);
+          margin-bottom: var(--dsa-spacing-md);
+      }}
+
+      .row.full {{
+          grid-template-columns: 1fr;
+      }}
+
+      @media (max-width: 768px) {{
+          .row {{
+              grid-template-columns: 1fr;
+          }}
+          header {{
+              padding: var(--dsa-spacing-md);
+          }}
+          header h1 {{
+              font-size: 1.25rem;
+          }}
+          .container {{
+              padding: var(--dsa-spacing-md);
+          }}
+      }}
+
+      .loading {{
+          display: none;
+          text-align: center;
+          padding: var(--dsa-spacing-xl);
+      }}
+
+      .loading.active {{
+          display: block;
+      }}
+
+      .loading p {{
+          color: var(--dsa-text-secondary);
+      }}
+
+      .spinner {{
+          border: 3px solid var(--dsa-bg-surface);
+          border-top: 3px solid var(--dsa-secondary);
+          border-radius: 50%;
+          width: 30px;
+          height: 30px;
+          animation: spin 0.8s linear infinite;
+          margin: 0 auto var(--dsa-spacing-md);
+      }}
+
+      @keyframes spin {{
+          0% {{ transform: rotate(0deg); }}
+          100% {{ transform: rotate(360deg); }}
+      }}
+
+      .metadata {{
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: var(--dsa-spacing-md);
+          margin-top: var(--dsa-spacing-md);
+      }}
+
+      .metadata-item {{
+          background-color: var(--dsa-bg-paper);
+          padding: var(--dsa-spacing-md);
+          border-radius: var(--dsa-radius);
+          border-left: 3px solid var(--dsa-secondary);
+          border: 1px solid var(--dsa-border);
+          border-left: 3px solid var(--dsa-secondary);
+          transition: all 0.2s ease-in-out;
+      }}
+
+      .metadata-item:hover {{
+          background-color: var(--dsa-bg-surface);
+          border-left-color: var(--dsa-primary);
+          transform: translateY(-2px);
+      }}
+
+      .metadata-label {{
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: var(--dsa-text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          margin-bottom: var(--dsa-spacing-xs);
+      }}
+
+      .metadata-value {{
+          font-size: 1rem;
+          color: var(--dsa-text-primary);
+          word-break: break-word;
+      }}
+
+      .no-data {{
+          text-align: center;
+          padding: var(--dsa-spacing-xl);
+          color: var(--dsa-text-disabled);
+      }}
+
+      .error-details {{
+          background-color: var(--dsa-bg-paper);
+          padding: var(--dsa-spacing-md);
+          border-radius: var(--dsa-radius-sm);
+          margin-top: var(--dsa-spacing-sm);
+          font-family: var(--dsa-font-mono);
+          font-size: 0.75rem;
+          overflow-x: auto;
+          color: var(--dsa-text-secondary);
+          border: 1px solid var(--dsa-border);
+      }}
+
+      .fits-viewer-buttons {{
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.75rem;
+      }}
+
+      .fits-viewer-unavailable {{
+          color: var(--dsa-text-disabled);
+          font-style: italic;
+          padding: var(--dsa-spacing-sm);
+      }}
+
+      code {{
+          background-color: var(--dsa-bg-code);
+          padding: 0.2rem 0.5rem;
+          border-radius: var(--dsa-radius-sm);
+          font-family: var(--dsa-font-mono);
+          font-size: 0.85em;
+          color: var(--dsa-primary);
+          border: 1px solid var(--dsa-border);
+          transition: all 0.15s ease-in-out;
+      }}
+
+      code:hover {{
+          background-color: var(--dsa-bg-surface);
+      }}
+
+      /* Focus-visible for accessibility */
+      .btn:focus-visible,
+      input:focus-visible,
+      select:focus-visible {{
+          outline: 2px solid var(--dsa-secondary);
+          outline-offset: 2px;
+      }}
+
+      /* Tooltip styles */
+      [data-tooltip] {{
+          position: relative;
+          cursor: help;
+      }}
+
+      [data-tooltip]::after {{
+          content: attr(data-tooltip);
+          position: absolute;
+          bottom: 100%;
+          left: 50%;
+          transform: translateX(-50%);
+          padding: 0.5rem 0.75rem;
+          background-color: var(--color-bg-paper);
+          color: var(--color-text-primary);
+          font-size: 0.75rem;
+          border-radius: 4px;
+          border: 1px solid var(--color-border);
+          white-space: nowrap;
+          opacity: 0;
+          visibility: hidden;
+          transition: all 0.2s ease-in-out;
+          z-index: 100;
+          box-shadow: var(--card-shadow);
+      }}
+
+      [data-tooltip]:hover::after {{
+          opacity: 1;
+          visibility: visible;
+          bottom: calc(100% + 8px);
+      }}
+
+      /* Skeleton loading animation */
+      .skeleton {{
+          background: linear-gradient(
+              90deg,
+              var(--color-bg-surface) 25%,
+              var(--color-border) 50%,
+              var(--color-bg-surface) 75%
+          );
+          background-size: 200% 100%;
+          animation: skeleton-loading 1.5s ease-in-out infinite;
+          border-radius: 4px;
+      }}
+
+      @keyframes skeleton-loading {{
+          0% {{ background-position: 200% 0; }}
+          100% {{ background-position: -200% 0; }}
+      }}
+
+      .skeleton-text {{
+          height: 1rem;
+          margin-bottom: 0.5rem;
+      }}
+
+      .skeleton-text.short {{
+          width: 60%;
+      }}
+
+      small {{
+          color: var(--color-text-disabled);
+      }}
+
+      /* Modal Styles */
+      .modal {{
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(4px);
+      }}
+
+      .modal-content {{
+        background-color: var(--color-bg-surface);
+        margin: 5% auto;
+        padding: 0;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        width: 80%;
+        max-width: 800px;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      }}
+
+      .modal-header {{
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--color-border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }}
+
+      .modal-title {{
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--color-text-primary);
+      }}
+
+      .close-modal {{
+        color: var(--color-text-muted);
+        font-size: 1.5rem;
+        font-weight: bold;
+        cursor: pointer;
+        background: none;
+        border: none;
+        padding: 0;
+      }}
+
+      .close-modal:hover {{
+        color: var(--color-text-primary);
+      }}
+
+      .modal-body {{
+        padding: 1rem 1.5rem;
+        overflow-y: auto;
+        flex: 1;
+      }}
+
+      .file-list {{
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }}
+
+      .file-item {{
+        padding: 0.5rem;
+        cursor: pointer;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--color-text-primary);
+      }}
+
+      .file-item:hover {{
+        background-color: var(--color-bg-default);
+      }}
+
+      .file-icon {{
+        width: 1.25rem;
+        text-align: center;
+      }}
+
+      .file-name {{
+        flex: 1;
+      }}
+
+      .current-path {{
+        padding: 0.5rem 1rem;
+        background-color: var(--color-bg-default);
+        border-bottom: 1px solid var(--color-border);
+        font-family: 'Roboto Mono', monospace;
+        font-size: 0.875rem;
+        color: var(--color-text-muted);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }}
+
+      {css_styles}
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="header-content">
+        <div class="header-left">
+          <span class="logo"></span>
+          <div>
+            <h1>FITS File Viewer</h1>
+            <span class="subtitle">Interactive viewers: JS9, CARTA, Aladin</span>
+          </div>
+        </div>
+        <a href="/" class="back-link">← Back to Dashboard</a>
+      </div>
+    </header>
+
+    <div class="container">
+      <!-- File Input Card -->
+      <div class="card">
+        <div class="card-title">Load FITS File</div>
+
+        <div class="form-group">
+          <label for="fits-path">File Path (absolute)</label>
+          <div style="display: flex; gap: 1rem">
+            <input type="text" id="fits-path" placeholder="/path/to/image.fits" style="flex: 1" />
+            <button class="btn btn-secondary" onclick="openFileBrowser()">Browse</button>
+            <button class="btn btn-primary" onclick="loadFile()">Load</button>
+          </div>
+          <small style="color: var(--color-text-muted); display: block; margin-top: 0.5rem">
+            Enter an absolute path to a FITS file on the server. The file must be readable and valid
+            FITS format.
+          </small>
+        </div>
+
+        <div class="form-group">
+          <label for="example-files">Or try an example:</label>
+          <select id="example-files" onchange="loadExampleFile(this.value)">
+            <option value="">-- Loading examples... --</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- File Browser Modal -->
+      <div id="file-browser-modal" class="modal">
+        <div class="modal-content">
+          <div class="modal-header">
+            <span class="modal-title">Select FITS File</span>
+            <button class="close-modal" onclick="closeFileBrowser()">&times;</button>
+          </div>
+          <div class="current-path">
+            <span id="browser-path">/</span>
+          </div>
+          <div class="modal-body">
+            <ul id="file-list" class="file-list">
+              <!-- File items will be populated here -->
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status Messages -->
+      <div id="messages"></div>
+
+      <!-- Loading Indicator with Skeleton -->
+      <div class="loading" id="loading">
+        <div class="card" style="opacity: 0.7">
+          <div class="card-title">Loading FITS File...</div>
+          <div class="form-group">
+            <div class="skeleton skeleton-text" style="width: 80%"></div>
+            <div class="skeleton skeleton-text short"></div>
+          </div>
+          <div class="form-group">
+            <div style="display: flex; gap: 0.75rem">
+              <div class="skeleton" style="width: 120px; height: 40px; border-radius: 9999px"></div>
+              <div class="skeleton" style="width: 120px; height: 40px; border-radius: 9999px"></div>
+              <div class="skeleton" style="width: 120px; height: 40px; border-radius: 9999px"></div>
+            </div>
+          </div>
+          <div class="metadata" style="margin-top: 1rem">
+            <div class="skeleton" style="height: 70px"></div>
+            <div class="skeleton" style="height: 70px"></div>
+            <div class="skeleton" style="height: 70px"></div>
+            <div class="skeleton" style="height: 70px"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results Card -->
+      <div class="card" id="results-card" style="display: none">
+        <div class="card-title">File Information & Viewers</div>
+
+        <!-- File Path -->
+        <div class="form-group">
+          <label>File Path</label>
+          <div
+            style="
+              padding: 0.75rem;
+              background-color: var(--color-bg-surface);
+              border-radius: 6px;
+              font-family: 'Roboto Mono', monospace;
+              word-break: break-all;
+              font-size: 0.875rem;
+              color: var(--color-text-primary);
+            "
+          >
+            <span id="result-filepath"></span>
+          </div>
+        </div>
+
+        <!-- Viewer Buttons -->
+        <div class="form-group">
+          <label>Open With</label>
+          <div id="viewer-buttons" class="fits-viewer-buttons"></div>
+        </div>
+
+        <!-- File Metadata -->
+        <div class="form-group">
+          <label>Metadata</label>
+          <div class="metadata" id="metadata-display"></div>
+        </div>
+
+        <!-- Download Button -->
+        <div class="form-group">
+          <a id="download-link" href="#" class="btn btn-success btn-sm"> ⬇ Download FITS </a>
+        </div>
+      </div>
+
+      <!-- API Documentation -->
+      <div class="card">
+        <div class="card-title">API Documentation</div>
+        <p style="margin-bottom: 1rem">
+          This viewer uses the DSA-110 FITS API to provide interactive access to FITS files.
+          Available endpoints:
+        </p>
+        <ul style="margin-left: 2rem; margin-bottom: 1rem">
+          <li><code>{escaped_api}/viewer-urls</code> - Get viewer URLs for a FITS file</li>
+          <li><code>{escaped_api}/metadata</code> - Extract metadata from FITS header</li>
+          <li><code>{escaped_api}/preview-html</code> - Get HTML preview with viewer buttons</li>
+          <li><code>{escaped_api}/validate</code> - Validate a FITS file</li>
+          <li><code>{escaped_api}/config</code> - Get viewer configuration</li>
+          <li><code>{escaped_api}/css</code> - Get CSS styles for buttons</li>
+        </ul>
+        <p style="font-size: 0.875rem; color: var(--color-text-muted)">
+          Base URL: {escaped_base_url}
+        </p>
+      </div>
+    </div>
+
+    <script>
+      const API_BASE = '{escaped_api}';
+      const SERVER_BASE_URL = '{escaped_base_url}';
+
+      // File Browser Logic - uses public /api/v1/fits/browse endpoint
+      let currentPath = '/data/dsa110-contimg/products'; // Default start path
+
+      function openFileBrowser() {{
+        document.getElementById('file-browser-modal').style.display = 'block';
+        browseDirectory(currentPath);
+      }}
+
+      function closeFileBrowser() {{
+        document.getElementById('file-browser-modal').style.display = 'none';
+      }}
+
+      async function browseDirectory(path) {{
+        const fileList = document.getElementById('file-list');
+        const pathDisplay = document.getElementById('browser-path');
+
+        fileList.innerHTML = '<li class="file-item">Loading...</li>';
+        pathDisplay.textContent = path;
+        currentPath = path;
+
+        try {{
+          const response = await fetch(`{escaped_api}/browse?path=${{encodeURIComponent(path)}}`);
+
+          if (!response.ok) {{
+            const errData = await response.json().catch(() => ({{}}));
+            throw new Error(errData.detail || 'Failed to list directory');
+          }}
+
+          const data = await response.json();
+          fileList.innerHTML = '';
+
+          // Add parent directory option if available
+          if (data.parent) {{
+            const li = document.createElement('li');
+            li.className = 'file-item';
+            li.innerHTML = '<span class="file-icon"></span><span class="file-name">..</span>';
+            li.onclick = () => browseDirectory(data.parent);
+            fileList.appendChild(li);
+          }}
+
+          if (data.entries.length === 0) {{
+            const li = document.createElement('li');
+            li.className = 'file-item';
+            li.style.opacity = '0.6';
+            li.innerHTML = '<span class="file-icon"></span><span class="file-name">No FITS files or directories</span>';
+            fileList.appendChild(li);
+            return;
+          }}
+
+          data.entries.forEach(entry => {{
+            const li = document.createElement('li');
+            li.className = 'file-item';
+
+            if (entry.is_dir) {{
+              li.innerHTML = `<span class="file-icon"></span><span class="file-name">${{escapeHtml(entry.name)}}</span>`;
+              li.onclick = () => browseDirectory(entry.path);
+            }} else {{
+              const sizeStr = entry.size_mb !== null ? ` (${{entry.size_mb}} MB)` : '';
+              li.innerHTML = `<span class="file-icon"></span><span class="file-name">${{escapeHtml(entry.name)}}${{sizeStr}}</span>`;
+              li.onclick = () => {{
+                document.getElementById('fits-path').value = entry.path;
+                closeFileBrowser();
+              }};
+            }}
+
+            fileList.appendChild(li);
+          }});
+
+        }} catch (err) {{
+          fileList.innerHTML = `<li class="file-item" style="color: var(--color-error)">Error: ${{escapeHtml(err.message)}}</li>`;
+        }}
+      }}
+
+      // Close modal when clicking outside
+      window.onclick = function(event) {{
+        const modal = document.getElementById('file-browser-modal');
+        if (event.target == modal) {{
+          closeFileBrowser();
+        }}
+      }}
+
+      // HTML escape function for JavaScript (equivalent to Python's html.escape)
+      function escapeHtml(text) {{
+          const div = document.createElement('div');
+          div.textContent = text;
+          return div.innerHTML;
+      }}
+
+      async function showMessage(type, message, details = null) {{
+          const messagesDiv = document.getElementById('messages');
+          const alertClass = type === 'error' ? 'alert-danger' :
+                           type === 'success' ? 'alert-success' : 'alert-info';
+
+          let msgHtml = `<div class="alert ${{alertClass}}">${{escapeHtml(message)}}`;
+          if (details) {{
+              msgHtml += `<div class="error-details">${{escapeHtml(details)}}</div>`;
+          }}
+          msgHtml += '</div>';
+
+          messagesDiv.innerHTML = msgHtml;
+          messagesDiv.scrollIntoView({{ behavior: 'smooth' }});
+      }}
+
+      async function loadExamplesList() {{
+          const select = document.getElementById('example-files');
+          try {{
+              const resp = await fetch(`${{API_BASE}}/examples`);
+              if (resp.ok) {{
+                  const data = await resp.json();
+                  select.innerHTML = '<option value="">-- Select an example --</option>';
+                  if (data.examples && data.examples.length > 0) {{
+                      data.examples.forEach(ex => {{
+                          const option = document.createElement('option');
+                          option.value = ex.path;
+                          option.textContent = ex.label;
+                          select.appendChild(option);
+                      }});
+                  }} else {{
+                      select.innerHTML = '<option value="">-- No FITS files found --</option>';
+                  }}
+              }} else {{
+                  select.innerHTML = '<option value="">-- Error loading examples --</option>';
+              }}
+          }} catch (err) {{
+              select.innerHTML = '<option value="">-- Error: ' + escapeHtml(err.message) + ' --</option>';
+          }}
+      }}
+
+      async function loadFile() {{
+          const path = document.getElementById('fits-path').value.trim();
+          if (!path) {{
+              showMessage('error', 'Please enter a file path');
+              return;
+          }}
+
+          await loadFitsFile(path);
+      }}
+
+      function loadExampleFile(path) {{
+          if (path) {{
+              document.getElementById('fits-path').value = path;
+              loadFile();
+          }}
+      }}
+
+      async function loadFitsFile(fitsPath) {{
+          const loading = document.getElementById('loading');
+          const resultsCard = document.getElementById('results-card');
+          const messagesDiv = document.getElementById('messages');
+
+          try {{
+              loading.classList.add('active');
+              messagesDiv.innerHTML = '';
+              resultsCard.style.display = 'none';
+
+              // Validate file first
+              const validateResp = await fetch(
+                  `${{API_BASE}}/validate?fits_path=${{encodeURIComponent(fitsPath)}}`
+              );
+
+              if (!validateResp.ok) {{
+                  const error = await validateResp.json();
+                  showMessage('error', 'File validation failed', JSON.stringify(error, null, 2));
+                  return;
+              }}
+
+              const validationData = await validateResp.json();
+              if (!validationData.valid) {{
+                  showMessage('error', 'Invalid FITS file', validationData.message);
+                  return;
+              }}
+
+              if (!validationData.viewable) {{
+                  showMessage('error', 'File not viewable', validationData.message);
+                  return;
+              }}
+
+              // Get viewer URLs
+              const urlsResp = await fetch(
+                  `${{API_BASE}}/viewer-urls?fits_path=${{encodeURIComponent(fitsPath)}}`
+              );
+
+              if (!urlsResp.ok) {{
+                  const error = await urlsResp.json();
+                  showMessage('error', 'Failed to get viewer URLs', JSON.stringify(error, null, 2));
+                  return;
+              }}
+
+              const data = await urlsResp.json();
+
+              // Display results
+              displayResults(fitsPath, data);
+              resultsCard.style.display = 'block';
+              showMessage('success', 'FITS file loaded successfully');
+
+          }} catch (err) {{
+              showMessage('error', 'Error loading FITS file', err.message);
+          }} finally {{
+              loading.classList.remove('active');
+          }}
+      }}
+
+      function displayResults(fitsPath, data) {{
+          // File path
+          document.getElementById('result-filepath').textContent = fitsPath;
+
+          // Download link
+          document.getElementById('download-link').href = fitsPath;
+
+          // Viewer buttons
+          const metadata = data.metadata;
+          const viewersDiv = document.getElementById('viewer-buttons');
+          viewersDiv.innerHTML = '';
+
+          if (data.viewers && Object.keys(data.viewers).length > 0) {{
+              for (const [viewer, url] of Object.entries(data.viewers)) {{
+                  const btn = document.createElement('a');
+                  btn.href = url;
+                  btn.target = '_blank';
+                  btn.rel = 'noopener noreferrer';
+                  btn.className = `btn btn-${{viewer}}`;
+
+                  const icon = {{
+                      'js9': '',
+                      'carta': '',
+                      'aladin': ''
+                  }}[viewer] || '';
+
+                  btn.innerHTML = `${{icon}} Open in ${{viewer.toUpperCase()}}`;
+                  viewersDiv.appendChild(btn);
+              }}
+          }} else {{
+              viewersDiv.innerHTML = '<div class="fits-viewer-unavailable">No viewers available</div>';
+          }}
+
+          // Metadata
+          const metadataDiv = document.getElementById('metadata-display');
+          metadataDiv.innerHTML = '';
+
+          // Metadata descriptions for tooltips
+          const tooltips = {{
+              'Dimensions': 'Array dimensions (pixels)',
+              'Resolution': 'Angular resolution per pixel',
+              'Axes': 'Coordinate system axes (CTYPE)',
+              'Telescope': 'Telescope that took the observation',
+              'Instrument': 'Instrument used for observation',
+              'Object': 'Target object name',
+              'Date': 'Observation date/time (ISO format)',
+              'File Size': 'Size of FITS file on disk',
+              'WCS Available': 'World Coordinate System info present',
+          }};
+
+          const fields = [
+              ['Dimensions', 'shape', v => `${{v.join(' × ')}}`],
+              ['Resolution', 'resolution'],
+              ['Axes', 'axes', v => `${{v.join(', ')}}`],
+              ['Telescope', 'telescop'],
+              ['Instrument', 'instrume'],
+              ['Object', 'object'],
+              ['Date', 'date_obs'],
+              ['File Size', 'file_size_mb', v => `${{v.toFixed(2)}} MB`],
+              ['WCS Available', 'wcs_available', v => `${{v ? 'Yes' : 'No'}}`],
+          ];
+
+          fields.forEach(([label, key, formatter]) => {{
+              let value = metadata[key];
+              if (value !== null && value !== undefined && value !== '') {{
+                  if (formatter) value = formatter(value);
+
+                  const item = document.createElement('div');
+                  item.className = 'metadata-item';
+
+                  const tooltip = tooltips[label] || '';
+                  const tooltipAttr = tooltip ? ` data-tooltip="${{escapeHtml(tooltip)}}"` : '';
+
+                  item.innerHTML = `<div class="metadata-label"${{tooltipAttr}}>${{escapeHtml(label)}}</div><div class="metadata-value">${{escapeHtml(String(value))}}</div>`;
+                  metadataDiv.appendChild(item);
+              }}
+          }});
+      }}
+
+      // Allow Enter key to load file
+      document.addEventListener('keypress', (e) => {{
+          if (e.key === 'Enter' && e.target.id === 'fits-path') {{
+              loadFile();
+          }}
+      }});
+
+      // Load examples on page load
+      document.addEventListener('DOMContentLoaded', loadExamplesList);
+    </script>
+  </body>
+</html>

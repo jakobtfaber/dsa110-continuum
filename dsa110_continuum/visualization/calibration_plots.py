@@ -100,7 +100,7 @@ def plot_bandpass(
     # Helper to call plotbandpass with log environment protection
     def _call_plotbandpass(**kwargs):
         try:
-            from dsa110_contimg.common.utils.casa_init import casa_log_environment
+            from dsa110_continuum.utils.casa_init import casa_log_environment
 
             with casa_log_environment():
                 from casatasks import plotbandpass

@@ -28,14 +28,11 @@ from dataclasses import dataclass
 
 import numpy as np
 
-try:
-    from dsa110_contimg.common.utils.gpu_safety import (
-        check_system_memory_available,
-        gpu_safe,
-        safe_gpu_context,
-    )
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.gpu_safety import (
+    check_system_memory_available,
+    gpu_safe,
+    safe_gpu_context,
+)
 
 logger = logging.getLogger(__name__)
 

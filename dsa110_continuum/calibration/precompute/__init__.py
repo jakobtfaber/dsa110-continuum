@@ -10,7 +10,7 @@ Moved from workflow.pipeline.precompute to proper location in core.calibration.
 """
 
 try:
-    from dsa110_contimg.core.calibration.precompute.precompute import (
+    from dsa110_continuum.calibration.precompute.precompute import (
         CalibratorPrediction,
         PointingChange,
         PointingTracker,
@@ -20,7 +20,7 @@ try:
         read_uvh5_metadata_fast,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 __all__ = [
     "CalibratorPrediction",

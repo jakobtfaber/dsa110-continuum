@@ -41,10 +41,7 @@ from typing import Any
 import numpy as np
 
 # Import shared pointing utilities
-try:
-    from dsa110_contimg.common.utils.env_utils import get_env_path
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.config import get_env_path
 from dsa110_continuum.pointing.utils import (
     detect_dec_change,
     read_uvh5_dec_fast,

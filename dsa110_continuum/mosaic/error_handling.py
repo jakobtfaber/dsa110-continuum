@@ -46,7 +46,7 @@ def check_disk_space(
         path = path.parent
     if not path.exists():
         # Fallback to stage root for disk space check
-        from dsa110_contimg.infrastructure.database import data_config
+        from dsa110_continuum.database import data_config
 
         path = (
             data_config.STAGE_BASE if data_config.STAGE_BASE.exists() else data_config.get_pid_dir()

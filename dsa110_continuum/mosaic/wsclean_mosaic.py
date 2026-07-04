@@ -138,9 +138,9 @@ def _solve_calibration(
     CalibrationError
         If calibration solve fails.
     """
-    from dsa110_contimg.common.utils.exceptions import CalibrationError
+    from dsa110_continuum.calibration.ensure import CalibrationError
     from dsa110_continuum.calibration.presets import get_preset
-    from dsa110_contimg.workflow.pipeline.stages.calibration_helpers import (
+    from dsa110_continuum.calibration.solve_orchestration import (
         solve_calibration_tables,
     )
 
@@ -212,7 +212,7 @@ def _apply_to_mosaic_copies(
     CalibrationError
         If calibration apply fails for any MS.
     """
-    from dsa110_contimg.common.utils.exceptions import CalibrationError
+    from dsa110_continuum.calibration.ensure import CalibrationError
     from dsa110_continuum.calibration.applycal import apply_to_target
 
     logger.info(f"Applying calibration to {len(mosaic_copies)} mosaic copies")
@@ -238,7 +238,7 @@ def _apply_to_mosaic_copies(
 
 def get_env_with_everybeam() -> dict[str, str]:
     """Get environment with EveryBeam + WSClean native libs configured."""
-    from dsa110_contimg.common.utils.wsclean_utils import build_wsclean_native_env
+    from dsa110_continuum.utils.wsclean_utils import build_wsclean_native_env
 
     env = build_wsclean_native_env()
     ld_path = env.get("LD_LIBRARY_PATH", "")
@@ -658,7 +658,7 @@ def build_wsclean_mosaic(
     # Inject provenance if possible (using FITS headers)
     # Since mosaic is a FITS file, we use astropy to add keywords
     try:
-        from dsa110_contimg.infrastructure.tracking.provenance import ProvenanceTracker
+        from dsa110_continuum.database.tracking import ProvenanceTracker
         import uuid
         import time
         from astropy.io import fits

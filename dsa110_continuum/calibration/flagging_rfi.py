@@ -14,14 +14,10 @@ from pathlib import Path
 
 from dsa110_continuum._lazy_init import require_headless
 
-try:
-    from dsa110_contimg.common.utils import get_env_path
-except ImportError:
-    def get_env_path(name: str, default: str) -> Path:
-        return Path(os.environ.get(name, default))
+from dsa110_continuum.config import get_env_path
 
 try:
-    from dsa110_contimg.common.utils.error_context import format_ms_error_with_suggestions
+    from dsa110_continuum.utils.error_context import format_ms_error_with_suggestions
 except ImportError:
     def format_ms_error_with_suggestions(
         error: Exception, ms: str, operation: str, suggestions: list[str]
@@ -86,7 +82,7 @@ def flag_rfi(
         Threshold in MAD-σ units for the residual clip (default: 7.0).
     """
     require_headless()
-    from dsa110_contimg.common.utils.ms_permissions import ensure_ms_writable
+    from dsa110_continuum.utils.ms_permissions import ensure_ms_writable
 
     ensure_ms_writable(ms)
     if backend == "aoflagger":

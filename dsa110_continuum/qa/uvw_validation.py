@@ -144,7 +144,7 @@ def validate_uvw_geometry(
     ...     for violation in result.violations:
     ...         print(f"  - {violation}")
     """
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
 
@@ -388,7 +388,7 @@ def compare_uvw_before_after(
     dict
         Comparison statistics including max difference and correlation.
     """
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
 

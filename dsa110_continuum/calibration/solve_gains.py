@@ -646,7 +646,7 @@ def solve_gains(
         kwargs["spwmap"] = spwmap
 
     # Run with progress monitoring
-    from dsa110_contimg.common.utils.progress import stage_progress
+    from dsa110_continuum.utils.progress import stage_progress
 
     with stage_progress(
         f"{'Phase-only' if phase_only else 'Amplitude+phase'} gain solve",

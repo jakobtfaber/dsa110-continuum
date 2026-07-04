@@ -69,41 +69,29 @@ def tclean(*args, **kwargs):
 
 
 try:
-    from dsa110_contimg.common.utils.run_isolation import prepare_temp_environment  # noqa: E402
+    from dsa110_continuum.utils.run_isolation import prepare_temp_environment  # noqa: E402
 except ImportError:  # pragma: no cover - defensive import
     prepare_temp_environment = None  # type: ignore
 
 from dsa110_continuum.imaging.cli_utils import default_cell_arcsec, detect_datacolumn  # noqa: E402
 from dsa110_continuum.imaging.fov import derive_extent_deg  # noqa: E402
 
-try:
-    from dsa110_contimg.common.unified_config import settings  # noqa: E402
-    from dsa110_contimg.common.utils.error_context import (
-        format_ms_error_with_suggestions,  # noqa: E402
-    )
-    from dsa110_contimg.common.utils.gpu_utils import (  # noqa: E402
-        build_docker_command,
-        get_gpu_config,
-    )
-    from dsa110_contimg.common.utils.performance import track_performance  # noqa: E402
-    from dsa110_contimg.common.utils.runtime_safeguards import require_casa6_python  # noqa: E402
-    from dsa110_contimg.common.utils.validation import ValidationError, validate_ms  # noqa: E402
-except ImportError:
-    from dsa110_continuum._compat import (  # fallback stubs
-        ValidationError,
-        get_gpu_config,
-        require_casa6_python,
-        track_performance,
-        validate_ms,
-    )
-    settings = None  # type: ignore[assignment]
-    format_ms_error_with_suggestions = None  # type: ignore[assignment]
-    build_docker_command = None  # type: ignore[assignment]
+from dsa110_continuum.unified_config import settings  # noqa: E402
+from dsa110_continuum.utils.error_context import (
+    format_ms_error_with_suggestions,  # noqa: E402
+)
+from dsa110_continuum.utils.gpu_utils import (  # noqa: E402
+    build_docker_command,
+    get_gpu_config,
+)
+from dsa110_continuum.utils.performance import track_performance  # noqa: E402
+from dsa110_continuum.utils.runtime_safeguards import require_casa6_python  # noqa: E402
+from dsa110_continuum.utils.validation import ValidationError, validate_ms  # noqa: E402
 
 LOG = logging.getLogger(__name__)
 
 # Fixed image extent: defaults to 3.5° x 3.5° unless config opts into derivation
-FIXED_IMAGE_EXTENT_DEG = getattr(getattr(settings, 'imaging', None), 'fixed_extent_deg', 3.5) if 'settings' in dir() else 3.5
+FIXED_IMAGE_EXTENT_DEG = getattr(getattr(settings, 'imaging', None), 'fixed_extent_deg', 3.5)
 
 
 def _write_imaging_provenance(
@@ -482,7 +470,7 @@ def run_wsclean(
     # Execute with configurable timeout
     # Set WSCLEAN_DOCKER_TIMEOUT env var to override default (in seconds)
     try:
-        from dsa110_contimg.common.utils import get_env_int as _get_env_int
+        from dsa110_continuum.utils import get_env_int as _get_env_int
         wsclean_timeout = _get_env_int("WSCLEAN_DOCKER_TIMEOUT", default=1800)
     except ImportError:
         wsclean_timeout = int(os.environ.get("WSCLEAN_DOCKER_TIMEOUT", "1800"))
@@ -491,7 +479,7 @@ def run_wsclean(
     env = None
     if not use_docker:
         try:
-            from dsa110_contimg.common.utils.wsclean_utils import build_wsclean_native_env as _bwne
+            from dsa110_continuum.utils.wsclean_utils import build_wsclean_native_env as _bwne
             env = _bwne()
         except ImportError:
             env = None  # Use inherited environment
@@ -510,8 +498,8 @@ def run_wsclean(
 
     # Use progress monitoring if available
     try:
-        from dsa110_contimg.common.utils.progress import StageProgressMonitor
-        from dsa110_contimg.common.utils.progress import estimate_imaging_time as _eit
+        from dsa110_continuum.utils.progress import StageProgressMonitor
+        from dsa110_continuum.utils.progress import estimate_imaging_time as _eit
         estimated_seconds = _eit(n_rows, imsize, niter)
         monitor: Any = StageProgressMonitor(
             "WSClean imaging",
@@ -717,7 +705,7 @@ def image_ms(
     Parameters
     ----------
     """
-    from dsa110_contimg.common.utils.validation import validate_corrected_data_quality
+    from dsa110_continuum.utils.validation import validate_corrected_data_quality
 
     # Validate MS using shared validation module
     try:
@@ -840,7 +828,7 @@ def image_ms(
     # Prepare temp dirs and working directory to keep TempLattice* off the repo
     try:
         if prepare_temp_environment is not None:
-            from dsa110_contimg.common.unified_config import settings
+            from dsa110_continuum.unified_config import settings
 
             out_dir = os.path.dirname(os.path.abspath(imagename))
             root = os.getenv("CONTIMG_TMPFS_DIR") or str(settings.paths.tmpfs_dir)
@@ -1248,7 +1236,7 @@ def image_ms(
 
                 else:
                     # Native WSClean execution
-                    from dsa110_contimg.common.utils.wsclean_utils import (
+                    from dsa110_continuum.utils.wsclean_utils import (
                         build_wsclean_native_env,
                     )
 
@@ -1599,7 +1587,7 @@ def image_ms(
 
         from pathlib import Path as PathlibPath
 
-        from dsa110_contimg.common.utils.ms_permissions import (
+        from dsa110_continuum.utils.ms_permissions import (
             ensure_dir_writable,
             ensure_ms_writable,
         )

@@ -16,10 +16,7 @@ from __future__ import annotations
 
 import os
 
-try:
-    from dsa110_contimg.common.utils.runtime_safeguards import require_casa6_python
-except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+from dsa110_continuum.utils.runtime_safeguards import require_casa6_python
 
 
 def _ensure_imaging_columns_exist(ms_path: str) -> None:
@@ -43,7 +40,7 @@ def _ensure_imaging_columns_exist(ms_path: str) -> None:
     logger = logging.getLogger(__name__)
 
     # Ensure CASAPATH is set before importing CASA modules
-    from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+    from dsa110_continuum.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
 
@@ -447,7 +444,7 @@ def _fix_field_phase_centers_from_times(ms_path: str) -> None:
         
         from dsa110_continuum.adapters.casa import casa_adapter
         from dsa110_continuum.conversion.helpers_coordinates import get_meridian_coords
-        from dsa110_contimg.common.utils.time_utils import detect_casa_time_format
+        from dsa110_continuum.utils.time_utils import detect_casa_time_format
         
         if not casa_adapter.is_available:
             return
@@ -932,7 +929,7 @@ def _fix_observation_time_range(ms_path: str) -> None:
 
         _tb = _casatables.table
 
-        from dsa110_contimg.common.utils.time_utils import (
+        from dsa110_continuum.utils.time_utils import (
             DEFAULT_YEAR_RANGE,
             detect_casa_time_format,
             validate_time_mjd,
@@ -1134,7 +1131,7 @@ def configure_ms_for_imaging(
         ms_path = os.fspath(ms_path)
 
     # CRITICAL: Validate MS exists and is readable
-    from dsa110_contimg.common.utils.exceptions import ConversionError
+    from dsa110_continuum.utils.exceptions import ConversionError
 
     if not os.path.exists(ms_path):
         raise ConversionError(

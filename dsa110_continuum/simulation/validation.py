@@ -127,7 +127,7 @@ def validate_photometry(
         >>> assert report.passed
         >>> assert report.mean_error_percent < 10.0
     """
-    from dsa110_contimg.infrastructure.database.unified import Database
+    from dsa110_continuum.database.unified import Database
 
     logger.info("Validating photometry outputs...")
 
@@ -318,7 +318,7 @@ def validate_lightcurve(
         ValidationReport with lightcurve validation results
 
     """
-    from dsa110_contimg.infrastructure.database.unified import Database
+    from dsa110_continuum.database.unified import Database
 
     logger.info("Validating lightcurve and variability detection...")
 
@@ -458,7 +458,7 @@ def validate_ese_detection(
         ValidationReport with transient detection results
 
     """
-    from dsa110_contimg.infrastructure.database.unified import Database
+    from dsa110_continuum.database.unified import Database
 
     logger.info("Validating ESE/transient detection...")
 

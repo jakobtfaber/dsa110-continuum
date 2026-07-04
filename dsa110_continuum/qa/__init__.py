@@ -15,13 +15,13 @@ query_calibration_trending: Query calibration trending data
 
     Example
 -------
-    >>> from dsa110_contimg.core.qa import validate_flux_scale
+    >>> from dsa110_continuum.qa import validate_flux_scale
     >>> result = validate_flux_scale("image.fits", catalog="nvss", min_snr=5.0)
     >>> print(f"Flux scale error: {result.flux_scale_error * 100:.1f}%")
 """
 
 try:
-    from dsa110_contimg.core.qa.calibration_stability_tracker import (
+    from dsa110_continuum.qa.calibration_stability_tracker import (
         AntennaGainSnapshot,
         AntennaTrendAnalysis,
         CalibrationStabilityReport,
@@ -29,7 +29,7 @@ try:
         get_global_tracker,
         reset_global_tracker,
     )
-    from dsa110_contimg.core.qa.catalog_validation import (
+    from dsa110_continuum.qa.catalog_validation import (
         AstrometryResult,
         FluxScaleResult,
         SourceCountsResult,
@@ -37,13 +37,13 @@ try:
         run_full_validation,
         validate_flux_scale,
     )
-    from dsa110_contimg.core.qa.delay_validation import (
+    from dsa110_continuum.qa.delay_validation import (
         DelayValidationResult,
         check_delay_solutions,
         compute_geometric_delay_limits,
         validate_delay_solutions,
     )
-    from dsa110_contimg.core.qa.pipeline_hooks import (
+    from dsa110_continuum.qa.pipeline_hooks import (
         CalibrationMetricsRecord,
         extract_calibration_metrics,
         hook_calibration_complete,
@@ -51,19 +51,19 @@ try:
         query_calibration_trending,
         update_calibration_trending,
     )
-    from dsa110_contimg.core.qa.pipeline_quality import (
+    from dsa110_continuum.qa.pipeline_quality import (
         check_calibration_quality,
         check_image_quality,
         check_ms_after_conversion,
     )
-    from dsa110_contimg.core.qa.uvw_validation import (
+    from dsa110_continuum.qa.uvw_validation import (
         UVWValidationResult,
         check_uvw_after_phaseshift,
         compare_uvw_before_after,
         validate_uvw_geometry,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    pass  # optional deps of the target module absent (cloud/test env)
 
 __all__ = [
     # Catalog validation

@@ -15,7 +15,7 @@ Evaluators:
     - RegressionCoverageEvaluator: Compares outputs against golden baselines
 
 Usage:
-    from dsa110_contimg.core.evaluation import (
+    from dsa110_continuum.evaluation import (
         PipelineStage,
         StageRegistry,
         PipelineCompletionEvaluator,

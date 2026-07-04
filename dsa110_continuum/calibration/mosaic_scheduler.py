@@ -391,15 +391,10 @@ class MosaicCalibrationManager:
         list[str]
             Representative timestamps for groups containing the calibrator transit.
         """
-        from dsa110_contimg.infrastructure.database.unified import get_pipeline_db_path
-        
-        try:
-            from dsa110_contimg.infrastructure.database.hdf5_index import (
-                select_hdf5_groups_by_position,
-            )
-        except ImportError:
-            logger.warning("Cannot import select_hdf5_groups_by_position")
-            return []
+        from dsa110_continuum.database.hdf5_index import (
+            select_hdf5_groups_by_position,
+        )
+        from dsa110_continuum.database.unified import get_pipeline_db_path
         
         # Use spatial matching: find groups whose beam covers the calibrator.
         # This is the correct physical approach for a drift-scan telescope.

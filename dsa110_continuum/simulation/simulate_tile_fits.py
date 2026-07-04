@@ -15,7 +15,7 @@ Examples
 >>> from dsa110_continuum.simulation.simulate_tile_fits import create_synthetic_tile
 >>>
 >>> # Generate tile with catalog sources
->>> from dsa110_contimg.infrastructure.database import data_config
+>>> from dsa110_continuum.database import data_config
 >>> fits_path = create_synthetic_tile(
 ...     output_path=str(data_config.STAGE_BASE / "sim_tile.fits"),
 ...     ra_deg=180.0,
@@ -373,7 +373,7 @@ def create_synthetic_tile(
     Examples
     --------
     >>> from pathlib import Path
-    >>> from dsa110_contimg.infrastructure.database import data_config
+    >>> from dsa110_continuum.database import data_config
     >>> fits_path = create_synthetic_tile(
     ...     output_path=data_config.STAGE_BASE / "test_tile.fits",
     ...     ra_deg=180.0,
