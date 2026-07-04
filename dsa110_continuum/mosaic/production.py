@@ -1,10 +1,22 @@
 """Production hourly-epoch image-domain coadd helpers.
 
-These helpers preserve the current batch production semantics while making the
-package namespace the canonical owner for #77:
+The package namespace is the canonical owner of the production coadd (#77).
+Tiles are combined with a per-pixel inverse-variance (Sault) weighted mean:
 
-- WSClean per-tile ``*-beam-0.fits`` maps are the production PB source.
-- Pixels below 20% peak beam response are blanked before coadd.
+- Input tiles are PB-corrected (``*-image-pb.fits``), so each pixel's variance
+  is sigma_flat^2 / PB^2 and the optimal weight is w_tile * PB^2 with
+  w_tile = 1 / sigma_flat^2. A tile's contribution therefore rolls off
+  smoothly with its beam instead of entering at full weight up to a blanking
+  line.
+- The primary-beam map per tile is recovered exactly as the ratio
+  ``-image.fits`` / ``-image-pb.fits`` (the beam WSClean actually applied;
+  verified pixel-identical to ``-beam-0.fits`` on H17 production tiles,
+  2026-07-04). Fallback: the band-average of all ``*-beam-N.fits`` maps,
+  so the weight stays correct even for products where per-subband beam
+  files do differ.
+- ``PB_CUTOFF`` is a numerical weight floor (weight = 0 below it), not a
+  science decision: with PB^2 weighting the excluded pixels would have
+  carried <~4% weight anyway.
 - RA wrap uses a circular mean so 0/360-degree tile sets stay compact.
 - Day-batch callers can still split disjoint tile sets with a 10-degree RA gap.
 """
@@ -115,16 +127,78 @@ def build_common_wcs(fits_paths: list[str], margin_deg: float = 0.5) -> tuple[WC
     return out_wcs, ny, nx
 
 
-def _beam_path_for_tile(fits_path: str) -> str:
-    """Return the WSClean beam-map companion path for a tile image."""
-    path = fits_path.replace("-image-pb.fits", "-beam-0.fits")
-    if not os.path.exists(path):
-        path = fits_path.replace("-image.fits", "-beam-0.fits")
-    return path
+def _tile_base(fits_path: str) -> str:
+    """Strip the WSClean product suffix from a tile image path."""
+    for suffix in ("-image-pb.fits", "-image.fits"):
+        if fits_path.endswith(suffix):
+            return fits_path[: -len(suffix)]
+    return fits_path.removesuffix(".fits")
+
+
+def _pb_map_for_tile(fits_path: str, data_pb: np.ndarray) -> tuple[np.ndarray | None, str]:
+    """Recover the normalized primary-beam response on the tile's pixel grid.
+
+    Preferred source is the ratio ``-image.fits`` / ``-image-pb.fits``: it is
+    exactly the beam WSClean divided out, with no model assumptions. The ratio
+    is only undefined where the PB-corrected pixel is 0 or non-finite (isolated
+    noise zero-crossings and blanked borders) — those pixels get NaN and drop
+    out of the coadd. Fallback is the band-average of every ``*-beam-N.fits``
+    present; a single subband beam is never used alone.
+    """
+    base = _tile_base(fits_path)
+
+    flat_path = base + "-image.fits"
+    if fits_path.endswith("-image-pb.fits") and os.path.exists(flat_path):
+        with fits.open(flat_path) as hdul:
+            flat = hdul[0].data.squeeze().astype(np.float64)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            pb = np.where(
+                np.isfinite(flat) & np.isfinite(data_pb) & (data_pb != 0),
+                flat / data_pb,
+                np.nan,
+            )
+        finite_frac = float(np.isfinite(pb).mean())
+        if finite_frac > 0.3:
+            peak = np.nanmax(pb)
+            if peak > 0:
+                pb = pb / peak
+            return pb, "image/image-pb ratio"
+        log.warning(
+            "  PB ratio for %s only %.0f%% finite; falling back to beam maps",
+            Path(fits_path).name,
+            finite_frac * 100,
+        )
+
+    beam_paths = sorted(Path(base).parent.glob(Path(base).name + "-beam-*.fits"))
+    if beam_paths:
+        pb_sum: np.ndarray | None = None
+        n_used = 0
+        for beam_path in beam_paths:
+            with fits.open(beam_path) as hdul:
+                beam = hdul[0].data.squeeze().astype(np.float64)
+            if pb_sum is None:
+                pb_sum = np.zeros_like(beam)
+            pb_sum += beam
+            n_used += 1
+        assert pb_sum is not None
+        pb = pb_sum / n_used
+        peak = np.nanmax(pb)
+        if peak > 0:
+            pb = pb / peak
+        return pb, f"band-average of {n_used} beam map(s)"
+
+    return None, "none"
 
 
 def coadd_tiles(fits_paths: list[str], out_wcs: WCS, ny: int, nx: int) -> np.ndarray:
-    """Reproject each tile onto the common WCS and do noise-weighted coaddition."""
+    """Reproject tiles onto the common WCS and combine with per-pixel PB^2 weights.
+
+    Inputs are PB-corrected tiles, so each pixel is an unbiased sky estimate
+    with variance sigma_flat^2 / PB^2; the inverse-variance weight is
+    (1 / sigma_flat^2) * PB^2 (Sault weighting). The weighted-numerator and
+    weight planes are reprojected identically and accumulated, and the mosaic
+    is their ratio.
+    """
     try:
         from reproject import reproject_interp
     except ModuleNotFoundError:
@@ -142,37 +216,60 @@ def coadd_tiles(fits_paths: list[str], out_wcs: WCS, ny: int, nx: int) -> np.nda
             data = hdul[0].data.squeeze().astype(np.float64)
             hdr = hdul[0].header
 
-        pb_path = _beam_path_for_tile(path)
-        if PB_CUTOFF > 0 and os.path.exists(pb_path):
-            with fits.open(pb_path) as pb_hdul:
-                pb_data = pb_hdul[0].data.squeeze().astype(np.float64)
-            pb_peak = np.nanmax(pb_data)
-            if pb_peak > 0:
-                pb_data /= pb_peak
-            low_beam = (pb_data < PB_CUTOFF) | ~np.isfinite(pb_data)
-            data[low_beam] = np.nan
-            log.info("  PB cutoff (%.0f%%): blanked %d pixels", PB_CUTOFF * 100, low_beam.sum())
-        elif PB_CUTOFF > 0:
-            log.warning("  No WSClean beam map found for %s; skipping beam cutoff", Path(path).name)
+        pb, pb_source = _pb_map_for_tile(path, data)
+        if pb is None:
+            log.warning(
+                "  No PB source for %s (no -image sibling, no beam maps); "
+                "using uniform weight over the tile footprint",
+                Path(path).name,
+            )
+            pb = np.ones_like(data)
+        else:
+            log.info("  PB source: %s", pb_source)
 
+        # Per-tile scalar weight from flat-noise rms: PB-corrected central box
+        # has PB ~ 1 there, so measure on data * pb (the flat-noise plane).
+        flat_plane = data * pb
         cy, cx = data.shape[0] // 2, data.shape[1] // 2
         margin = 200
-        inner = data[
+        inner = flat_plane[
             max(0, cy - margin) : cy + margin,
             max(0, cx - margin) : cx + margin,
         ]
-        noise = np.nanstd(inner[np.isfinite(inner)])
+        inner_finite = inner[np.isfinite(inner)]
+        noise = float(np.std(inner_finite)) if inner_finite.size else 0.0
         if noise <= 0 or not np.isfinite(noise):
             noise = 1.0
-        weight = 1.0 / (noise**2)
+        w_tile = 1.0 / (noise**2)
+
+        # Per-pixel weight plane; PB_CUTOFF is a numerical floor, not blanking
+        # science: below it PB^2 weight is negligible and the ratio-derived PB
+        # gets noisy.
+        wmap = w_tile * pb**2
+        invalid = ~np.isfinite(data) | ~np.isfinite(pb) | (pb < PB_CUTOFF)
+        wmap[invalid] = 0.0
+        num_plane = np.where(invalid, 0.0, wmap * data)
+        n_floor = int(((pb < PB_CUTOFF) & np.isfinite(pb)).sum())
+        log.info(
+            "  Sault weights: sigma_flat=%.4g, floor(PB<%.0f%%) zeroed %d px",
+            noise,
+            PB_CUTOFF * 100,
+            n_floor,
+        )
 
         in_wcs = WCS(hdr).celestial
         if reproject_interp is None:
-            reprojected, footprint = _nearest_reproject(data, in_wcs, out_wcs, (ny, nx))
+            num_reproj, footprint = _nearest_reproject(num_plane, in_wcs, out_wcs, (ny, nx))
+            w_reproj, _ = _nearest_reproject(wmap, in_wcs, out_wcs, (ny, nx))
         else:
             try:
-                reprojected, footprint = reproject_interp(
-                    (data, in_wcs),
+                num_reproj, footprint = reproject_interp(
+                    (num_plane, in_wcs),
+                    out_header,
+                    shape_out=(ny, nx),
+                )
+                w_reproj, _ = reproject_interp(
+                    (wmap, in_wcs),
                     out_header,
                     shape_out=(ny, nx),
                 )
@@ -180,9 +277,9 @@ def coadd_tiles(fits_paths: list[str], out_wcs: WCS, ny: int, nx: int) -> np.nda
                 log.warning("Reproject failed for %s: %s; skipping", Path(path).name, exc)
                 continue
 
-        valid = footprint.astype(bool) & np.isfinite(reprojected)
-        sum_image[valid] += weight * reprojected[valid]
-        sum_weight[valid] += weight
+        valid = footprint.astype(bool) & np.isfinite(num_reproj) & np.isfinite(w_reproj)
+        sum_image[valid] += num_reproj[valid]
+        sum_weight[valid] += w_reproj[valid]
 
     with np.errstate(invalid="ignore", divide="ignore"):
         return np.where(sum_weight > 0, sum_image / sum_weight, np.nan)
