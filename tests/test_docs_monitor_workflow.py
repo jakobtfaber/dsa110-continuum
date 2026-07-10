@@ -32,6 +32,7 @@ def test_monitor_schedule_and_concurrency_recovery_contract() -> None:
     triggers = _triggers(workflow)
     assert {row["cron"] for row in triggers["schedule"]} == {"*/15 * * * *"}
     assert workflow["concurrency"]["cancel-in-progress"] is True
+    assert "github.event_name" in workflow["concurrency"]["group"]
     fast_recovery = triggers["workflow_dispatch"]["inputs"]["fast_recovery"]
     assert fast_recovery["type"] == "boolean"
     assert fast_recovery["default"] is True
