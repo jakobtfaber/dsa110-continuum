@@ -38,6 +38,7 @@ from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from uuid import uuid4
 
 # ── Load scripts/.env before anything else ───────────────────────────────────
 _ENV_FILE = Path(__file__).parent / ".env"
@@ -138,8 +139,25 @@ def _archive_epoch_products(
 
     if not weight_map_is_valid(weight_path, mosaic_path):
         raise RuntimeError(f"refusing to archive invalid weight companion: {weight_path}")
-    shutil.copy2(mosaic_path, mosaic_destination)
-    shutil.copy2(weight_path, weight_destination)
+    mosaic_destination = Path(mosaic_destination)
+    weight_destination = Path(weight_destination)
+    transaction_id = f"{os.getpid()}-{uuid4().hex}"
+    mosaic_temp = mosaic_destination.with_name(
+        f".{mosaic_destination.name}.{transaction_id}.tmp"
+    )
+    weight_temp = weight_destination.with_name(
+        f".{weight_destination.name}.{transaction_id}.tmp"
+    )
+    try:
+        # Stage both complete copies before replacing either destination. A
+        # copy failure therefore leaves the previously archived pair intact.
+        shutil.copy2(mosaic_path, mosaic_temp)
+        shutil.copy2(weight_path, weight_temp)
+        os.replace(mosaic_temp, mosaic_destination)
+        os.replace(weight_temp, weight_destination)
+    finally:
+        mosaic_temp.unlink(missing_ok=True)
+        weight_temp.unlink(missing_ok=True)
 
 
 # ── Timestamp parsing ─────────────────────────────────────────────────────────

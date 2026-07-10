@@ -417,14 +417,7 @@ def weight_map_is_valid(
                 if np.any(weight_row[science] <= 0):
                     return False
 
-        return has_science_pixel and all(
-            np.allclose(weight_values, mosaic_values, rtol=0.0, atol=1e-10)
-            for weight_values, mosaic_values in (
-                (weight_wcs.wcs.crpix, mosaic_wcs.wcs.crpix),
-                (weight_wcs.wcs.crval, mosaic_wcs.wcs.crval),
-                (weight_wcs.wcs.cdelt, mosaic_wcs.wcs.cdelt),
-            )
-        )
+        return has_science_pixel and bool(weight_wcs.wcs.compare(mosaic_wcs.wcs))
     except (OSError, ValueError, IndexError, TypeError):
         return False
 

@@ -253,6 +253,16 @@ def test_weight_map_validation_rejects_missing_corrupt_or_misaligned_companion(t
     fits.PrimaryHDU(data=np.ones(SHAPE), header=header).writeto(misaligned)
     assert not weight_map_is_valid(misaligned, mosaic_path)
 
+    wrong_projection = tmp_path / "wrong_projection.weights.fits"
+    projection_header = wcs.to_header()
+    projection_header["CTYPE1"] = "RA---TAN"
+    projection_header["CTYPE2"] = "DEC--TAN"
+    projection_header["BUNIT"] = "1/Jy^2"
+    fits.PrimaryHDU(data=np.ones(SHAPE), header=projection_header).writeto(
+        wrong_projection
+    )
+    assert not weight_map_is_valid(wrong_projection, mosaic_path)
+
 
 @pytest.mark.parametrize("bad_value", [0.0, -1.0, np.nan])
 def test_weight_map_validation_rejects_unusable_science_weights(tmp_path, bad_value):
