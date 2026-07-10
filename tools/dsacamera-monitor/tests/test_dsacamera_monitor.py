@@ -7,7 +7,11 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from dsacamera_monitor.gaps import compute_gaps, gaps_from_by_day_rows
-from dsacamera_monitor.hdf5_pointing import read_phase_center_dec_deg, read_pointing_ra_dec_deg
+from dsacamera_monitor.hdf5_pointing import (
+    read_phase_center_dec_deg,
+    read_pointing_metadata,
+    read_pointing_ra_dec_deg,
+)
 from dsacamera_monitor.manifest import (
     BeamAgg,
     DayAgg,
@@ -197,6 +201,29 @@ def test_pointing_fallback_header_keys(tmp_path: Path) -> None:
     ra, dec = read_pointing_ra_dec_deg(p)
     assert ra is not None and abs(ra - 230.5) < 1e-6
     assert dec is not None and abs(dec - 15.25) < 1e-6
+
+
+def test_pointing_ha_fallback_allows_offline_predictive_iers(tmp_path: Path) -> None:
+    import h5py
+    import numpy as np
+
+    path = tmp_path / "2026-03-15T00:00:00_sb01.hdf5"
+    with h5py.File(path, "w") as handle:
+        handle.create_dataset(
+            "Header/extra_keywords/phase_center_dec",
+            data=np.float64(np.deg2rad(16.1)),
+        )
+        handle.create_dataset(
+            "Header/extra_keywords/ha_phase_center",
+            data=np.float64(0.01),
+        )
+        handle.create_dataset("Header/time_array", data=np.array([2461114.5, 2461114.6]))
+
+    metadata = read_pointing_metadata(path)
+    assert metadata["pointing_status"] == "ok"
+    assert metadata["t_mid_utc"] is not None
+    assert metadata["ra_deg"] is not None
+    assert metadata["error"] is None
 
 
 def test_scan_counts_read_failures(tmp_path: Path) -> None:
@@ -401,6 +428,48 @@ def test_incremental_cache_retries_failures_after_interval(tmp_path: Path, monke
     assert opened == [path.name]
     assert after_retry.metadata_retried == 1
     assert after_retry.metadata_failed == 0
+
+
+def test_retryable_failure_is_not_starved_by_uncached_backlog(tmp_path: Path, monkeypatch) -> None:
+    from dsacamera_monitor.scan import scan_directory
+
+    root = tmp_path / "incoming"
+    root.mkdir()
+    old_path = _make_named_files(root, ["2025-01-01T00:00:00"])[0]
+    attempts: dict[str, int] = {}
+    opened: list[str] = []
+
+    def fake_read(path: Path) -> dict:
+        opened.append(path.name)
+        attempts[path.name] = attempts.get(path.name, 0) + 1
+        return _cached_meta(path, failed=attempts[path.name] == 1)
+
+    monkeypatch.setattr("dsacamera_monitor.scan.read_pointing_metadata", fake_read)
+    cache = tmp_path / "cache.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    scan_directory(
+        root,
+        no_stat=True,
+        hdf5_metadata=True,
+        metadata_cache_path=cache,
+        metadata_update_limit=1,
+        metadata_now=now,
+    )
+    new_path = _make_named_files(root, ["2025-01-01T01:00:00"])[0]
+    opened.clear()
+    retried = scan_directory(
+        root,
+        no_stat=True,
+        hdf5_metadata=True,
+        metadata_cache_path=cache,
+        metadata_update_limit=1,
+        metadata_retry_seconds=3600,
+        metadata_now=now + timedelta(hours=1),
+    )
+    assert opened == [old_path.name]
+    assert new_path.name not in opened
+    assert retried.metadata_retried == 1
+    assert retried.metadata_pending == 1
 
 
 def test_incremental_cache_ignores_removed_files_and_reports_manifest_progress(

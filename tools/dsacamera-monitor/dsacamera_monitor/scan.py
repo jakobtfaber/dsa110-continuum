@@ -120,7 +120,10 @@ def _scan_incremental_metadata(
                 key=lambda candidate: (candidate.timestamp, candidate.path.name),
                 reverse=True,
             )
-            selected = (uncached + retryable)[: max(0, update_limit)]
+            # Eligible failures must not starve behind a multi-day cold-cache
+            # backlog. Retry them first, then spend the remaining bounded
+            # budget on newest uncached files.
+            selected = (retryable + uncached)[: max(0, update_limit)]
             accum.metadata_retried = sum(
                 candidate.path.name in rows for candidate in selected
             )
