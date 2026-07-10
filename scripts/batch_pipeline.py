@@ -511,6 +511,11 @@ def _should_skip_photometry(
     return False, ""
 
 
+def _should_archive_epoch(qa_verdict: str | None, archive_all: bool) -> bool:
+    """Archive only measured, non-failing QA results unless explicitly overridden."""
+    return archive_all or (qa_verdict is not None and qa_verdict != "FAIL")
+
+
 def _epoch_should_rebuild(
     mosaic_path: str,
     prior_manifest,
@@ -2095,12 +2100,19 @@ def main() -> None:
         except Exception as e:
             log.warning("  Could not write QA summary: %s", e)
 
-        # ── Archive gate — skip archive for QA-FAIL unless --archive-all ──────
+        # ── Archive gate — require a measured, non-failing QA verdict ─────────
         mosaic_fits_src = Path(mosaic_path)
-        should_archive = qa_verdict != "FAIL" or args.archive_all
+        should_archive = _should_archive_epoch(qa_verdict, args.archive_all)
         if not should_archive:
-            log.warning("  QA FAIL — mosaic NOT archived to products: %s", label)
-            manifest.gates.append({"gate": "archive", "verdict": "BLOCKED", "reason": f"epoch {label} QA FAIL"})
+            qa_reason = "QA unavailable" if qa_verdict is None else f"QA {qa_verdict}"
+            log.warning("  %s — mosaic NOT archived to products: %s", qa_reason, label)
+            manifest.gates.append(
+                {
+                    "gate": "archive",
+                    "verdict": "BLOCKED",
+                    "reason": f"epoch {label} {qa_reason}",
+                }
+            )
         elif mosaic_fits_src.exists():
             _archive_epoch_products(
                 mosaic_fits_src,

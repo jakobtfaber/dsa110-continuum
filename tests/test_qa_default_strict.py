@@ -85,6 +85,25 @@ def test_warn_verdict_runs_photometry():
         assert skip is False, f"unexpected skip for verdict={verdict!r}"
 
 
+# ─── Archive QA decision matrix ──────────────────────────────────────────────
+
+
+def test_archive_requires_measured_non_failing_qa():
+    import batch_pipeline as bp
+
+    assert bp._should_archive_epoch("PASS", False) is True
+    assert bp._should_archive_epoch("WARN", False) is True
+    assert bp._should_archive_epoch("FAIL", False) is False
+    assert bp._should_archive_epoch(None, False) is False
+
+
+def test_archive_all_overrides_failed_or_unavailable_qa():
+    import batch_pipeline as bp
+
+    assert bp._should_archive_epoch("FAIL", True) is True
+    assert bp._should_archive_epoch(None, True) is True
+
+
 # ─── Lenient-QA gate emission ────────────────────────────────────────────────
 
 
