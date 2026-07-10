@@ -412,6 +412,8 @@ def weight_map_is_valid(
             if not np.all(np.isfinite(weight_row)) or np.any(weight_row < 0):
                 return False
             science = np.isfinite(mosaic_row)
+            if np.any(weight_row[~science] != 0):
+                return False
             if np.any(science):
                 has_science_pixel = True
                 if np.any(weight_row[science] <= 0):

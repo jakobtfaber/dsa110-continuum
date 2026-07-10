@@ -278,3 +278,18 @@ def test_weight_map_validation_rejects_unusable_science_weights(tmp_path, bad_va
     fits.PrimaryHDU(data=weight, header=header).writeto(weight_path)
 
     assert not weight_map_is_valid(weight_path, mosaic_path)
+
+
+def test_weight_map_validation_rejects_weight_outside_science_footprint(tmp_path):
+    wcs = _tile_wcs(10.0)
+    mosaic_path = tmp_path / "mosaic.fits"
+    mosaic = np.ones(SHAPE)
+    mosaic[0, 0] = np.nan
+    fits.PrimaryHDU(data=mosaic, header=wcs.to_header()).writeto(mosaic_path)
+
+    weight_path = tmp_path / "mosaic.weights.fits"
+    header = wcs.to_header()
+    header["BUNIT"] = "1/Jy^2"
+    fits.PrimaryHDU(data=np.ones(SHAPE), header=header).writeto(weight_path)
+
+    assert not weight_map_is_valid(weight_path, mosaic_path)
