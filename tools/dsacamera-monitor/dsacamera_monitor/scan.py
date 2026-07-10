@@ -7,8 +7,10 @@ import json
 import os
 import shutil
 import sys
-from datetime import date, datetime, timezone
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from dsacamera_monitor.hdf5_pointing import DEC_ROUND_DIGITS, read_pointing_metadata
 from dsacamera_monitor.manifest import (
@@ -18,6 +20,16 @@ from dsacamera_monitor.manifest import (
     build_manifest,
     try_parse_filename,
 )
+from dsacamera_monitor.metadata_cache import MetadataCache
+
+
+@dataclass(frozen=True)
+class MetadataCandidate:
+    """One enumerated HDF5 file eligible for a metadata cache lookup."""
+
+    path: Path
+    timestamp: datetime
+    day: date
 
 
 def _record_dec(accum: ScanAccum, day: date, dec: float) -> None:
@@ -39,6 +51,125 @@ def _record_dec(accum: ScanAccum, day: date, dec: float) -> None:
         dagg.dec_max = max(dagg.dec_max, dec)
 
 
+def _record_metadata(accum: ScanAccum, day: date, meta: dict[str, Any]) -> None:
+    if meta["dec_status"] == "ok":
+        dec = meta["dec_deg"]
+        assert dec is not None
+        accum.files_with_dec += 1
+        _record_dec(accum, day, dec)
+    elif meta["dec_status"] == "missing":
+        accum.files_dec_missing += 1
+    else:
+        accum.files_dec_read_failed += 1
+    if meta["pointing_status"] == "read_failed":
+        accum.files_pointing_read_failed += 1
+
+
+def _parse_cache_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _cache_row_failed(row: dict[str, Any]) -> bool:
+    return row["dec_status"] == "read_failed" or row["pointing_status"] == "read_failed"
+
+
+def _scan_incremental_metadata(
+    accum: ScanAccum,
+    candidates: list[MetadataCandidate],
+    *,
+    cache_path: Path,
+    update_limit: int,
+    retry_seconds: int,
+    pointing_timeseries: bool,
+    pointing_timeseries_max_files: int,
+    now: datetime,
+) -> None:
+    """Update and consume a bounded persistent metadata cache."""
+    accum.metadata_cache_enabled = True
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    now = now.astimezone(timezone.utc)
+    retry_cutoff = now - timedelta(seconds=max(0, retry_seconds))
+    candidates_by_name = {candidate.path.name: candidate for candidate in candidates}
+
+    try:
+        with MetadataCache(cache_path) as cache:
+            rows = cache.load_rows()
+            uncached = sorted(
+                (candidate for candidate in candidates if candidate.path.name not in rows),
+                key=lambda candidate: (candidate.timestamp, candidate.path.name),
+                reverse=True,
+            )
+            retryable = sorted(
+                (
+                    candidate
+                    for candidate in candidates
+                    if candidate.path.name in rows
+                    and _cache_row_failed(rows[candidate.path.name])
+                    and (
+                        (last_attempt := _parse_cache_time(rows[candidate.path.name]["last_attempt_at"]))
+                        is None
+                        or last_attempt <= retry_cutoff
+                    )
+                ),
+                key=lambda candidate: (candidate.timestamp, candidate.path.name),
+                reverse=True,
+            )
+            # Eligible failures must not starve behind a multi-day cold-cache
+            # backlog. Retry them first, then spend the remaining bounded
+            # budget on newest uncached files.
+            selected = (retryable + uncached)[: max(0, update_limit)]
+            accum.metadata_retried = sum(
+                candidate.path.name in rows for candidate in selected
+            )
+            updates = [read_pointing_metadata(candidate.path) for candidate in selected]
+            cache.write_attempts(updates, now)
+            rows = cache.load_rows()
+    except Exception as exc:
+        accum.metadata_cache_error = f"{type(exc).__name__}: {exc}"
+        accum.metadata_pending = len(candidates)
+        return
+
+    current_rows = {
+        name: rows[name] for name in candidates_by_name if name in rows
+    }
+    accum.metadata_cached = len(current_rows)
+    accum.metadata_pending = len(candidates) - accum.metadata_cached
+    accum.metadata_failed = sum(_cache_row_failed(row) for row in current_rows.values())
+
+    for name, row in current_rows.items():
+        _record_metadata(accum, candidates_by_name[name].day, row)
+
+    if pointing_timeseries:
+        eligible = [
+            (candidates_by_name[name], row)
+            for name, row in current_rows.items()
+            if not _cache_row_failed(row)
+            and any(row.get(key) is not None for key in ("t_mid_utc", "ra_deg", "dec_deg"))
+        ]
+        newest = sorted(
+            eligible,
+            key=lambda item: (item[0].timestamp, item[0].path.name),
+            reverse=True,
+        )[:pointing_timeseries_max_files]
+        for candidate, row in reversed(newest):
+            accum.timeseries_rows.append(
+                {
+                    "filename": candidate.path.name,
+                    "t_mid_utc": row["t_mid_utc"],
+                    "ra_deg": row["ra_deg"],
+                    "dec_deg": row["dec_deg"],
+                }
+            )
+        accum.timeseries_truncated = len(eligible) > len(newest)
+    accum.metadata_emitted = len(accum.timeseries_rows)
+
+
 def scan_directory(
     root: Path,
     *,
@@ -46,9 +177,14 @@ def scan_directory(
     hdf5_metadata: bool = True,
     pointing_timeseries: bool = False,
     pointing_timeseries_max_files: int = 5000,
+    metadata_cache_path: Path | None = None,
+    metadata_update_limit: int = 100,
+    metadata_retry_seconds: int = 3600,
+    metadata_now: datetime | None = None,
 ) -> ScanAccum:
     """Single pass over directory entries; only matching *.hdf5 names are counted."""
     accum = ScanAccum()
+    metadata_candidates: list[MetadataCandidate] = []
     with os.scandir(root) as it:
         for entry in it:
             if not entry.is_file():
@@ -95,17 +231,9 @@ def scan_directory(
 
             accum.file_count += 1
 
-            if hdf5_metadata:
+            if hdf5_metadata and metadata_cache_path is None:
                 meta = read_pointing_metadata(full_path)
-                if meta["dec_status"] == "ok":
-                    dec = meta["dec_deg"]
-                    assert dec is not None
-                    accum.files_with_dec += 1
-                    _record_dec(accum, day, dec)
-                elif meta["dec_status"] == "missing":
-                    accum.files_dec_missing += 1
-                else:
-                    accum.files_dec_read_failed += 1
+                _record_metadata(accum, day, meta)
 
                 if pointing_timeseries and len(accum.timeseries_rows) < pointing_timeseries_max_files:
                     accum.timeseries_rows.append(
@@ -116,10 +244,23 @@ def scan_directory(
                             "dec_deg": meta["dec_deg"],
                         }
                     )
-                if meta["pointing_status"] == "read_failed":
-                    accum.files_pointing_read_failed += 1
+            elif hdf5_metadata:
+                metadata_candidates.append(
+                    MetadataCandidate(path=full_path, timestamp=dt_utc, day=day)
+                )
 
-    if pointing_timeseries and hdf5_metadata and accum.file_count > len(accum.timeseries_rows):
+    if hdf5_metadata and metadata_cache_path is not None:
+        _scan_incremental_metadata(
+            accum,
+            metadata_candidates,
+            cache_path=metadata_cache_path,
+            update_limit=metadata_update_limit,
+            retry_seconds=metadata_retry_seconds,
+            pointing_timeseries=pointing_timeseries,
+            pointing_timeseries_max_files=pointing_timeseries_max_files,
+            now=metadata_now or datetime.now(timezone.utc),
+        )
+    elif pointing_timeseries and hdf5_metadata and accum.file_count > len(accum.timeseries_rows):
         accum.timeseries_truncated = True
 
     return accum
@@ -134,6 +275,9 @@ def build_out(
     hdf5_metadata: bool = True,
     pointing_timeseries: bool = False,
     pointing_timeseries_max_files: int = 5000,
+    metadata_cache_path: Path | None = None,
+    metadata_update_limit: int = 100,
+    metadata_retry_seconds: int = 3600,
 ) -> tuple[Path, bool]:
     """Scan, write manifest.json, optional pointing_timeseries.json, copy static site into out_dir."""
     accum = scan_directory(
@@ -142,6 +286,9 @@ def build_out(
         hdf5_metadata=hdf5_metadata,
         pointing_timeseries=pointing_timeseries,
         pointing_timeseries_max_files=pointing_timeseries_max_files,
+        metadata_cache_path=metadata_cache_path,
+        metadata_update_limit=metadata_update_limit,
+        metadata_retry_seconds=metadata_retry_seconds,
     )
     manifest = build_manifest(
         source_root=str(root.resolve()),
@@ -218,6 +365,26 @@ def main(argv: list[str] | None = None) -> int:
         help="Cap rows in pointing_timeseries.json (default: 5000)",
     )
     parser.add_argument(
+        "--metadata-cache",
+        type=Path,
+        default=None,
+        help="Persistent SQLite cache for bounded incremental HDF5 metadata reads",
+    )
+    parser.add_argument(
+        "--metadata-update-limit",
+        type=int,
+        default=100,
+        metavar="N",
+        help="Maximum uncached or retryable HDF5 files to open per run (default: 100)",
+    )
+    parser.add_argument(
+        "--metadata-retry-seconds",
+        type=int,
+        default=3600,
+        metavar="SECONDS",
+        help="Delay before retrying failed metadata reads (default: 3600)",
+    )
+    parser.add_argument(
         "--site",
         type=Path,
         default=None,
@@ -246,6 +413,9 @@ def main(argv: list[str] | None = None) -> int:
         hdf5_metadata=hdf5_metadata,
         pointing_timeseries=pointing_ts,
         pointing_timeseries_max_files=max(1, args.pointing_timeseries_max_files),
+        metadata_cache_path=args.metadata_cache,
+        metadata_update_limit=max(0, args.metadata_update_limit),
+        metadata_retry_seconds=max(0, args.metadata_retry_seconds),
     )
     print(f"Wrote {args.out / 'manifest.json'}")
     if pointing_ts and wrote_timeseries:

@@ -8,9 +8,10 @@ After you enable **Pages → GitHub Actions** in the `dsacamera-monitor` reposit
 
 This repository is now configured for a **self-hosted runner on dsacamera** (`runs-on: [self-hosted, linux, dsacamera]`) so the workflow performs a **real** scan:
 
-- Scheduled every 5 minutes (`cron: */5 * * * *`) using `--no-stat` for speed.
-- Push-triggered deploys also use `--no-stat` for fast turnaround.
-- Manual runs can set `full_scan=true` to include file sizes/mtime (slower).
+- Scheduled every 15 minutes (`cron: */15 * * * *`) using stat-free enumeration.
+- Obsolete runs are cancelled and each host build is bounded to ten minutes.
+- Pointing metadata is optional and warms through a persistent SQLite cache at no more than 100 HDF5 opens per host per run.
+- Manual runs default to `fast_recovery=true`, which forces metadata-free output.
 
 ### Self-hosted runner setup checklist
 
@@ -22,12 +23,15 @@ This repository is now configured for a **self-hosted runner on dsacamera** (`ru
 
 ### About “real-time”
 
-GitHub Pages deployments are **not true streaming real-time**. With a 5-minute schedule you typically get updates in:
+GitHub Pages deployments are **not true streaming real-time**. The operational contract is:
 
-- scan time
-- plus artifact upload/deploy latency
+- a 15-minute scheduled scan,
+- a ten-minute host timeout, and
+- published `generated_at` no more than 30 minutes old after artifact/deploy latency.
 
-So “near real-time” is realistic; sub-minute updates usually require a direct web service rather than Pages.
+If pointing metadata is unavailable, the dashboard continues publishing counts, filename
+freshness, daily grouping, and gaps. Disable `MONITOR_POINTING_METADATA_ENABLED` to roll back
+cache mode without reverting the recovered fast monitor.
 
 ---
 

@@ -68,6 +68,13 @@ class ScanAccum:
     global_decs_rounded: set[float] = field(default_factory=set)
     timeseries_rows: list[dict[str, Any]] = field(default_factory=list)
     timeseries_truncated: bool = False
+    metadata_cache_enabled: bool = False
+    metadata_cached: int = 0
+    metadata_pending: int = 0
+    metadata_failed: int = 0
+    metadata_retried: int = 0
+    metadata_emitted: int = 0
+    metadata_cache_error: str | None = None
 
 
 def build_manifest(
@@ -143,6 +150,7 @@ def build_manifest(
         "no_stat": no_stat,
         "hdf5_metadata": hdf5_metadata,
         "pointing_timeseries": pointing_timeseries,
+        "metadata_cache": accum.metadata_cache_enabled,
     }
 
     manifest: dict[str, Any] = {
@@ -175,5 +183,14 @@ def build_manifest(
             "file": "pointing_timeseries.json",
             "row_count": len(accum.timeseries_rows),
             "truncated": accum.timeseries_truncated,
+        }
+    if accum.metadata_cache_enabled:
+        manifest["metadata_cache"] = {
+            "cached": accum.metadata_cached,
+            "pending": accum.metadata_pending,
+            "failed": accum.metadata_failed,
+            "retried": accum.metadata_retried,
+            "emitted": accum.metadata_emitted,
+            "error": accum.metadata_cache_error,
         }
     return manifest

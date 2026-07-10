@@ -32,6 +32,15 @@ function dayIterator(startStr, endStr) {
   return out;
 }
 
+function metadataStateText(m) {
+  const cache = m.metadata_cache;
+  if (cache) {
+    const progress = `${cache.cached} cached · ${cache.pending} pending · ${cache.failed} failed`;
+    return cache.error ? `Metadata warming/unavailable · ${progress}` : `Metadata warming · ${progress}`;
+  }
+  return "Metadata warming/unavailable";
+}
+
 function fillKpis(m) {
   document.getElementById("kpi-files").textContent = String(m.totals.file_count);
   document.getElementById("kpi-bytes").textContent =
@@ -74,8 +83,11 @@ function fillKpis(m) {
         : "—";
     document.getElementById("kpi-dec-files").textContent = `${m.pointing.files_with_dec} with Dec · ${m.pointing.files_dec_missing} missing`;
   } else {
-    document.getElementById("kpi-dec-wrap").style.display = "none";
-    document.getElementById("kpi-dec-files-wrap").style.display = "none";
+    document.getElementById("kpi-dec-wrap").style.display = "block";
+    document.getElementById("kpi-dec-files-wrap").style.display = "block";
+    const state = metadataStateText(m);
+    document.getElementById("kpi-dec").textContent = state;
+    document.getElementById("kpi-dec-files").textContent = state;
   }
 }
 
@@ -147,13 +159,20 @@ function renderDailyAndCumulative(m) {
 
 function renderDecByDay(m) {
   const panel = document.getElementById("panel-dec-by-day");
+  const status = document.getElementById("dec-metadata-status");
+  const chartWrap = document.getElementById("dec-chart-wrap");
   const has =
     m.pointing && m.by_day && m.by_day.some((r) => r.dec_deg_min != null && r.dec_deg_max != null);
   if (!has) {
-    panel.style.display = "none";
+    panel.style.display = "block";
+    status.style.display = "block";
+    status.textContent = metadataStateText(m);
+    chartWrap.style.display = "none";
     return;
   }
   panel.style.display = "block";
+  status.style.display = "none";
+  chartWrap.style.display = "block";
   const labels = m.by_day.map((r) => r.date);
   const mins = m.by_day.map((r) => (r.dec_deg_min != null ? r.dec_deg_min : null));
   const maxs = m.by_day.map((r) => (r.dec_deg_max != null ? r.dec_deg_max : null));
@@ -212,11 +231,18 @@ function renderDecByDay(m) {
 function renderPointingTimeseries(m, rows) {
   const panel = document.getElementById("panel-pointing-series");
   const note = document.getElementById("ts-trunc");
+  const status = document.getElementById("pointing-metadata-status");
+  const chartWrap = document.getElementById("pointing-chart-wrap");
   if (!rows || !Array.isArray(rows) || rows.length === 0) {
-    panel.style.display = "none";
+    panel.style.display = "block";
+    status.style.display = "block";
+    status.textContent = metadataStateText(m);
+    chartWrap.style.display = "none";
     return;
   }
   panel.style.display = "block";
+  status.style.display = "none";
+  chartWrap.style.display = "block";
   if (m.pointing_timeseries && m.pointing_timeseries.truncated) {
     note.style.display = "block";
     note.textContent = "Rows capped; scan omitted some files (see manifest pointing_timeseries).";

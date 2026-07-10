@@ -20,6 +20,7 @@ try:
 
     # Keep metadata scans independent of network/IERS download state.
     iers.conf.auto_download = False
+    iers.conf.auto_max_age = None
     _OVRO_LOCATION = EarthLocation.from_geodetic(
         lon=_OVRO_LON_DEG * u.deg, lat=_OVRO_LAT_DEG * u.deg, height=_OVRO_ALT_M * u.m
     )
