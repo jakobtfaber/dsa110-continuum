@@ -148,16 +148,31 @@ def _archive_epoch_products(
     weight_temp = weight_destination.with_name(
         f".{weight_destination.name}.{transaction_id}.tmp"
     )
+    mosaic_backup = mosaic_destination.with_name(
+        f".{mosaic_destination.name}.{transaction_id}.bak"
+    )
+    mosaic_replaced = False
     try:
         # Stage both complete copies before replacing either destination. A
         # copy failure therefore leaves the previously archived pair intact.
         shutil.copy2(mosaic_path, mosaic_temp)
         shutil.copy2(weight_path, weight_temp)
+        if mosaic_destination.exists():
+            os.link(mosaic_destination, mosaic_backup)
         os.replace(mosaic_temp, mosaic_destination)
+        mosaic_replaced = True
         os.replace(weight_temp, weight_destination)
+    except Exception:
+        if mosaic_replaced:
+            if mosaic_backup.exists():
+                os.replace(mosaic_backup, mosaic_destination)
+            else:
+                mosaic_destination.unlink(missing_ok=True)
+        raise
     finally:
         mosaic_temp.unlink(missing_ok=True)
         weight_temp.unlink(missing_ok=True)
+        mosaic_backup.unlink(missing_ok=True)
 
 
 # ── Timestamp parsing ─────────────────────────────────────────────────────────
