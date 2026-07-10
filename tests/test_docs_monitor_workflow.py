@@ -57,6 +57,8 @@ def test_scanner_changes_trigger_pr_validation() -> None:
     triggers = _triggers(workflow)
     assert "tools/dsacamera-monitor/**" in triggers["push"]["paths"]
     assert "tools/dsacamera-monitor/**" in triggers["pull_request"]["paths"]
+    assert "tests/test_docs_monitor_workflow.py" in triggers["push"]["paths"]
+    assert "tests/test_docs_monitor_workflow.py" in triggers["pull_request"]["paths"]
     script = _step_script(workflow, "pr_render", "Test monitor scanner")
     assert "tools/dsacamera-monitor/tests" in script
     assert "tests/test_docs_monitor_workflow.py" in script

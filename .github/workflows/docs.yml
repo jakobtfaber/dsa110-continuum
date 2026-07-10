@@ -6,12 +6,14 @@ on:
     paths:
       - "docs/quarto/**"
       - "tools/dsacamera-monitor/**"
+      - "tests/test_docs_monitor_workflow.py"
       - ".github/workflows/docs.yml"
   pull_request:
     branches: [main]
     paths:
       - "docs/quarto/**"
       - "tools/dsacamera-monitor/**"
+      - "tests/test_docs_monitor_workflow.py"
       - ".github/workflows/docs.yml"
   schedule:
     - cron: "*/15 * * * *"
