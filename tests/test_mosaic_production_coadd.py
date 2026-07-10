@@ -117,3 +117,30 @@ def test_batch_epoch_coadd_helper_calls_package_entry(monkeypatch):
     assert called["tile_paths"] == ["tile-a.fits", "tile-b.fits"]
     assert mosaic.shape == (2, 2)
     assert isinstance(out_wcs, WCS)
+
+
+def test_batch_epoch_product_helper_calls_product_entry(monkeypatch):
+    import batch_pipeline as bp
+    import dsa110_continuum.mosaic.production as production
+
+    expected = production.ProductionCoaddResult(
+        mosaic=np.zeros((2, 2)),
+        weight=np.ones((2, 2)),
+        wcs=WCS(naxis=2),
+    )
+    called: dict[str, list[str]] = {}
+
+    def fake_build_epoch_coadd_products(tile_paths: list[str]):
+        called["tile_paths"] = tile_paths
+        return expected
+
+    monkeypatch.setattr(
+        production,
+        "build_epoch_coadd_products",
+        fake_build_epoch_coadd_products,
+    )
+
+    result = bp._build_epoch_coadd_products(["tile-a.fits", "tile-b.fits"])
+
+    assert called["tile_paths"] == ["tile-a.fits", "tile-b.fits"]
+    assert result is expected

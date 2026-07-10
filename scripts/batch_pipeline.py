@@ -106,6 +106,23 @@ def epoch_mosaic_path(paths: dict, date: str, hour: int) -> str:
     return f"{paths['stage_dir']}/{date}T{hour:02d}00_mosaic.fits"
 
 
+def epoch_weight_path(paths: dict, date: str, hour: int) -> str:
+    """Return the accumulated inverse-variance companion for an epoch mosaic."""
+    from dsa110_continuum.mosaic.production import weight_path_for_mosaic
+
+    return str(weight_path_for_mosaic(epoch_mosaic_path(paths, date, hour)))
+
+
+def epoch_weight_is_valid(paths: dict, date: str, hour: int) -> bool:
+    """Return whether an epoch's weight companion is readable and aligned."""
+    from dsa110_continuum.mosaic.production import weight_map_is_valid
+
+    return weight_map_is_valid(
+        epoch_weight_path(paths, date, hour),
+        epoch_mosaic_path(paths, date, hour),
+    )
+
+
 def epoch_phot_path(paths: dict, date: str, hour: int) -> str:
     return f"{paths['products_dir']}/{date}T{hour:02d}00_forced_phot.csv"
 
@@ -707,13 +724,19 @@ def _dry_run_main(args, date: str, cal_date: str, obs_dec_deg: float | None) -> 
     epoch_decisions: list[dict] = []
     for hour in epoch_hours:
         mosaic_path = epoch_mosaic_path(paths, date, hour)
+        weight_valid = epoch_weight_is_valid(paths, date, hour)
         rebuild = _epoch_should_rebuild(
             mosaic_path, prior_manifest, hour, args.force_recal,
         )
+        if os.path.exists(mosaic_path) and not weight_valid:
+            rebuild = True
         prior_v = (
             None if prior_manifest is None else prior_manifest.epoch_verdict(hour)
         )
-        if not rebuild:
+        if os.path.exists(mosaic_path) and not weight_valid:
+            reason = "missing or invalid weight companion"
+            action = "rebuild"
+        elif not rebuild:
             reason = f"prior verdict={prior_v}"
             action = "skip"
         elif args.force_recal:
@@ -1060,6 +1083,13 @@ def _build_epoch_coadd(epoch_tiles: list[str]) -> tuple[np.ndarray, WCS]:
     from dsa110_continuum.mosaic.production import build_epoch_coadd
 
     return build_epoch_coadd(epoch_tiles)
+
+
+def _build_epoch_coadd_products(epoch_tiles: list[str]):
+    """Build all production coadd planes through the canonical package entry."""
+    from dsa110_continuum.mosaic.production import build_epoch_coadd_products
+
+    return build_epoch_coadd_products(epoch_tiles)
 
 
 # ── Dec-strip guard ───────────────────────────────────────────────────────────
@@ -1847,8 +1877,10 @@ def main() -> None:
         )
 
         mosaic_path = epoch_mosaic_path(paths, date, hour)
+        weight_path = epoch_weight_path(paths, date, hour)
         phot_csv_path = epoch_phot_path(paths, date, hour)
         mosaic_fits_dst = Path(paths["products_dir"]) / Path(mosaic_path).name
+        weight_fits_dst = Path(paths["products_dir"]) / Path(weight_path).name
 
         # Decide (rebuild vs skip) based on prior-run verdict. A mosaic file
         # that exists but whose prior QA verdict was FAIL (or absent, meaning
@@ -1856,6 +1888,9 @@ def main() -> None:
         should_rebuild = _epoch_should_rebuild(
             mosaic_path, prior_manifest, hour, args.force_recal,
         )
+        if os.path.exists(mosaic_path) and not epoch_weight_is_valid(paths, date, hour):
+            log.warning("  Mosaic companion missing or invalid — rebuilding epoch %s: %s", label, weight_path)
+            should_rebuild = True
 
         # Remove stale epoch-level outputs before rebuilding so the fresh
         # mosaic / photometry CSV is unambiguous. --force-recal and a FAIL
@@ -1863,7 +1898,13 @@ def main() -> None:
         if should_rebuild and os.path.exists(mosaic_path):
             prior_v = None if prior_manifest is None else prior_manifest.epoch_verdict(hour)
             reason = "--force-recal" if args.force_recal else f"prior verdict={prior_v!s}"
-            for stale_path in (mosaic_path, phot_csv_path, str(mosaic_fits_dst)):
+            for stale_path in (
+                mosaic_path,
+                weight_path,
+                phot_csv_path,
+                str(mosaic_fits_dst),
+                str(weight_fits_dst),
+            ):
                 if os.path.exists(stale_path):
                     try:
                         os.remove(stale_path)
@@ -1879,17 +1920,24 @@ def main() -> None:
                 "label": label, "status": "skipped", "n_tiles": len(epoch_tiles),
                 "gaincal_status": _epoch_gaincal_status,
                 "qa_result": prior_v,  # carry prior verdict forward
+                "mosaic_path": mosaic_path,
+                "weight_path": weight_path if os.path.exists(weight_path) else None,
             })
             continue
 
         # Build mosaic
         try:
-            mosaic_arr, out_wcs = _build_epoch_coadd(epoch_tiles)
+            from dsa110_continuum.mosaic.production import write_weight_map
+
+            coadd_result = _build_epoch_coadd_products(epoch_tiles)
+            mosaic_arr, out_wcs = coadd_result.mosaic, coadd_result.wcs
             write_epoch_mosaic(
                 mosaic_arr, out_wcs, epoch_tiles, mosaic_path, date, hour, len(epoch_tiles),
                 cal_date=cal_date, cal_quality=manifest.cal_quality, git_sha=manifest.git_sha,
                 cal_selection=manifest.cal_selection or None,
             )
+            written_weight_path = write_weight_map(coadd_result.weight, out_wcs, mosaic_path)
+            weight_path = str(written_weight_path)
         except Exception as e:
             log.error("  Mosaic failed for epoch %s: %s", label, e)
             epoch_results.append({"label": label, "status": "failed", "n_tiles": len(epoch_tiles), "gaincal_status": _epoch_gaincal_status})
@@ -2010,6 +2058,11 @@ def main() -> None:
         elif mosaic_fits_src.exists() and (not mosaic_fits_dst.exists() or args.force_recal):
             shutil.copy2(str(mosaic_fits_src), str(mosaic_fits_dst))
             log.info("Archived mosaic FITS: %s", mosaic_fits_dst)
+        if should_archive and os.path.exists(weight_path) and (
+            not weight_fits_dst.exists() or args.force_recal
+        ):
+            shutil.copy2(weight_path, str(weight_fits_dst))
+            log.info("Archived mosaic weight FITS: %s", weight_fits_dst)
 
         epoch_results.append({
             "label": label,
@@ -2022,6 +2075,7 @@ def main() -> None:
             "n_sources": n_sources,
             "median_ratio": median_ratio,
             "mosaic_path": mosaic_path,
+            "weight_path": weight_path,
             "gaincal_status": _epoch_gaincal_status,
             "qa_result": epoch_qa.qa_result if epoch_qa else None,
         })
