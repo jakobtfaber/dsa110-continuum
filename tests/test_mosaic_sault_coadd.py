@@ -16,7 +16,13 @@ from astropy.wcs import WCS
 from dsa110_continuum.mosaic.production import (
     PB_CUTOFF,
     _pb_map_for_tile,
+    build_epoch_coadd,
+    build_epoch_coadd_products,
     coadd_tiles,
+    coadd_tiles_with_weights,
+    weight_map_is_valid,
+    weight_path_for_mosaic,
+    write_weight_map,
 )
 
 SHAPE = (32, 32)
@@ -178,3 +184,71 @@ def test_no_pb_source_falls_back_to_uniform_weight(tmp_path):
     covered = np.isfinite(mosaic)
     assert covered.any()
     assert np.allclose(mosaic[covered], 2.0, rtol=1e-6)
+
+
+def test_product_result_preserves_legacy_mosaic_and_exposes_weight(tmp_path):
+    """The additive product API must not change the legacy tuple result."""
+    sky = np.full(SHAPE, 3.0)
+    tiles = [
+        _write_pair(tmp_path, "a", sky, _gaussian_pb((16.0, 10.0))),
+        _write_pair(tmp_path, "b", sky, _gaussian_pb((16.0, 22.0))),
+    ]
+    paths = [str(path) for path in tiles]
+
+    result = build_epoch_coadd_products(paths)
+    legacy_mosaic, legacy_wcs = build_epoch_coadd(paths)
+
+    assert np.allclose(result.mosaic, legacy_mosaic, equal_nan=True)
+    assert np.allclose(result.wcs.wcs.crval, legacy_wcs.wcs.crval)
+    assert result.weight.shape == result.mosaic.shape
+    assert np.all(result.weight[np.isfinite(result.mosaic)] > 0)
+
+
+def test_coadd_tiles_with_weights_matches_compatibility_wrapper(tmp_path):
+    sky = np.full(SHAPE, 2.0)
+    tile = _write_pair(tmp_path, "a", sky, _gaussian_pb((16.0, 16.0)))
+    wcs = _tile_wcs()
+
+    mosaic, weight = coadd_tiles_with_weights([str(tile)], wcs, *SHAPE)
+
+    assert np.allclose(mosaic, coadd_tiles([str(tile)], wcs, *SHAPE), equal_nan=True)
+    assert np.nanmax(weight) > 0
+
+
+def test_write_weight_map_uses_stable_name_aligned_wcs_and_units(tmp_path):
+    mosaic_path = tmp_path / "2026-01-25T2200_mosaic.fits"
+    weight = np.full(SHAPE, 4.0, dtype=np.float64)
+    wcs = _tile_wcs()
+    fits.PrimaryHDU(data=np.ones(SHAPE), header=wcs.to_header()).writeto(mosaic_path)
+
+    written = write_weight_map(weight, wcs, mosaic_path)
+
+    assert written == weight_path_for_mosaic(mosaic_path)
+    assert written.name == "2026-01-25T2200_mosaic.weights.fits"
+    with fits.open(written) as hdul:
+        assert np.allclose(hdul[0].data, weight)
+        assert hdul[0].header["BUNIT"] == "1/Jy^2"
+        assert hdul[0].header["MOSAIC"] == mosaic_path.name
+        assert np.allclose(WCS(hdul[0].header).celestial.wcs.crval, wcs.wcs.crval)
+        assert np.allclose(1.0 / np.sqrt(hdul[0].data), 0.5)
+    assert weight_map_is_valid(written, mosaic_path)
+
+
+def test_weight_map_validation_rejects_missing_corrupt_or_misaligned_companion(tmp_path):
+    mosaic_path = tmp_path / "epoch_mosaic.fits"
+    wcs = _tile_wcs()
+    fits.PrimaryHDU(data=np.ones(SHAPE), header=wcs.to_header()).writeto(mosaic_path)
+
+    missing = tmp_path / "missing.weights.fits"
+    assert not weight_map_is_valid(missing, mosaic_path)
+
+    corrupt = tmp_path / "corrupt.weights.fits"
+    corrupt.write_bytes(b"not a FITS file")
+    assert not weight_map_is_valid(corrupt, mosaic_path)
+
+    shifted_wcs = _tile_wcs(ra_deg=11.0)
+    misaligned = tmp_path / "misaligned.weights.fits"
+    header = shifted_wcs.to_header()
+    header["BUNIT"] = "1/Jy^2"
+    fits.PrimaryHDU(data=np.ones(SHAPE), header=header).writeto(misaligned)
+    assert not weight_map_is_valid(misaligned, mosaic_path)

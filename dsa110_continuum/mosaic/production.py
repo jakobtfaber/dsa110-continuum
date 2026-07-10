@@ -17,6 +17,12 @@ Tiles are combined with a per-pixel inverse-variance (Sault) weighted mean:
 - ``PB_CUTOFF`` is a numerical weight floor (weight = 0 below it), not a
   science decision: with PB^2 weighting the excluded pixels would have
   carried <~4% weight anyway.
+- The accumulated weight plane (sum of per-tile inverse-variance weights,
+  units 1/(Jy/beam)^2) is available as a companion product: the effective
+  local noise is 1/sqrt(weight), which lets photometry/source-finding
+  threshold out single-coverage boundary pixels that per-pixel weighting
+  cannot repair (num/den is identically the tile value where only one tile
+  covers).
 - RA wrap uses a circular mean so 0/360-degree tile sets stay compact.
 - Day-batch callers can still split disjoint tile sets with a 10-degree RA gap.
 """
@@ -25,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -35,6 +42,15 @@ CELL_ARCSEC = 6.0
 PB_CUTOFF = 0.2
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ProductionCoaddResult:
+    """Science mosaic planes on their shared output grid."""
+
+    mosaic: np.ndarray
+    weight: np.ndarray
+    wcs: WCS
 
 
 def _get_tile_center_ra(fits_path: str) -> float:
@@ -190,8 +206,13 @@ def _pb_map_for_tile(fits_path: str, data_pb: np.ndarray) -> tuple[np.ndarray | 
     return None, "none"
 
 
-def coadd_tiles(fits_paths: list[str], out_wcs: WCS, ny: int, nx: int) -> np.ndarray:
-    """Reproject tiles onto the common WCS and combine with per-pixel PB^2 weights.
+def coadd_tiles_with_weights(
+    fits_paths: list[str],
+    out_wcs: WCS,
+    ny: int,
+    nx: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return the Sault-weighted mosaic and accumulated inverse-variance plane.
 
     Inputs are PB-corrected tiles, so each pixel is an unbiased sky estimate
     with variance sigma_flat^2 / PB^2; the inverse-variance weight is
@@ -249,6 +270,7 @@ def coadd_tiles(fits_paths: list[str], out_wcs: WCS, ny: int, nx: int) -> np.nda
         invalid = ~np.isfinite(data) | ~np.isfinite(pb) | (pb < PB_CUTOFF)
         wmap[invalid] = 0.0
         num_plane = np.where(invalid, 0.0, wmap * data)
+        support_plane = (~invalid).astype(np.float64)
         n_floor = int(((pb < PB_CUTOFF) & np.isfinite(pb)).sum())
         log.info(
             "  Sault weights: sigma_flat=%.4g, floor(PB<%.0f%%) zeroed %d px",
@@ -261,6 +283,12 @@ def coadd_tiles(fits_paths: list[str], out_wcs: WCS, ny: int, nx: int) -> np.nda
         if reproject_interp is None:
             num_reproj, footprint = _nearest_reproject(num_plane, in_wcs, out_wcs, (ny, nx))
             w_reproj, _ = _nearest_reproject(wmap, in_wcs, out_wcs, (ny, nx))
+            support_reproj, _ = _nearest_reproject(
+                support_plane,
+                in_wcs,
+                out_wcs,
+                (ny, nx),
+            )
         else:
             try:
                 num_reproj, footprint = reproject_interp(
@@ -273,16 +301,39 @@ def coadd_tiles(fits_paths: list[str], out_wcs: WCS, ny: int, nx: int) -> np.nda
                     out_header,
                     shape_out=(ny, nx),
                 )
+                # Interpolating the zeroed weight plane alone can leak weight
+                # back into PB-rejected pixels from valid neighbours. Reproject
+                # the boolean support with nearest-neighbour sampling and use it
+                # as the authoritative cutoff mask on the output grid.
+                support_reproj, _ = reproject_interp(
+                    (support_plane, in_wcs),
+                    out_header,
+                    shape_out=(ny, nx),
+                    order="nearest-neighbor",
+                )
             except Exception as exc:
                 log.warning("Reproject failed for %s: %s; skipping", Path(path).name, exc)
                 continue
 
-        valid = footprint.astype(bool) & np.isfinite(num_reproj) & np.isfinite(w_reproj)
+        valid = (
+            footprint.astype(bool)
+            & np.isfinite(num_reproj)
+            & np.isfinite(w_reproj)
+            & np.isfinite(support_reproj)
+            & (support_reproj >= 0.5)
+        )
         sum_image[valid] += num_reproj[valid]
         sum_weight[valid] += w_reproj[valid]
 
     with np.errstate(invalid="ignore", divide="ignore"):
-        return np.where(sum_weight > 0, sum_image / sum_weight, np.nan)
+        mosaic = np.where(sum_weight > 0, sum_image / sum_weight, np.nan)
+    return mosaic, sum_weight
+
+
+def coadd_tiles(fits_paths: list[str], out_wcs: WCS, ny: int, nx: int) -> np.ndarray:
+    """Compatibility wrapper returning only the Sault-weighted mosaic."""
+    mosaic, _weight = coadd_tiles_with_weights(fits_paths, out_wcs, ny, nx)
+    return mosaic
 
 
 def _nearest_reproject(
@@ -316,5 +367,70 @@ def _nearest_reproject(
 
 def build_epoch_coadd(fits_paths: list[str]) -> tuple[np.ndarray, WCS]:
     """Build the production coadd array and WCS for one hourly-epoch tile set."""
+    result = build_epoch_coadd_products(fits_paths)
+    return result.mosaic, result.wcs
+
+
+def build_epoch_coadd_products(fits_paths: list[str]) -> ProductionCoaddResult:
+    """Build the mosaic, accumulated weight plane, and WCS for one epoch."""
     out_wcs, ny, nx = build_common_wcs(fits_paths)
-    return coadd_tiles(fits_paths, out_wcs, ny, nx), out_wcs
+    mosaic, weight = coadd_tiles_with_weights(fits_paths, out_wcs, ny, nx)
+    return ProductionCoaddResult(mosaic=mosaic, weight=weight, wcs=out_wcs)
+
+
+def weight_path_for_mosaic(mosaic_path: str | Path) -> Path:
+    """Return the stable companion path ``<mosaic>.weights.fits``."""
+    return Path(mosaic_path).with_suffix(".weights.fits")
+
+
+def weight_map_is_valid(
+    weight_path: str | Path,
+    mosaic_path: str | Path,
+) -> bool:
+    """Return whether a companion weight FITS is readable and grid-aligned."""
+    try:
+        with fits.open(weight_path, memmap=True) as weight_hdul:
+            weight_hdu = weight_hdul[0]
+            if weight_hdu.data is None or weight_hdu.header.get("BUNIT") != "1/Jy^2":
+                return False
+            weight_shape = weight_hdu.data.squeeze().shape
+            weight_wcs = WCS(weight_hdu.header).celestial
+
+        with fits.open(mosaic_path, memmap=True) as mosaic_hdul:
+            mosaic_hdu = mosaic_hdul[0]
+            if mosaic_hdu.data is None:
+                return False
+            mosaic_shape = mosaic_hdu.data.squeeze().shape
+            mosaic_wcs = WCS(mosaic_hdu.header).celestial
+
+        return weight_shape == mosaic_shape and all(
+            np.allclose(weight_values, mosaic_values, rtol=0.0, atol=1e-10)
+            for weight_values, mosaic_values in (
+                (weight_wcs.wcs.crpix, mosaic_wcs.wcs.crpix),
+                (weight_wcs.wcs.crval, mosaic_wcs.wcs.crval),
+                (weight_wcs.wcs.cdelt, mosaic_wcs.wcs.cdelt),
+            )
+        )
+    except (OSError, ValueError, IndexError, TypeError):
+        return False
+
+
+def write_weight_map(
+    weight: np.ndarray,
+    out_wcs: WCS,
+    mosaic_path: str | Path,
+) -> Path:
+    """Write an accumulated inverse-variance plane beside its mosaic."""
+    weight_path = weight_path_for_mosaic(mosaic_path)
+    weight_path.parent.mkdir(parents=True, exist_ok=True)
+    header = out_wcs.to_header()
+    header["BUNIT"] = ("1/Jy^2", "Inverse variance of PB-corrected flux")
+    header["EXTNAME"] = ("WEIGHT", "Accumulated inverse-variance plane")
+    header["MOSAIC"] = (Path(mosaic_path).name, "Associated mosaic FITS")
+    header["HISTORY"] = "Effective local noise is 1/sqrt(weight) Jy/beam"
+    fits.PrimaryHDU(data=weight.astype(np.float32), header=header).writeto(
+        weight_path,
+        overwrite=True,
+    )
+    log.info("Epoch weight map written: %s", weight_path)
+    return weight_path
