@@ -1940,9 +1940,9 @@ def main() -> None:
             log.warning("  Mosaic companion missing or invalid — rebuilding epoch %s: %s", label, weight_path)
             should_rebuild = True
 
-        # Remove stale epoch-level outputs before rebuilding so the fresh
-        # mosaic / photometry CSV is unambiguous. --force-recal and a FAIL
-        # prior verdict both use the same cleanup path.
+        # Remove stale staging outputs before rebuilding so the fresh mosaic /
+        # photometry CSV is unambiguous. Keep the last archived product pair
+        # until a newly QA-accepted pair replaces it transactionally.
         if should_rebuild and os.path.exists(mosaic_path):
             prior_v = None if prior_manifest is None else prior_manifest.epoch_verdict(hour)
             reason = "--force-recal" if args.force_recal else f"prior verdict={prior_v!s}"
@@ -1950,8 +1950,6 @@ def main() -> None:
                 mosaic_path,
                 weight_path,
                 phot_csv_path,
-                str(mosaic_fits_dst),
-                str(weight_fits_dst),
             ):
                 if os.path.exists(stale_path):
                     try:
