@@ -117,3 +117,152 @@ def test_batch_epoch_coadd_helper_calls_package_entry(monkeypatch):
     assert called["tile_paths"] == ["tile-a.fits", "tile-b.fits"]
     assert mosaic.shape == (2, 2)
     assert isinstance(out_wcs, WCS)
+
+
+def test_batch_epoch_product_helper_calls_product_entry(monkeypatch):
+    import batch_pipeline as bp
+    import dsa110_continuum.mosaic.production as production
+
+    expected = production.ProductionCoaddResult(
+        mosaic=np.zeros((2, 2)),
+        weight=np.ones((2, 2)),
+        wcs=WCS(naxis=2),
+    )
+    called: dict[str, list[str]] = {}
+
+    def fake_build_epoch_coadd_products(tile_paths: list[str]):
+        called["tile_paths"] = tile_paths
+        return expected
+
+    monkeypatch.setattr(
+        production,
+        "build_epoch_coadd_products",
+        fake_build_epoch_coadd_products,
+    )
+
+    result = bp._build_epoch_coadd_products(["tile-a.fits", "tile-b.fits"])
+
+    assert called["tile_paths"] == ["tile-a.fits", "tile-b.fits"]
+    assert result is expected
+
+
+def test_archive_epoch_products_overwrites_mosaic_and_weight_as_a_pair(tmp_path):
+    import batch_pipeline as bp
+    from dsa110_continuum.mosaic.production import write_weight_map
+
+    source_mosaic = _write_tile(tmp_path / "stage_mosaic.fits", ra_deg=10.0, value=2.0)
+    source_weight = write_weight_map(
+        np.full((16, 16), 4.0),
+        WCS(fits.getheader(source_mosaic)).celestial,
+        source_mosaic,
+    )
+    destination_mosaic = _write_tile(
+        tmp_path / "product_mosaic.fits",
+        ra_deg=10.0,
+        value=1.0,
+    )
+    destination_weight = tmp_path / "product_mosaic.weights.fits"
+    fits.PrimaryHDU(data=np.ones((16, 16))).writeto(destination_weight)
+
+    bp._archive_epoch_products(
+        source_mosaic,
+        source_weight,
+        destination_mosaic,
+        destination_weight,
+    )
+
+    assert np.all(fits.getdata(destination_mosaic) == 2.0)
+    assert np.all(fits.getdata(destination_weight) == 4.0)
+
+
+def test_archive_epoch_products_copy_failure_preserves_existing_pair(tmp_path, monkeypatch):
+    import batch_pipeline as bp
+    from dsa110_continuum.mosaic.production import write_weight_map
+
+    source_mosaic = _write_tile(tmp_path / "stage_mosaic.fits", ra_deg=10.0, value=2.0)
+    source_weight = write_weight_map(
+        np.full((16, 16), 4.0),
+        WCS(fits.getheader(source_mosaic)).celestial,
+        source_mosaic,
+    )
+    destination_mosaic = _write_tile(
+        tmp_path / "product_mosaic.fits",
+        ra_deg=10.0,
+        value=1.0,
+    )
+    destination_weight = write_weight_map(
+        np.ones((16, 16)),
+        WCS(fits.getheader(destination_mosaic)).celestial,
+        destination_mosaic,
+    )
+
+    real_copy2 = bp.shutil.copy2
+    calls = 0
+
+    def fail_second_copy(source, destination):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("synthetic weight copy failure")
+        return real_copy2(source, destination)
+
+    monkeypatch.setattr(bp.shutil, "copy2", fail_second_copy)
+
+    with np.testing.assert_raises_regex(OSError, "synthetic weight copy failure"):
+        bp._archive_epoch_products(
+            source_mosaic,
+            source_weight,
+            destination_mosaic,
+            destination_weight,
+        )
+
+    assert np.all(fits.getdata(destination_mosaic) == 1.0)
+    assert np.all(fits.getdata(destination_weight) == 1.0)
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_archive_epoch_products_replace_failure_rolls_back_pair(tmp_path, monkeypatch):
+    import batch_pipeline as bp
+    from dsa110_continuum.mosaic.production import write_weight_map
+
+    source_mosaic = _write_tile(tmp_path / "stage_mosaic.fits", ra_deg=10.0, value=2.0)
+    source_weight = write_weight_map(
+        np.full((16, 16), 4.0),
+        WCS(fits.getheader(source_mosaic)).celestial,
+        source_mosaic,
+    )
+    destination_mosaic = _write_tile(
+        tmp_path / "product_mosaic.fits",
+        ra_deg=10.0,
+        value=1.0,
+    )
+    destination_weight = write_weight_map(
+        np.ones((16, 16)),
+        WCS(fits.getheader(destination_mosaic)).celestial,
+        destination_mosaic,
+    )
+
+    real_replace = bp.os.replace
+    calls = 0
+
+    def fail_second_replace(source, destination):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("synthetic weight replacement failure")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(bp.os, "replace", fail_second_replace)
+
+    with np.testing.assert_raises_regex(OSError, "synthetic weight replacement failure"):
+        bp._archive_epoch_products(
+            source_mosaic,
+            source_weight,
+            destination_mosaic,
+            destination_weight,
+        )
+
+    assert np.all(fits.getdata(destination_mosaic) == 1.0)
+    assert np.all(fits.getdata(destination_weight) == 1.0)
+    assert not list(tmp_path.glob(".*.tmp"))
+    assert not list(tmp_path.glob(".*.bak"))

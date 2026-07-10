@@ -36,12 +36,14 @@ def _make_clean_manifest() -> RunManifest:
     m.record_epoch(2, {
         "n_tiles": 11, "status": "ok",
         "mosaic_path": "/stage/img/2026-01-25T0200_mosaic.fits",
+        "weight_path": "/stage/img/2026-01-25T0200_mosaic.weights.fits",
         "peak": 0.523, "rms": 0.0012, "n_sources": 1234,
         "qa_result": "PASS",
     })
     m.record_epoch(22, {
         "n_tiles": 11, "status": "ok",
         "mosaic_path": "/stage/img/2026-01-25T2200_mosaic.fits",
+        "weight_path": "/stage/img/2026-01-25T2200_mosaic.weights.fits",
         "peak": 12.5, "rms": 0.001, "n_sources": 4567,
         "qa_result": "PASS",
     })
@@ -98,6 +100,14 @@ def test_clean_run_qa_fail_section_says_none():
     assert "## QA-FAIL epochs (photometry skipped)" in text
     qa_section = text.split("## QA-FAIL")[1].split("## Quarantined")[0]
     assert "(none)" in qa_section
+
+
+def test_epoch_summary_lists_weight_companions():
+    m = _make_clean_manifest()
+    text = render_run_report(m, "/data/products/2026-01-25")
+
+    assert "2026-01-25T0200_mosaic.weights.fits" in text
+    assert "2026-01-25T2200_mosaic.weights.fits" in text
 
 
 # ─── DEGRADED with gates ─────────────────────────────────────────────────────

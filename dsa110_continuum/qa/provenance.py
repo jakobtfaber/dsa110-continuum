@@ -184,6 +184,7 @@ class RunManifest:
             "n_tiles": epoch_result.get("n_tiles"),
             "status": epoch_result.get("status"),
             "mosaic_path": epoch_result.get("mosaic_path"),
+            "weight_path": epoch_result.get("weight_path"),
             "peak": epoch_result.get("peak"),
             "rms": epoch_result.get("rms"),
             "n_sources": epoch_result.get("n_sources"),

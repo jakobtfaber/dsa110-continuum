@@ -147,8 +147,8 @@ def _render_epoch_summary(manifest: RunManifest) -> str:
     lines = [
         "## Epoch summary",
         "",
-        "| Hour | Status | QA | n_tiles | Peak (Jy/beam) | RMS (mJy/beam) | Sources | Mosaic |",
-        "|---:|---|---|---:|---:|---:|---:|---|",
+        "| Hour | Status | QA | n_tiles | Peak (Jy/beam) | RMS (mJy/beam) | Sources | Mosaic | Weights |",
+        "|---:|---|---|---:|---:|---:|---:|---|---|",
     ]
     for ep in sorted(manifest.epochs, key=_epoch_sort_key):
         hour = ep.get("hour")
@@ -156,6 +156,7 @@ def _render_epoch_summary(manifest: RunManifest) -> str:
         rms = ep.get("rms")
         rms_mjy = (rms * 1000.0) if isinstance(rms, (int, float)) else None
         mosaic = ep.get("mosaic_path") or "(none)"
+        weight = ep.get("weight_path") or "(none)"
         lines.append(
             f"| {_fmt_hour(hour)} | {ep.get('status', '?')} | "
             f"{ep.get('qa_result') or '?'} | "
@@ -163,7 +164,7 @@ def _render_epoch_summary(manifest: RunManifest) -> str:
             f"{_fmt_float(peak, 4)} | "
             f"{_fmt_float(rms_mjy, 2)} | "
             f"{_fmt_int(ep.get('n_sources'))} | "
-            f"`{mosaic}` |"
+            f"`{mosaic}` | `{weight}` |"
         )
     return "\n".join(lines)
 

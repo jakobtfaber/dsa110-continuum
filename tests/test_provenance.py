@@ -15,7 +15,15 @@ def test_manifest_roundtrip(tmp_path):
     m.gaincal_status = "ok"
     m.record_tile("/stage/ms/a.ms", "/stage/img/a.fits", "ok", 142.3)
     m.record_tile("/stage/ms/b.ms", None, "failed", 1800.0, error="timeout")
-    m.record_epoch(0, {"n_tiles": 13, "status": "ok", "peak": 0.5, "rms": 0.001, "qa_result": "PASS"})
+    m.record_epoch(0, {
+        "n_tiles": 13,
+        "status": "ok",
+        "mosaic_path": "/stage/example_mosaic.fits",
+        "weight_path": "/stage/example_mosaic.weights.fits",
+        "peak": 0.5,
+        "rms": 0.001,
+        "qa_result": "PASS",
+    })
     m.finalize(300.5)
 
     out = m.save(str(tmp_path))
@@ -33,6 +41,7 @@ def test_manifest_roundtrip(tmp_path):
     assert data["wall_time_sec"] == 300.5
     assert len(data["tiles"]) == 2
     assert data["tiles"][0]["status"] == "ok"
+    assert data["epochs"][0]["weight_path"].endswith(".weights.fits")
     assert data["tiles"][1]["error"] == "timeout"
     assert len(data["epochs"]) == 1
     assert data["epochs"][0]["qa_result"] == "PASS"
