@@ -53,8 +53,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install "./tools/dsacamera-monitor[dev]"
-          python -m pytest tools/dsacamera-monitor/tests -q
+          python -m pip install "./tools/dsacamera-monitor[dev]" PyYAML
+          python -m pytest tests/test_docs_monitor_workflow.py tools/dsacamera-monitor/tests -q
 
       - name: Render site
         working-directory: docs/quarto
@@ -265,6 +265,7 @@ jobs:
         run: quarto render
 
       - name: Download monitor artifacts
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           pattern: monitor-*
@@ -370,7 +371,7 @@ jobs:
 
   smoke_pages:
     name: Verify deployed monitor routes
-    needs: deploy
+    needs: [deploy, prepare_monitor_matrix]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -378,6 +379,7 @@ jobs:
       - name: Verify deployed monitor routes
         env:
           PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+          ENABLED_SLUGS: ${{ needs.prepare_monitor_matrix.outputs.enabled_slugs }}
         shell: bash
         run: |
           set -euo pipefail
@@ -388,11 +390,8 @@ jobs:
           for attempt in $(seq 1 15); do
             ok=true
             curl --fail --location --silent --show-error --output /dev/null "${base_url}" || ok=false
-            for route in \
-              dsacamera-live-monitor/manifest.json \
-              h17-live-monitor/manifest.json
-            do
-              slug="${route%%-*}"
+            for slug in ${ENABLED_SLUGS//,/ }; do
+              route="${slug}-live-monitor/manifest.json"
               url="${base_url}${route}"
               curl --fail --location --silent --show-error \
                 --output "${work_dir}/${slug}.json" "${url}" || ok=false

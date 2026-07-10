@@ -58,7 +58,8 @@ def test_scanner_changes_trigger_pr_validation() -> None:
     assert "tools/dsacamera-monitor/**" in triggers["push"]["paths"]
     assert "tools/dsacamera-monitor/**" in triggers["pull_request"]["paths"]
     script = _step_script(workflow, "pr_render", "Test monitor scanner")
-    assert "pytest tools/dsacamera-monitor/tests" in script
+    assert "tools/dsacamera-monitor/tests" in script
+    assert "tests/test_docs_monitor_workflow.py" in script
 
 
 def test_monitor_artifact_validator_accepts_stat_free_manifests() -> None:
@@ -73,10 +74,20 @@ def test_monitor_artifact_validator_accepts_stat_free_manifests() -> None:
 def test_post_deploy_smoke_requires_fresh_root_and_both_manifests() -> None:
     workflow = _workflow()
     smoke = workflow["jobs"]["smoke_pages"]
-    assert smoke["needs"] == "deploy"
+    assert set(smoke["needs"]) == {"deploy", "prepare_monitor_matrix"}
     assert smoke["timeout-minutes"] == 10
     script = _step_script(workflow, "smoke_pages", "Verify deployed monitor routes")
-    assert "dsacamera-live-monitor/manifest.json" in script
-    assert "h17-live-monitor/manifest.json" in script
+    assert "ENABLED_SLUGS" in script
+    assert '${slug}-live-monitor/manifest.json' in script
     assert "1800" in script
     assert "curl" in script
+
+
+def test_aggregate_can_render_placeholders_when_artifacts_are_missing() -> None:
+    workflow = _workflow()
+    download = next(
+        step
+        for step in workflow["jobs"]["aggregate_site"]["steps"]
+        if step.get("name") == "Download monitor artifacts"
+    )
+    assert download["continue-on-error"] is True
