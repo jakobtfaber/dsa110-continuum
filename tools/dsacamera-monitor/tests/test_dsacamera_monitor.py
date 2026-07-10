@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from dsacamera_monitor.gaps import compute_gaps, gaps_from_by_day_rows
@@ -196,3 +196,330 @@ def test_scan_counts_read_failures(tmp_path: Path) -> None:
     assert accum.files_dec_read_failed == 1
     assert accum.files_pointing_read_failed == 1
     assert len(accum.timeseries_rows) == 1
+
+
+def _cached_meta(path: Path, *, failed: bool = False) -> dict:
+    if failed:
+        return {
+            "filename": path.name,
+            "t_mid_utc": None,
+            "ra_deg": None,
+            "dec_deg": None,
+            "dec_status": "read_failed",
+            "pointing_status": "read_failed",
+            "error": "OSError: corrupt fixture",
+        }
+    parsed = try_parse_filename(path.name)
+    assert parsed is not None
+    timestamp, _ = parsed
+    return {
+        "filename": path.name,
+        "t_mid_utc": timestamp.isoformat().replace("+00:00", "Z"),
+        "ra_deg": float(timestamp.hour),
+        "dec_deg": 16.1,
+        "dec_status": "ok",
+        "pointing_status": "ok",
+        "error": None,
+    }
+
+
+def _make_named_files(root: Path, timestamps: list[str]) -> list[Path]:
+    paths = []
+    for timestamp in timestamps:
+        path = root / f"{timestamp}_sb00.hdf5"
+        path.write_bytes(b"fixture")
+        paths.append(path)
+    return paths
+
+
+def test_incremental_cache_cold_warm_and_one_new_file(tmp_path: Path, monkeypatch) -> None:
+    from dsacamera_monitor.scan import scan_directory
+
+    root = tmp_path / "incoming"
+    root.mkdir()
+    _make_named_files(root, ["2025-01-01T00:00:00", "2025-01-01T01:00:00"])
+    cache = tmp_path / "pointing.sqlite3"
+    opened: list[str] = []
+
+    def fake_read(path: Path) -> dict:
+        opened.append(path.name)
+        return _cached_meta(path)
+
+    monkeypatch.setattr("dsacamera_monitor.scan.read_pointing_metadata", fake_read)
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    cold = scan_directory(
+        root,
+        no_stat=True,
+        hdf5_metadata=True,
+        pointing_timeseries=True,
+        metadata_cache_path=cache,
+        metadata_update_limit=100,
+        metadata_now=now,
+    )
+    assert len(opened) == 2
+    assert cold.metadata_cached == 2
+    assert cold.metadata_pending == 0
+    assert cold.metadata_emitted == 2
+
+    opened.clear()
+    warm = scan_directory(
+        root,
+        no_stat=True,
+        hdf5_metadata=True,
+        pointing_timeseries=True,
+        metadata_cache_path=cache,
+        metadata_update_limit=100,
+        metadata_now=now + timedelta(minutes=5),
+    )
+    assert opened == []
+    assert warm.metadata_cached == 2
+
+    _make_named_files(root, ["2025-01-01T02:00:00"])
+    opened.clear()
+    updated = scan_directory(
+        root,
+        no_stat=True,
+        hdf5_metadata=True,
+        pointing_timeseries=True,
+        metadata_cache_path=cache,
+        metadata_update_limit=100,
+        metadata_now=now + timedelta(minutes=10),
+    )
+    assert opened == ["2025-01-01T02:00:00_sb00.hdf5"]
+    assert updated.metadata_cached == 3
+
+
+def test_incremental_cache_bounds_newest_first_and_emits_deterministically(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from dsacamera_monitor.scan import scan_directory
+
+    root = tmp_path / "incoming"
+    root.mkdir()
+    _make_named_files(
+        root,
+        [
+            "2025-01-01T00:00:00",
+            "2025-01-01T01:00:00",
+            "2025-01-01T02:00:00",
+        ],
+    )
+    opened: list[str] = []
+
+    def fake_read(path: Path) -> dict:
+        opened.append(path.name)
+        return _cached_meta(path)
+
+    monkeypatch.setattr("dsacamera_monitor.scan.read_pointing_metadata", fake_read)
+    accum = scan_directory(
+        root,
+        no_stat=True,
+        hdf5_metadata=True,
+        pointing_timeseries=True,
+        pointing_timeseries_max_files=2,
+        metadata_cache_path=tmp_path / "cache.sqlite3",
+        metadata_update_limit=2,
+        metadata_now=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    assert opened == [
+        "2025-01-01T02:00:00_sb00.hdf5",
+        "2025-01-01T01:00:00_sb00.hdf5",
+    ]
+    assert accum.metadata_pending == 1
+    assert [row["filename"] for row in accum.timeseries_rows] == [
+        "2025-01-01T01:00:00_sb00.hdf5",
+        "2025-01-01T02:00:00_sb00.hdf5",
+    ]
+
+
+def test_incremental_cache_retries_failures_after_interval(tmp_path: Path, monkeypatch) -> None:
+    from dsacamera_monitor.scan import scan_directory
+
+    root = tmp_path / "incoming"
+    root.mkdir()
+    path = _make_named_files(root, ["2025-01-01T00:00:00"])[0]
+    opened: list[str] = []
+    attempts = 0
+
+    def fake_read(candidate: Path) -> dict:
+        nonlocal attempts
+        attempts += 1
+        opened.append(candidate.name)
+        return _cached_meta(candidate, failed=attempts == 1)
+
+    monkeypatch.setattr("dsacamera_monitor.scan.read_pointing_metadata", fake_read)
+    cache = tmp_path / "cache.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    first = scan_directory(
+        root,
+        no_stat=True,
+        hdf5_metadata=True,
+        pointing_timeseries=True,
+        metadata_cache_path=cache,
+        metadata_retry_seconds=3600,
+        metadata_now=now,
+    )
+    assert first.metadata_failed == 1
+
+    opened.clear()
+    before_retry = scan_directory(
+        root,
+        no_stat=True,
+        hdf5_metadata=True,
+        pointing_timeseries=True,
+        metadata_cache_path=cache,
+        metadata_retry_seconds=3600,
+        metadata_now=now + timedelta(minutes=59),
+    )
+    assert opened == []
+    assert before_retry.metadata_retried == 0
+
+    after_retry = scan_directory(
+        root,
+        no_stat=True,
+        hdf5_metadata=True,
+        pointing_timeseries=True,
+        metadata_cache_path=cache,
+        metadata_retry_seconds=3600,
+        metadata_now=now + timedelta(hours=1),
+    )
+    assert opened == [path.name]
+    assert after_retry.metadata_retried == 1
+    assert after_retry.metadata_failed == 0
+
+
+def test_incremental_cache_ignores_removed_files_and_reports_manifest_progress(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from dsacamera_monitor.scan import scan_directory
+
+    root = tmp_path / "incoming"
+    root.mkdir()
+    paths = _make_named_files(root, ["2025-01-01T00:00:00", "2025-01-01T01:00:00"])
+    monkeypatch.setattr(
+        "dsacamera_monitor.scan.read_pointing_metadata",
+        lambda path: _cached_meta(path),
+    )
+    cache = tmp_path / "cache.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    scan_directory(
+        root,
+        no_stat=True,
+        hdf5_metadata=True,
+        pointing_timeseries=True,
+        metadata_cache_path=cache,
+        metadata_now=now,
+    )
+    paths[0].unlink()
+    accum = scan_directory(
+        root,
+        no_stat=True,
+        hdf5_metadata=True,
+        pointing_timeseries=True,
+        metadata_cache_path=cache,
+        metadata_now=now + timedelta(minutes=5),
+    )
+    manifest = build_manifest(
+        source_root=str(root),
+        accum=accum,
+        no_stat=True,
+        hdf5_metadata=True,
+        pointing_timeseries=True,
+        generated_at=now,
+    )
+    assert accum.file_count == 1
+    assert [row["filename"] for row in accum.timeseries_rows] == [paths[1].name]
+    assert manifest["metadata_cache"] == {
+        "cached": 1,
+        "pending": 0,
+        "failed": 0,
+        "retried": 0,
+        "emitted": 1,
+        "error": None,
+    }
+
+
+def test_incremental_cache_does_not_retry_missing_metadata(tmp_path: Path, monkeypatch) -> None:
+    from dsacamera_monitor.scan import scan_directory
+
+    root = tmp_path / "incoming"
+    root.mkdir()
+    _make_named_files(root, ["2025-01-01T00:00:00"])
+    opened: list[str] = []
+
+    def missing_read(path: Path) -> dict:
+        opened.append(path.name)
+        meta = _cached_meta(path)
+        meta.update(
+            t_mid_utc=None,
+            ra_deg=None,
+            dec_deg=None,
+            dec_status="missing",
+            pointing_status="missing",
+        )
+        return meta
+
+    monkeypatch.setattr("dsacamera_monitor.scan.read_pointing_metadata", missing_read)
+    cache = tmp_path / "cache.sqlite3"
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    first = scan_directory(
+        root,
+        no_stat=True,
+        hdf5_metadata=True,
+        metadata_cache_path=cache,
+        metadata_now=now,
+    )
+    assert first.files_dec_missing == 1
+    opened.clear()
+    second = scan_directory(
+        root,
+        no_stat=True,
+        hdf5_metadata=True,
+        metadata_cache_path=cache,
+        metadata_now=now + timedelta(days=1),
+    )
+    assert opened == []
+    assert second.files_dec_missing == 1
+
+
+def test_cache_failure_still_produces_count_inventory(tmp_path: Path, monkeypatch) -> None:
+    from dsacamera_monitor.scan import scan_directory
+
+    root = tmp_path / "incoming"
+    root.mkdir()
+    _make_named_files(root, ["2025-01-01T00:00:00"])
+    monkeypatch.setattr(
+        "dsacamera_monitor.scan.MetadataCache.load_rows",
+        lambda self: (_ for _ in ()).throw(OSError("synthetic cache failure")),
+    )
+    accum = scan_directory(
+        root,
+        no_stat=True,
+        hdf5_metadata=True,
+        pointing_timeseries=True,
+        metadata_cache_path=tmp_path / "cache.sqlite3",
+    )
+    assert accum.file_count == 1
+    assert accum.by_day[date(2025, 1, 1)].count == 1
+    assert accum.metadata_pending == 1
+    assert accum.metadata_cache_error == "OSError: synthetic cache failure"
+
+
+def test_metadata_cache_batch_write_is_atomic(tmp_path: Path) -> None:
+    import sqlite3
+
+    from dsacamera_monitor.metadata_cache import MetadataCache
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    valid = _cached_meta(tmp_path / "2025-01-01T00:00:00_sb00.hdf5")
+    invalid = _cached_meta(tmp_path / "2025-01-01T01:00:00_sb00.hdf5")
+    invalid["dec_status"] = None
+    cache_path = tmp_path / "cache.sqlite3"
+    with MetadataCache(cache_path) as cache:
+        try:
+            cache.write_attempts([valid, invalid], now)
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            raise AssertionError("invalid cache batch unexpectedly committed")
+        assert cache.load_rows() == {}
