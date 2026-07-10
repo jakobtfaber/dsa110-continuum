@@ -23,6 +23,7 @@ This repository was split out from `dsa110-FLITS`; the CLI was renamed from `dsa
 | `freshness` | Earliest/latest timestamp from filenames; mtime range when not `no_stat` |
 | `pointing` | When metadata scan is on: global Dec min/max, unique rounded strip count, and file counters |
 | `pointing_timeseries` | When `--pointing-timeseries` is used: `{ file, row_count, truncated }` pointing at `pointing_timeseries.json` |
+| `metadata_cache` | Incremental cache progress: cached, pending, failed, retried, emitted, and isolated cache error counts |
 
 Filenames must match:
 
@@ -52,6 +53,7 @@ python -m dsacamera_monitor.scan --root /data/incoming --out /path/to/out
 - By default each matching `.hdf5` is opened once to read phase-center **Declination** from UVH5 headers (cheap metadata only; no visibilities). Use `--no-hdf5-metadata` to skip that (faster on huge trees, no Dec in manifest).
 - Optional `--pointing-timeseries` writes `pointing_timeseries.json` (per file: median time, RA, Dec) with rows capped by `--pointing-timeseries-max-files` (default 5000). RA may be derived from `ha_phase_center` + LST at median time, matching the main pipeline’s HDF5 convention.
 - **Performance:** metadata extraction is O(number of files) and uses one `h5py.File` open per file (Dec and optional timeseries fields are extracted in that single pass). On slow NFS, prefer cron spacing or metadata-off for smoke tests.
+- Production scheduled scans use stat-free enumeration plus a host-local SQLite cache. The cache opens at most 100 newest uncached or retryable files per run, reuses successful rows without opening HDF5, and retries read failures after one hour.
 - Open `out/index.html` in a browser (or serve the directory with any static file server).
 
 ### Fast count-only (no `stat`)
@@ -61,6 +63,22 @@ Large trees: skip `stat()` to reduce I/O; bytes and mtime will be empty/zero:
 ```bash
 dsacamera-incoming-scan --root /data/incoming --out /path/to/out --no-stat
 ```
+
+### Incremental pointing metadata
+
+```bash
+dsacamera-incoming-scan \
+  --root /data/incoming \
+  --out /path/to/out \
+  --no-stat \
+  --pointing-timeseries \
+  --metadata-cache "$HOME/.cache/dsa110-continuum/monitor/dsacamera-pointing.sqlite3" \
+  --metadata-update-limit 100 \
+  --metadata-retry-seconds 3600
+```
+
+Cache failures never block count/freshness output. Rows for files no longer present are ignored,
+and emitted pointing rows are deterministically ordered and capped at 5,000.
 
 ### Output location
 
@@ -113,13 +131,17 @@ This repo can publish the static dashboard the same way continuum publishes Quar
 
 1. On GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions** (not “Deploy from a branch” unless you prefer that).
 2. Register a **self-hosted runner on dsacamera** with labels `self-hosted`, `linux`, and `dsacamera`.
-3. Push to **`main`** or **`master`**; the workflow runs on code changes and on a **5-minute schedule**.
+3. Push to **`main`**; the workflow runs on code changes and on a **15-minute schedule**.
 
 **URL shape** matches your other project sites, e.g. `https://code.deepsynoptic.org/dsacamera-monitor/`, once your org’s GitHub / custom domain is set up the same way as [DSA-110 Continuum](http://code.deepsynoptic.org/dsa110-continuum/) (separate from this repo; same Pages pattern).
 
-**Near real-time mode:** scheduled runs use `--no-stat` for faster updates and lower I/O overhead. This gives near-real-time freshness (about every 5 minutes + deployment latency).
+**Near real-time mode:** every scheduled run uses `--no-stat`. The operational SLA is a
+15-minute schedule with published `generated_at` no more than 30 minutes old.
 
-**Manual full refresh:** use **Actions → Build and deploy GitHub Pages → Run workflow**, set `full_scan=true` to include bytes + mtime stats (slower, higher I/O).
+**Manual recovery:** use **Actions → Render and deploy Quarto docs → Run workflow** with
+`fast_recovery=true`. This forces metadata-free output even if incremental metadata is enabled.
+To roll back a failing cache rollout, set repository variable
+`MONITOR_POINTING_METADATA_ENABLED=false`; the fast count/freshness monitor remains active.
 
 For one-off local scans on dsacamera:
 

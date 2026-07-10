@@ -10,8 +10,8 @@ Integrate the `dsacamera-monitor` near-real-time dashboard into the existing `ds
 
 - Add a `Live Monitor` entry to the Quarto sidebar.
 - Publish the generated monitor app at `.../live-monitor/` inside the same Pages artifact as Quarto docs.
-- Add near-real-time scheduled refreshes (5-minute cadence) in the docs deployment workflow.
-- Support a manual full refresh mode that includes file size and mtime metadata.
+- Add near-real-time scheduled refreshes (15-minute cadence) in the docs deployment workflow.
+- Keep scheduled and manual recovery scans stat-free; restore pointing metadata incrementally.
 - Add CI checks that fail fast if monitor artifacts are missing or malformed.
 
 ### Out of scope
@@ -45,13 +45,13 @@ This preserves the existing monitor frontend behavior while giving users a nativ
 
 - Reuse `dsacamera-incoming-scan` to generate monitor output.
 - Scheduled and push-triggered runs use `--no-stat` for speed.
-- Manual dispatch supports `full_scan=true` to run without `--no-stat`.
+- Manual dispatch defaults to fast recovery with HDF5 metadata disabled.
 
 ### Workflow orchestration layer
 
 In `.github/workflows/docs.yml`:
 
-- Add `schedule: "*/5 * * * *"` and `workflow_dispatch` input `full_scan` (boolean).
+- Add `schedule: "*/15 * * * *"` and a `workflow_dispatch` fast-recovery input.
 - Use self-hosted runner labels that can read `/data/incoming` (for example `self-hosted`, `linux`, `dsacamera`).
 - Build monitor output in a staging path.
 - Render Quarto.
@@ -64,8 +64,9 @@ In `.github/workflows/docs.yml`:
 2. Checkout repository.
 3. Install Python tooling needed for scanner invocation.
 4. Build monitor files:
-   - `full_scan=true` and manual dispatch: full scan.
-   - otherwise: fast scan (`--no-stat`).
+- all modes use stat-free enumeration;
+- fast recovery opens no HDF5 files;
+- optional pointing metadata uses a bounded host-local SQLite cache.
 5. Render Quarto docs to `docs/quarto/_site`.
 6. Validate monitor artifact integrity before merge into final site.
 7. Copy monitor directory into `docs/quarto/_site/live-monitor/`.
@@ -100,8 +101,8 @@ Result: one coherent site with docs and monitor updated together.
 
 ### Operational validation
 
-- Scheduled runs update roughly every 5 minutes plus Pages latency.
-- Manual `full_scan=true` path is exercised periodically to prevent drift/failure in the slow path.
+- Scheduled runs target 15 minutes and published manifests remain younger than 30 minutes.
+- Manual fast recovery is exercised periodically; cache mode can be disabled independently.
 
 ## Success Criteria
 

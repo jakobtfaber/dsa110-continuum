@@ -6,7 +6,6 @@ from pathlib import Path
 
 import yaml
 
-
 WORKFLOW_PATH = Path(__file__).parent.parent / ".github" / "workflows" / "docs.yml"
 
 
@@ -50,6 +49,15 @@ def test_monitor_host_scans_are_stat_free_bounded_and_timeout() -> None:
     assert "--metadata-update-limit 100" in script
     assert "--metadata-retry-seconds 3600" in script
     assert "fast_recovery" in WORKFLOW_PATH.read_text()
+
+
+def test_scanner_changes_trigger_pr_validation() -> None:
+    workflow = _workflow()
+    triggers = _triggers(workflow)
+    assert "tools/dsacamera-monitor/**" in triggers["push"]["paths"]
+    assert "tools/dsacamera-monitor/**" in triggers["pull_request"]["paths"]
+    script = _step_script(workflow, "pr_render", "Test monitor scanner")
+    assert "pytest tools/dsacamera-monitor/tests" in script
 
 
 def test_monitor_artifact_validator_accepts_stat_free_manifests() -> None:

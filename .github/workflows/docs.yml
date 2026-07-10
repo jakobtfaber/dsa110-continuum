@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - "docs/quarto/**"
+      - "tools/dsacamera-monitor/**"
       - ".github/workflows/docs.yml"
   pull_request:
     branches: [main]
     paths:
       - "docs/quarto/**"
+      - "tools/dsacamera-monitor/**"
       - ".github/workflows/docs.yml"
   schedule:
     - cron: "*/15 * * * *"
@@ -46,6 +48,13 @@ jobs:
         uses: quarto-dev/quarto-actions/setup@v2
         with:
           version: "1.6.39"
+
+      - name: Test monitor scanner
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install "./tools/dsacamera-monitor[dev]"
+          python -m pytest tools/dsacamera-monitor/tests -q
 
       - name: Render site
         working-directory: docs/quarto
