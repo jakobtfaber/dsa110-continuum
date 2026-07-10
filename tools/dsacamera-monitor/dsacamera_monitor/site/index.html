@@ -20,8 +20,8 @@
     <div class="kpi"><span class="label">Generated (UTC)</span><span class="value" id="kpi-generated">—</span></div>
     <div class="kpi"><span class="label">Filename span (UTC)</span><span class="value" id="kpi-span">—</span></div>
     <div class="kpi"><span class="label">mtime span (UTC)</span><span class="value" id="kpi-mtime">—</span></div>
-    <div class="kpi" id="kpi-dec-wrap" style="display:none"><span class="label">Phase-center Dec (°)</span><span class="value" id="kpi-dec">—</span></div>
-    <div class="kpi" id="kpi-dec-files-wrap" style="display:none"><span class="label">Dec metadata</span><span class="value" id="kpi-dec-files">—</span></div>
+    <div class="kpi" id="kpi-dec-wrap"><span class="label">Phase-center Dec (°)</span><span class="value" id="kpi-dec">Metadata warming/unavailable</span></div>
+    <div class="kpi" id="kpi-dec-files-wrap"><span class="label">Dec metadata</span><span class="value" id="kpi-dec-files">Metadata warming/unavailable</span></div>
   </section>
 
   <section class="panel">
@@ -34,17 +34,19 @@
     <div class="chart-wrap"><canvas id="chart-cum" height="120"></canvas></div>
   </section>
 
-  <section class="panel" id="panel-dec-by-day" style="display:none">
+  <section class="panel" id="panel-dec-by-day">
     <h2>Declination by day (phase center)</h2>
     <p class="hint">Min/max Dec (°) from HDF5 headers per calendar day, when metadata scan is enabled.</p>
-    <div class="chart-wrap"><canvas id="chart-dec" height="120"></canvas></div>
+    <p class="hint" id="dec-metadata-status">Metadata warming/unavailable</p>
+    <div class="chart-wrap" id="dec-chart-wrap" style="display:none"><canvas id="chart-dec" height="120"></canvas></div>
   </section>
 
-  <section class="panel" id="panel-pointing-series" style="display:none">
+  <section class="panel" id="panel-pointing-series">
     <h2>Pointing vs time (per file, median integration time)</h2>
     <p class="hint">From <code>pointing_timeseries.json</code> when generated. RA may be derived from HA + LST.</p>
+    <p class="hint" id="pointing-metadata-status">Metadata warming/unavailable</p>
     <p class="hint" id="ts-trunc" style="display:none"></p>
-    <div class="chart-wrap"><canvas id="chart-pointing" height="140"></canvas></div>
+    <div class="chart-wrap" id="pointing-chart-wrap" style="display:none"><canvas id="chart-pointing" height="140"></canvas></div>
   </section>
 
   <section class="panel">

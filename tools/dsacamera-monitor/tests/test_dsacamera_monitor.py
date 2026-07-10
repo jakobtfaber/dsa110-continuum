@@ -137,6 +137,21 @@ def test_build_out_copies_site(tmp_path: Path) -> None:
     assert '"schema_version": 2' in man
 
 
+def test_dashboard_explains_unavailable_or_warming_metadata(tmp_path: Path) -> None:
+    from dsacamera_monitor.scan import build_out
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "2025-01-01T00:00:00_sb01.hdf5").write_bytes(b"x")
+    out = tmp_path / "out"
+    build_out(root=src, out_dir=out, no_stat=True, hdf5_metadata=False)
+    html = (out / "index.html").read_text()
+    javascript = (out / "js" / "dashboard.js").read_text()
+    assert 'id="dec-metadata-status"' in html
+    assert 'id="pointing-metadata-status"' in html
+    assert "Metadata warming/unavailable" in javascript
+
+
 def test_pointing_timeseries_file(tmp_path: Path) -> None:
     import h5py
     import numpy as np
