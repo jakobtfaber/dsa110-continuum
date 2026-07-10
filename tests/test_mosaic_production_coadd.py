@@ -144,3 +144,32 @@ def test_batch_epoch_product_helper_calls_product_entry(monkeypatch):
 
     assert called["tile_paths"] == ["tile-a.fits", "tile-b.fits"]
     assert result is expected
+
+
+def test_archive_epoch_products_overwrites_mosaic_and_weight_as_a_pair(tmp_path):
+    import batch_pipeline as bp
+    from dsa110_continuum.mosaic.production import write_weight_map
+
+    source_mosaic = _write_tile(tmp_path / "stage_mosaic.fits", ra_deg=10.0, value=2.0)
+    source_weight = write_weight_map(
+        np.full((16, 16), 4.0),
+        WCS(fits.getheader(source_mosaic)).celestial,
+        source_mosaic,
+    )
+    destination_mosaic = _write_tile(
+        tmp_path / "product_mosaic.fits",
+        ra_deg=10.0,
+        value=1.0,
+    )
+    destination_weight = tmp_path / "product_mosaic.weights.fits"
+    fits.PrimaryHDU(data=np.ones((16, 16))).writeto(destination_weight)
+
+    bp._archive_epoch_products(
+        source_mosaic,
+        source_weight,
+        destination_mosaic,
+        destination_weight,
+    )
+
+    assert np.all(fits.getdata(destination_mosaic) == 2.0)
+    assert np.all(fits.getdata(destination_weight) == 4.0)

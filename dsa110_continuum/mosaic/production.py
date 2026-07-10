@@ -393,17 +393,31 @@ def weight_map_is_valid(
             weight_hdu = weight_hdul[0]
             if weight_hdu.data is None or weight_hdu.header.get("BUNIT") != "1/Jy^2":
                 return False
-            weight_shape = weight_hdu.data.squeeze().shape
+            weight_data = weight_hdu.data.squeeze()
+            weight_shape = weight_data.shape
             weight_wcs = WCS(weight_hdu.header).celestial
 
         with fits.open(mosaic_path, memmap=True) as mosaic_hdul:
             mosaic_hdu = mosaic_hdul[0]
             if mosaic_hdu.data is None:
                 return False
-            mosaic_shape = mosaic_hdu.data.squeeze().shape
+            mosaic_data = mosaic_hdu.data.squeeze()
+            mosaic_shape = mosaic_data.shape
             mosaic_wcs = WCS(mosaic_hdu.header).celestial
 
-        return weight_shape == mosaic_shape and all(
+        if weight_shape != mosaic_shape or weight_data.ndim != 2:
+            return False
+        has_science_pixel = False
+        for weight_row, mosaic_row in zip(weight_data, mosaic_data, strict=True):
+            if not np.all(np.isfinite(weight_row)) or np.any(weight_row < 0):
+                return False
+            science = np.isfinite(mosaic_row)
+            if np.any(science):
+                has_science_pixel = True
+                if np.any(weight_row[science] <= 0):
+                    return False
+
+        return has_science_pixel and all(
             np.allclose(weight_values, mosaic_values, rtol=0.0, atol=1e-10)
             for weight_values, mosaic_values in (
                 (weight_wcs.wcs.crpix, mosaic_wcs.wcs.crpix),

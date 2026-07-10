@@ -252,3 +252,19 @@ def test_weight_map_validation_rejects_missing_corrupt_or_misaligned_companion(t
     header["BUNIT"] = "1/Jy^2"
     fits.PrimaryHDU(data=np.ones(SHAPE), header=header).writeto(misaligned)
     assert not weight_map_is_valid(misaligned, mosaic_path)
+
+
+@pytest.mark.parametrize("bad_value", [0.0, -1.0, np.nan])
+def test_weight_map_validation_rejects_unusable_science_weights(tmp_path, bad_value):
+    mosaic_path = tmp_path / "epoch_mosaic.fits"
+    weight_path = tmp_path / "epoch_mosaic.weights.fits"
+    wcs = _tile_wcs()
+    fits.PrimaryHDU(data=np.ones(SHAPE), header=wcs.to_header()).writeto(mosaic_path)
+
+    weight = np.ones(SHAPE)
+    weight[8, 8] = bad_value
+    header = wcs.to_header()
+    header["BUNIT"] = "1/Jy^2"
+    fits.PrimaryHDU(data=weight, header=header).writeto(weight_path)
+
+    assert not weight_map_is_valid(weight_path, mosaic_path)

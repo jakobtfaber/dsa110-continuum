@@ -127,6 +127,21 @@ def epoch_phot_path(paths: dict, date: str, hour: int) -> str:
     return f"{paths['products_dir']}/{date}T{hour:02d}00_forced_phot.csv"
 
 
+def _archive_epoch_products(
+    mosaic_path: str | Path,
+    weight_path: str | Path,
+    mosaic_destination: str | Path,
+    weight_destination: str | Path,
+) -> None:
+    """Archive a mosaic and its validated weight companion as one product pair."""
+    from dsa110_continuum.mosaic.production import weight_map_is_valid
+
+    if not weight_map_is_valid(weight_path, mosaic_path):
+        raise RuntimeError(f"refusing to archive invalid weight companion: {weight_path}")
+    shutil.copy2(mosaic_path, mosaic_destination)
+    shutil.copy2(weight_path, weight_destination)
+
+
 # ── Timestamp parsing ─────────────────────────────────────────────────────────
 
 def timestamp_from_fits(fits_path: str) -> datetime | None:
@@ -2055,14 +2070,14 @@ def main() -> None:
         if not should_archive:
             log.warning("  QA FAIL — mosaic NOT archived to products: %s", label)
             manifest.gates.append({"gate": "archive", "verdict": "BLOCKED", "reason": f"epoch {label} QA FAIL"})
-        elif mosaic_fits_src.exists() and (not mosaic_fits_dst.exists() or args.force_recal):
-            shutil.copy2(str(mosaic_fits_src), str(mosaic_fits_dst))
-            log.info("Archived mosaic FITS: %s", mosaic_fits_dst)
-        if should_archive and os.path.exists(weight_path) and (
-            not weight_fits_dst.exists() or args.force_recal
-        ):
-            shutil.copy2(weight_path, str(weight_fits_dst))
-            log.info("Archived mosaic weight FITS: %s", weight_fits_dst)
+        elif mosaic_fits_src.exists():
+            _archive_epoch_products(
+                mosaic_fits_src,
+                weight_path,
+                mosaic_fits_dst,
+                weight_fits_dst,
+            )
+            log.info("Archived mosaic FITS pair: %s + %s", mosaic_fits_dst, weight_fits_dst)
 
         epoch_results.append({
             "label": label,
