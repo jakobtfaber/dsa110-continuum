@@ -21,6 +21,7 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
+
 from dsa110_continuum.config import get_env_path
 
 
@@ -95,6 +96,7 @@ def check_core_dependencies() -> tuple[int, list[str]]:
     core_deps = [
         "numpy",
         "astropy",
+        "reproject",
         "pyuvdata",
         "fastapi",
         "pydantic",

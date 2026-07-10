@@ -40,6 +40,7 @@ dependencies = [
     "pyradiosky>=1.0.0",
     "numpy",
     "astropy",
+    "reproject>=0.19,<0.20",
     "pyuvsim",
     "matvis",
     "fastapi>=0.115.0",  # CVE-2024-38 fix (also pulls starlette>=0.40.0)
@@ -259,4 +260,3 @@ indent-style = "space"
 # These are runtime dependencies that work correctly but lack stubs
 reportMissingModuleSource = false
 reportMissingTypeStubs = false
-
