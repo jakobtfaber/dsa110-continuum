@@ -1,0 +1,85 @@
+{
+  "mosaic": "/stage/dsa110-contimg/images/mosaic_2026-01-25/2026-01-25T2200_mosaic.fits",
+  "overall_verdict": "PASS",
+  "gate_definition": "seeded RMS separation <= sqrt(BMAJ*BMIN)/5 using associations within beam/2",
+  "beam": {
+    "bmaj_arcsec": 58.80955020169104,
+    "bmin_arcsec": 33.06866120739936,
+    "geometric_mean_arcsec": 44.09935477282254,
+    "threshold_arcsec": 8.819870954564507
+  },
+  "footprint": {
+    "valid_pixel_bbox": [
+      758,
+      11005,
+      303,
+      2515
+    ],
+    "padding_bmaj_deg": 0.0163359861671364,
+    "query_center_ra_deg": 344.43242146583066,
+    "query_center_dec_deg": 16.220268644397475,
+    "query_radius_deg": 8.788730959092646
+  },
+  "min_flux_mjy": 50.0,
+  "surveys": {
+    "nvss": {
+      "n_seeded_peaks": 181,
+      "association_radius_arcsec": 22.04967738641127,
+      "threshold_arcsec": 8.819870954564507,
+      "n_seeded_matches": 176,
+      "n_rejected_false_associations": 5,
+      "mean_dra_cosdec_arcsec": -0.5776486524916961,
+      "mean_ddec_arcsec": 0.13793725976198776,
+      "mean_offset_magnitude_arcsec": 0.5938894285606693,
+      "median_separation_arcsec": 1.5578973919075503,
+      "rms_separation_arcsec": 4.687765670102703,
+      "pass": true,
+      "warning": false,
+      "verdict": "PASS",
+      "warning_reason": null,
+      "n_catalog_sources": 274,
+      "catalog_path": "/data/dsa110-contimg/state/catalogs/nvss_full.sqlite3"
+    },
+    "first": {
+      "n_seeded_peaks": 16,
+      "association_radius_arcsec": 22.04967738641127,
+      "threshold_arcsec": 8.819870954564507,
+      "n_seeded_matches": 16,
+      "n_rejected_false_associations": 0,
+      "mean_dra_cosdec_arcsec": -1.0183043525013518,
+      "mean_ddec_arcsec": -0.5587522253373172,
+      "mean_offset_magnitude_arcsec": 1.1615282190470455,
+      "median_separation_arcsec": 2.2177717289609924,
+      "rms_separation_arcsec": 2.9777264284013167,
+      "pass": true,
+      "warning": false,
+      "verdict": "PASS",
+      "warning_reason": null,
+      "n_catalog_sources": 23,
+      "catalog_path": "/data/dsa110-contimg/state/catalogs/first_full.sqlite3"
+    },
+    "rax": {
+      "n_seeded_peaks": 226,
+      "association_radius_arcsec": 22.04967738641127,
+      "threshold_arcsec": 8.819870954564507,
+      "n_seeded_matches": 215,
+      "n_rejected_false_associations": 11,
+      "mean_dra_cosdec_arcsec": -0.15828239454560894,
+      "mean_ddec_arcsec": -0.3559397838536726,
+      "mean_offset_magnitude_arcsec": 0.38954646212344296,
+      "median_separation_arcsec": 1.8633921082209957,
+      "rms_separation_arcsec": 4.5845136164367455,
+      "pass": true,
+      "warning": false,
+      "verdict": "PASS",
+      "warning_reason": null,
+      "n_catalog_sources": 424,
+      "catalog_path": "/data/dsa110-contimg/state/catalogs/rax_full.sqlite3"
+    }
+  },
+  "blind_source_finding": "Blind path skipped (--no-blind)",
+  "master_catalog": {
+    "used": false,
+    "reason": "master_sources.sqlite3 is VLASS-only; rebuild deferred to Phase 2"
+  }
+}

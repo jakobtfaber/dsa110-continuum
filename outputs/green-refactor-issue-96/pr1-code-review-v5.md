@@ -1,0 +1,3 @@
+Finding: [scripts/batch_pipeline.py:1999](/data/dsa110-continuum-worktrees/agent-sault-weighted-coadd/scripts/batch_pipeline.py:1999) catches QA measurement failures, leaves `epoch_qa = None`, then [scripts/batch_pipeline.py:2100](/data/dsa110-continuum-worktrees/agent-sault-weighted-coadd/scripts/batch_pipeline.py:2100) treats `qa_verdict is None` as archiveable because `None != "FAIL"`. That still allows replacing the preserved archived mosaic/weight pair without a QA-accepted replacement. Gate archive on `epoch_qa is not None and qa_verdict != "FAIL"` unless `--archive-all` is set.
+
+I did not modify files or run tests.
