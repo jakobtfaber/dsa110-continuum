@@ -1,5 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# as part of the contimg-import-retirement migration (docs/rse/specs/plan-contimg-import-retirement.md).
 """
 Pipeline logging configuration for the DSA-110 Continuum Imaging Pipeline.
 
@@ -198,7 +196,7 @@ def setup_logging(
     # Ensure DeprecationWarnings from our package are always emitted
     # (Python suppresses them by default outside __main__).
     warnings.filterwarnings(
-        "always", category=DeprecationWarning, module=r"dsa110_contimg\."
+        "always", category=DeprecationWarning, module=r"dsa110_continuum\."
     )
     # The py.warnings logger propagates to root, but propagated records
     # bypass the root logger's filters — add the ContextFilter to

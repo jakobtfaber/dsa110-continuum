@@ -68,7 +68,7 @@ jobs:
         #     (loaded via forced_photometry CLI -> catalog.query chain).
         # Added by the contimg-import-retirement migration (the vendored
         # modules are hard imports now; set verified in a local CI-replica
-        # venv, docs/rse/specs/plan-contimg-import-retirement.md Phase 8):
+        # venv, docs/archive/contimg-retirement/plan-contimg-import-retirement.md Phase 8):
         #   - pyyaml/pydantic/pydantic-settings: dsa110_continuum.unified_config
         #     (hard-imported via photometry.forced).
         #   - caskade: dsa110_continuum.simulation.control (hard import in
@@ -88,6 +88,11 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: python scripts/check_import_migration.py --fail-on-any
+
+      - name: No stale contimg mentions
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python scripts/check_contimg_mentions.py --fail
 
       - name: Run focused cloud-safe subset
         # --basetemp overrides the project default in pyproject.toml
@@ -117,4 +122,6 @@ jobs:
             tests/test_vendored_database.py \
             tests/test_init_reexports_new_namespace.py \
             tests/test_no_compat_layer.py \
-            tests/test_imaging_worker_no_fast_imaging.py
+            tests/test_imaging_worker_no_fast_imaging.py \
+            tests/test_no_stale_contimg_api_refs.py \
+            tests/test_paths_resolver.py

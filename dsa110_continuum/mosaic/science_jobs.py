@@ -131,7 +131,7 @@ class ScienceMosaicBridgeJob(Job):
             return JobResult.fail(error or "Validation failed")
 
         raise RuntimeError(
-            "Science-mosaic Dagster bridge retired with dsa110_contimg; "
+            "Science-mosaic Dagster bridge retired; "
             "run the visibility-domain coadd via scripts/batch_pipeline.py "
             "(see docs/skills/mosaicking.md)."
         )

@@ -1,7 +1,7 @@
 """Package __init__ re-exports must resolve from the new namespace alone.
 
 Phase 6 of the contimg-import-retirement migration
-(docs/rse/specs/plan-contimg-import-retirement.md): the legacy
+(docs/archive/contimg-retirement/plan-contimg-import-retirement.md): the legacy
 ``dsa110_contimg.core.*`` re-export layers are flipped to relative imports
 of the sibling modules, so every ``__all__`` name resolves without the old
 package installed.

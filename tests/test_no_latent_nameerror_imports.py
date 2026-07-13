@@ -1,7 +1,7 @@
 """Every module here must import in an environment WITHOUT dsa110_contimg.
 
 Grows phase-by-phase during the contimg-import-retirement migration
-(docs/rse/specs/plan-contimg-import-retirement.md). A failure means a
+(docs/archive/contimg-retirement/plan-contimg-import-retirement.md). A failure means a
 soft-imported legacy name is used unconditionally (the latent-NameError
 bug class) or a retarget was missed.
 """

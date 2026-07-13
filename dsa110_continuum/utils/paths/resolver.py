@@ -1,5 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# as part of the contimg-import-retirement migration (docs/rse/specs/plan-contimg-import-retirement.md).
 """Path resolution for DSA-110 continuum imaging pipeline.
 
 This module provides the core path resolution logic including the ResolvedPaths
@@ -22,6 +20,15 @@ def _get_env(name: str) -> str | None:
     """Get environment variable, returning None if empty string."""
     val = os.environ.get(name)
     return val if val else None
+
+
+def _get_env_prefer(*names: str) -> tuple[str | None, str | None]:
+    """Return (value, env_name) for the first non-empty env var in *names*."""
+    for name in names:
+        val = _get_env(name)
+        if val:
+            return val, name
+    return None, None
 
 
 @dataclass(frozen=True)
@@ -62,25 +69,26 @@ class ResolvedPaths:
 
 def _resolve_base_dir_with_source() -> tuple[Path, str]:
     """Resolve base directory with source indicator."""
-    env_base = _get_env("CONTIMG_BASE_DIR")
+    env_base, src = _get_env_prefer("DSA110_BASE_DIR", "CONTIMG_BASE_DIR")
     if env_base:
-        return Path(env_base).expanduser().resolve(strict=False), "CONTIMG_BASE_DIR"
+        return Path(env_base).expanduser().resolve(strict=False), src
 
     return Path("/data/dsa110-contimg"), "default"
 
 
 def _resolve_staging_dir_with_source(base_dir: Path) -> tuple[Path, str]:
     """Resolve staging directory with source indicator."""
-    env_staging = _get_env("CONTIMG_STAGING_DIR")
+    env_staging, src = _get_env_prefer("DSA110_STAGING_DIR", "CONTIMG_STAGING_DIR")
     if env_staging:
         p = Path(env_staging)
         if p.name == "ms":
             logger.warning(
-                "CONTIMG_STAGING_DIR points to an ms directory; deriving staging_dir from its parent: %s",
+                "%s points to an ms directory; deriving staging_dir from its parent: %s",
+                src,
                 env_staging,
             )
-            return p.parent, "CONTIMG_STAGING_DIR(parent)"
-        return p, "CONTIMG_STAGING_DIR"
+            return p.parent, f"{src}(parent)"
+        return p, src
 
     # Special case for jfaber environment to avoid forbidden path
     if str(base_dir).rstrip("/") == "/data/jfaber/dsa110-contimg":
@@ -91,9 +99,9 @@ def _resolve_staging_dir_with_source(base_dir: Path) -> tuple[Path, str]:
 
 def _resolve_tmp_dir_with_source(base_dir: Path) -> tuple[Path, str]:
     """Resolve temp directory with source indicator."""
-    env_temp = _get_env("CONTIMG_TEMP_DIR")
+    env_temp, src = _get_env_prefer("DSA110_TEMP_DIR", "CONTIMG_TEMP_DIR")
     if env_temp:
-        return Path(env_temp), "CONTIMG_TEMP_DIR"
+        return Path(env_temp), src
 
     # Special case for jfaber environment to avoid forbidden path
     if "jfaber" in str(base_dir):
@@ -104,42 +112,42 @@ def _resolve_tmp_dir_with_source(base_dir: Path) -> tuple[Path, str]:
 
 def _resolve_tmpfs_dir_with_source() -> tuple[Path, str]:
     """Resolve tmpfs directory with source indicator."""
-    env_tmpfs = _get_env("CONTIMG_TMPFS_DIR")
+    env_tmpfs, src = _get_env_prefer("DSA110_TMPFS_DIR", "CONTIMG_TMPFS_DIR")
     if env_tmpfs:
-        return Path(env_tmpfs), "CONTIMG_TMPFS_DIR"
+        return Path(env_tmpfs), src
 
     return Path("/dev/shm/dsa110-contimg"), "default"
 
 
 def _resolve_input_dir_with_source() -> tuple[Path, str]:
     """Resolve input directory with source indicator."""
-    value = _get_env("CONTIMG_INPUT_DIR")
+    value, src = _get_env_prefer("DSA110_INPUT_DIR", "CONTIMG_INPUT_DIR")
     if value:
-        return Path(value), "CONTIMG_INPUT_DIR"
+        return Path(value), src
     return Path("/data/incoming"), "default"
 
 
 def _resolve_state_dir_with_source(base_dir: Path) -> tuple[Path, str]:
     """Resolve state directory with source indicator."""
-    env_state = _get_env("CONTIMG_STATE_DIR")
+    env_state, src = _get_env_prefer("DSA110_STATE_DIR", "CONTIMG_STATE_DIR")
     if env_state:
-        return Path(env_state), "CONTIMG_STATE_DIR"
+        return Path(env_state), src
     return base_dir / "state", "default"
 
 
 def _resolve_products_dir_with_source(base_dir: Path) -> tuple[Path, str]:
     """Resolve products directory with source indicator."""
-    env_products = _get_env("CONTIMG_PRODUCTS_DIR")
+    env_products, src = _get_env_prefer("DSA110_PRODUCTS_DIR", "CONTIMG_PRODUCTS_DIR")
     if env_products:
-        return Path(env_products), "CONTIMG_PRODUCTS_DIR"
+        return Path(env_products), src
     return base_dir / "products", "default"
 
 
 def _resolve_pid_dir_with_source(tmp_dir: Path) -> tuple[Path, str]:
     """Resolve PID directory with source indicator."""
-    env_pid = _get_env("CONTIMG_PID_DIR")
+    env_pid, src = _get_env_prefer("DSA110_PID_DIR", "CONTIMG_PID_DIR")
     if env_pid:
-        return Path(env_pid), "CONTIMG_PID_DIR"
+        return Path(env_pid), src
     return tmp_dir / "pids", "derived(tmp_dir)"
 
 

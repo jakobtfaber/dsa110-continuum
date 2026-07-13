@@ -1035,13 +1035,6 @@ def query_nvss_sources(
 
         # Try standard locations
         candidates = []
-        try:
-            current_file = Path(__file__).resolve()
-            potential_root = current_file.parents[3]
-            if (potential_root / "src" / "dsa110_contimg").exists():
-                candidates.append(potential_root / "state" / "catalogs" / db_name)
-        except Exception:
-            pass
 
         for root_str in ["/data/dsa110-contimg", "/app"]:
             root_path = Path(root_str)
@@ -1067,13 +1060,6 @@ def query_nvss_sources(
                 root_path = Path(root_str)
                 if root_path.exists():
                     catalog_dirs.append(root_path / "state" / "catalogs")
-            try:
-                current_file = Path(__file__).resolve()
-                potential_root = current_file.parents[3]
-                if (potential_root / "src" / "dsa110_contimg").exists():
-                    catalog_dirs.append(potential_root / "state" / "catalogs")
-            except Exception:
-                pass
             catalog_dirs.append(Path.cwd() / "state" / "catalogs")
             catalog_dirs.append(
                 get_env_path("CONTIMG_BASE_DIR", default="/data/dsa110-contimg") / "state/catalogs"
@@ -1198,13 +1184,6 @@ def query_nvss_sources(
                 Path("/app/state/catalogs"),
                 Path.cwd() / "state" / "catalogs",
             ]
-            try:
-                current_file = Path(__file__).resolve()
-                potential_root = current_file.parents[3]
-                if (potential_root / "src" / "dsa110_contimg").exists():
-                    catalog_dirs.insert(0, potential_root / "state" / "catalogs")
-            except Exception:
-                pass
 
             for catalog_dir in catalog_dirs:
                 candidate = catalog_dir / "nvss_full.sqlite3"
@@ -1344,13 +1323,6 @@ def query_first_sources(
 
         # Try standard locations
         candidates = []
-        try:
-            current_file = Path(__file__).resolve()
-            potential_root = current_file.parents[3]
-            if (potential_root / "src" / "dsa110_contimg").exists():
-                candidates.append(potential_root / "state" / "catalogs" / db_name)
-        except Exception:
-            pass
 
         for root_str in ["/data/dsa110-contimg", "/app"]:
             root_path = Path(root_str)
@@ -1376,13 +1348,6 @@ def query_first_sources(
                 root_path = Path(root_str)
                 if root_path.exists():
                     catalog_dirs.append(root_path / "state" / "catalogs")
-            try:
-                current_file = Path(__file__).resolve()
-                potential_root = current_file.parents[3]
-                if (potential_root / "src" / "dsa110_contimg").exists():
-                    catalog_dirs.append(potential_root / "state" / "catalogs")
-            except Exception:
-                pass
             catalog_dirs.append(Path.cwd() / "state" / "catalogs")
             catalog_dirs.append(
                 get_env_path("CONTIMG_BASE_DIR", default="/data/dsa110-contimg") / "state/catalogs"
@@ -1662,13 +1627,6 @@ def query_rax_sources(
 
         # Try standard locations
         candidates = []
-        try:
-            current_file = Path(__file__).resolve()
-            potential_root = current_file.parents[3]
-            if (potential_root / "src" / "dsa110_contimg").exists():
-                candidates.append(potential_root / "state" / "catalogs" / db_name)
-        except Exception:
-            pass
 
         for root_str in ["/data/dsa110-contimg", "/app"]:
             root_path = Path(root_str)
@@ -1929,13 +1887,6 @@ def query_vlass_sources(
 
         # Try standard locations
         candidates = []
-        try:
-            current_file = Path(__file__).resolve()
-            potential_root = current_file.parents[3]
-            if (potential_root / "src" / "dsa110_contimg").exists():
-                candidates.append(potential_root / "state" / "catalogs" / db_name)
-        except Exception:
-            pass
 
         for root_str in ["/data/dsa110-contimg", "/app"]:
             root_path = Path(root_str)

@@ -390,7 +390,7 @@ class DirectoryAnalyzer:
         for pkg_path in sorted(self.python_packages):
             parts = pkg_path.parts
             if len(parts) >= 2:
-                # Group by parent directory (e.g., src/dsa110_contimg/api -> api)
+                # Group by parent directory (e.g., dsa110_continuum/api -> api)
                 parent = parts[-2] if parts[-2] != "src" else parts[-1]
                 package_groups[parent].append(pkg_path)
             else:

@@ -1,12 +1,10 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# as part of the contimg-import-retirement migration (docs/rse/specs/plan-contimg-import-retirement.md).
 """
 GPU utilities for seamless GPU acceleration across all pipeline modes.
 
 This module provides unified GPU detection, configuration, and Docker command
 building that works consistently across CLI, streaming, and Dagster execution modes.
 
-Configuration is now centralized in dsa110_contimg.config.GPUSettings.
+Configuration is now centralized in dsa110_continuum.unified_config / GPU settings.
 This module reads defaults from there and provides runtime detection/overrides.
 
 Example usage:

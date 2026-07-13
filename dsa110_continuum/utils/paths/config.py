@@ -1,5 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# as part of the contimg-import-retirement migration (docs/rse/specs/plan-contimg-import-retirement.md).
 """Path configuration constants for DSA-110 continuum imaging pipeline.
 
 This module provides commonly-used path constants that are resolved at import time

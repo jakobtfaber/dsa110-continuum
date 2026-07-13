@@ -1,6 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# infrastructure/database/session.py, as part of the contimg-import-retirement migration
-# (docs/rse/specs/plan-contimg-import-retirement.md, Phase 5).
 """
 SQLAlchemy database session management for DSA-110 Continuum Imaging Pipeline.
 
@@ -14,7 +11,7 @@ Examples
 --------
 Simple session usage with context manager::
 
-    from dsa110_contimg.infrastructure.database.session import get_session
+    from dsa110_continuum.database.session import get_session
 
     with get_session("pipeline") as session:
         images = session.query(Image).filter_by(type="dirty").all()
@@ -23,7 +20,7 @@ Simple session usage with context manager::
 
 Scoped sessions for multi-threaded contexts::
 
-    from dsa110_contimg.infrastructure.database.session import get_scoped_session
+    from dsa110_continuum.database.session import get_scoped_session
 
     Session = get_scoped_session("pipeline")
     session = Session()
@@ -35,7 +32,7 @@ Scoped sessions for multi-threaded contexts::
 
 Direct engine access for migrations::
 
-    from dsa110_contimg.infrastructure.database.session import get_engine
+    from dsa110_continuum.database.session import get_engine
 
     engine = get_engine("pipeline")
     Base.metadata.create_all(engine)

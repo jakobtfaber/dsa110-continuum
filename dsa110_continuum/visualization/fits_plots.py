@@ -10,7 +10,7 @@ Provides functions for:
 Adapted from:
 - VAST/vastfast/plot.py (cutouts, WCS handling)
 - radiopadre/fitsfile.py (normalization, colormaps)
-- dsa110_contimg/imaging/export.py (existing PNG generation)
+- dsa110_continuum/imaging/export.py (existing PNG generation)
 """
 
 from __future__ import annotations

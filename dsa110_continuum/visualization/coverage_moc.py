@@ -34,7 +34,7 @@ def get_db_path() -> Path:
     if not db_path:
         # Fallback relative to this file
         current_dir = Path(__file__).parent
-        # backend/src/dsa110_contimg/visualization/ -> backend/src/dsa110_contimg/database/pipeline.sqlite3
+        # Fallback relative to this file → sibling database package
         db_path = current_dir.parent / "database" / "pipeline.sqlite3"
 
     return Path(db_path)

@@ -1,6 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# infrastructure/database/unified.py, as part of the contimg-import-retirement migration
-# (docs/rse/specs/plan-contimg-import-retirement.md, Phase 5).
 """
 Unified database layer for DSA-110 Continuum Imaging Pipeline.
 
@@ -29,7 +26,7 @@ Note: Ingestion queue is now managed by Dagster assets.
 See archived schema files for historical reference.
 
 Usage:
-    from dsa110_contimg.infrastructure.database.unified import Database
+    from dsa110_continuum.database.unified import Database
 
     # Query with dict-like results
     db = Database()

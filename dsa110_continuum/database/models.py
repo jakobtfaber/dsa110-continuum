@@ -1,6 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# infrastructure/database/models.py, as part of the contimg-import-retirement migration
-# (docs/rse/specs/plan-contimg-import-retirement.md, Phase 5).
 """
 SQLAlchemy ORM models for DSA-110 Continuum Imaging Pipeline database.
 
@@ -20,11 +17,11 @@ Examples
 --------
 ::
 
-    from dsa110_contimg.infrastructure.database.models import (
+    from dsa110_continuum.database.models import (
         MSIndex, Image, Photometry, Caltable,
         HDF5FileIndex, DataRegistry
     )
-    from dsa110_contimg.infrastructure.database.session import get_session
+    from dsa110_continuum.database.session import get_session
 
     with get_session("pipeline") as session:
         images = session.query(Image).filter_by(type="dirty").all()
