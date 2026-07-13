@@ -1,5 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# as part of the contimg-import-retirement migration (docs/rse/specs/plan-contimg-import-retirement.md).
 """Fast UVH5 metadata reader using pyuvdata's FastUVH5Meta.
 
 FastUVH5Meta provides lazy, read-on-demand access to UVH5 file metadata

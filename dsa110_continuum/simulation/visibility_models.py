@@ -41,9 +41,7 @@ def load_measured_parameters(config_path: Path | None = None) -> dict:
         return _PARAMETER_CACHE
 
     if config_path is None:
-        # Default location: simulations/config/
-        # visibility_models.py is in backend/src/dsa110_contimg/simulation/
-        # Go up to repo root, then to simulations/config/
+        # Default location: simulations/config/ relative to repo root
         repo_root = get_repo_root(Path(__file__))
         config_path = repo_root / "simulations" / "config" / "dsa110_measured_parameters.yaml"
 

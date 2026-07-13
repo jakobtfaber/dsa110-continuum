@@ -1,14 +1,8 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# as part of the contimg-import-retirement migration (docs/rse/specs/plan-contimg-import-retirement.md).
 """
 Unified configuration system for DSA-110 continuum imaging pipeline.
 
-This module consolidates configuration from:
-
-- dsa110_contimg.config (environment variables)
-- dsa110_contimg.workflow.pipeline.config (YAML/dict)
-
-Provides a single source of truth with support for multiple input methods:
+This module consolidates configuration from environment variables and YAML/dict
+pipeline settings into one continuum-owned config surface.
 
 - Environment variables (CONTIMG_* prefix)
 - YAML files (via from_yaml())
@@ -262,9 +256,7 @@ class ConversionConfig(BaseModel):
     """
     Unified conversion configuration (UVH5 → MS).
 
-    Merges parameters from:
-    - dsa110_contimg.config.ConversionSettings
-    - dsa110_contimg.workflow.pipeline.config.ConversionConfig
+    Merges conversion parameters previously split across env and YAML configs.
 
     Resolved conflicts:
     - max_workers: 8 (compromise between 4 and 16)
@@ -1098,10 +1090,8 @@ class TimeoutConfig(BaseModel):
 class UnifiedPipelineConfig(BaseSettings):
     """Unified pipeline configuration supporting multiple input methods.
 
-    This consolidates the duplicate configuration systems:
-
-    - dsa110_contimg.config.Settings (env vars)
-    - dsa110_contimg.workflow.pipeline.config.PipelineConfig (YAML)
+    This consolidates the duplicate configuration systems (env vars and YAML)
+    into one continuum-owned settings object.
 
     Notes
     -----

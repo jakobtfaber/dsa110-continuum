@@ -1,7 +1,7 @@
 """The vendored database layer must work without dsa110_contimg or H17 paths.
 
 Phase 5 of the contimg-import-retirement migration
-(docs/rse/specs/plan-contimg-import-retirement.md).
+(docs/archive/contimg-retirement/plan-contimg-import-retirement.md).
 """
 from pathlib import Path
 

@@ -254,7 +254,7 @@ class FITSViewerMetadata:
     rendering tooltips, axis summaries, and validity checks.
 
     For the full per-keyword header extraction used by the API, see
-    ``dsa110_contimg.interfaces.api.services.fits_service.FITSMetadata``.
+    continuum FITS metadata helpers in the visualization/API layer.
     """
 
     filename: str = ""

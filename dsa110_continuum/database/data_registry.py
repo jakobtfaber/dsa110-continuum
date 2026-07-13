@@ -1,6 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# infrastructure/database/data_registry.py, as part of the contimg-import-retirement migration
-# (docs/rse/specs/plan-contimg-import-retirement.md, Phase 5).
 """Data registry database module.
 
     Provides functions for tracking all data instances through their lifecycle
@@ -18,7 +15,7 @@
 
     Usage
 -----
-    from dsa110_contimg.infrastructure.database.data_registry import get_data_registry_connection
+    from dsa110_continuum.database.data_registry import get_data_registry_connection
     conn = get_data_registry_connection()  # Uses pipeline.sqlite3
 """
 
@@ -103,7 +100,7 @@ def ensure_data_registry_db(path: Path) -> sqlite3.Connection:
         conn.close()
         raise RuntimeError(
             f"data_registry table not found in {path}. "
-            "Run Alembic migrations: cd backend/src/dsa110_contimg/database && "
+            "Run Alembic migrations from the continuum database package, then "
             "alembic upgrade head"
         )
 

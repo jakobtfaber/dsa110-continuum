@@ -1,5 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# as part of the contimg-import-retirement migration (docs/rse/specs/plan-contimg-import-retirement.md).
 """
 GPU Safety Module - Production-Level Memory Protection.
 
@@ -1143,9 +1141,9 @@ def register_with_monitor(
         Optional callback for safety alerts (default is None)
 
     """
-    # The passive monitoring system lived in the retired dsa110_contimg
-    # package; safety checks in this module are self-contained without it.
-    logger.debug("GPU monitoring integration retired with dsa110_contimg")
+    # Passive GPU monitoring lived in the retired contimg stack; safety checks
+    # in this module are self-contained without it.
+    logger.debug("GPU monitoring integration retired with legacy contimg stack")
     return False
 
 

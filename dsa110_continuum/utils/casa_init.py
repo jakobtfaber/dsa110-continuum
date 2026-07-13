@@ -1,5 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# as part of the contimg-import-retirement migration (docs/rse/specs/plan-contimg-import-retirement.md).
 """
 CASA initialization utilities.
 
@@ -328,13 +326,13 @@ def get_casa_task(task_name: str):
     """Import a CASA task with log environment protection and caching.
 
     .. deprecated:: 1.2.0
-        Use :class:`~dsa110_contimg.core.calibration.casa_service.CASAService` instead.
+        Use :class:`~dsa110_continuum.calibration.casa_service.CASAService` instead.
         This function is maintained for backward compatibility but will be
         removed in a future version.
 
     **Recommended Alternative**::
 
-        from dsa110_contimg.core.calibration.casa_service import CASAService
+        from dsa110_continuum.calibration.casa_service import CASAService
 
         service = CASAService()
         service.gaincal(vis="my.ms", caltable="my.G", ...)
@@ -354,7 +352,7 @@ def get_casa_task(task_name: str):
     warnings.warn(
         f"get_casa_task('{task_name}') is deprecated. "
         "Use CASAService instead: "
-        "from dsa110_contimg.core.calibration.casa_service import CASAService; "
+        "from dsa110_continuum.calibration.casa_service import CASAService; "
         f"service = CASAService(); service.{task_name}(...)",
         DeprecationWarning,
         stacklevel=2

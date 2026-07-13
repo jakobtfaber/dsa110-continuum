@@ -44,7 +44,7 @@ def test_forced_convolve_works_without_dsa110_contimg():
     Originally the regression test for the ``NameError: settings is not
     defined`` bug (settings soft-imported from the legacy package, used
     unconditionally). Since the contimg-import-retirement migration
-    (docs/rse/specs/plan-contimg-import-retirement.md, Phase 3), ``settings``
+    (docs/archive/contimg-retirement/plan-contimg-import-retirement.md, Phase 3), ``settings``
     and ``get_array_module`` come from the vendored
     ``dsa110_continuum.unified_config`` / ``dsa110_continuum.utils.gpu_utils``
     — so with the legacy package blocked the module now gets the REAL

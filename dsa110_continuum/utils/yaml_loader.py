@@ -1,5 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# as part of the contimg-import-retirement migration (docs/rse/specs/plan-contimg-import-retirement.md).
 """Advanced YAML loader with environment variable expansion.
 
 This module provides a sophisticated YAML loader that expands environment variables

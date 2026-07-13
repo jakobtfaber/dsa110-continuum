@@ -1,6 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# infrastructure/monitoring/pipeline_metrics.py, as part of the contimg-import-retirement migration
-# (docs/rse/specs/plan-contimg-import-retirement.md, Phase 5).
 """
 Pipeline Metrics Module for DSA-110 Continuum Imaging.
 
@@ -11,7 +8,7 @@ Provides comprehensive metrics collection for pipeline operations:
 - Throughput metrics (MS/hour)
 
 Usage:
-    from dsa110_contimg.infrastructure.monitoring.pipeline_metrics import (
+    from dsa110_continuum.database.pipeline_metrics import (
         PipelineMetrics, StageMetrics, get_metrics_collector
     )
 

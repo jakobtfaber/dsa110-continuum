@@ -101,10 +101,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/dsa110/dsa110-contimg"
-Documentation = "https://dsa110.github.io/dsa110-contimg"
-Repository = "https://github.com/dsa110/dsa110-contimg"
-Issues = "https://github.com/dsa110/dsa110-contimg/issues"
+Homepage = "https://github.com/dsa110/dsa110-continuum"
+Documentation = "https://github.com/dsa110/dsa110-continuum"
+Repository = "https://github.com/dsa110/dsa110-continuum"
+Issues = "https://github.com/dsa110/dsa110-continuum/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -179,7 +179,7 @@ markers = [
 ]
 
 # Doctest configuration for scientific computing
-# Run with: pytest --doctest-modules src/dsa110_contimg/utils/
+# Run with: pytest --doctest-modules dsa110_continuum/utils/
 doctest_optionflags = [
     "ELLIPSIS",           # Allow ... in output matching
     "NORMALIZE_WHITESPACE",  # Ignore whitespace differences

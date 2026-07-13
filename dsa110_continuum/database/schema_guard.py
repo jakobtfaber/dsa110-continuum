@@ -1,6 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# infrastructure/database/schema_guard.py, as part of the contimg-import-retirement migration
-# (docs/rse/specs/plan-contimg-import-retirement.md, Phase 5).
 """
 Schema Guard - Runtime validation of SQLite database schemas.
 

@@ -639,7 +639,7 @@ class PhotometryManager:
             return None
 
         raise RuntimeError(
-            "Legacy dsa110_contimg batch-photometry API retired; "
+            "Legacy batch-photometry API retired; "
             "use scripts/batch_pipeline.py --photometry-workers N."
         )
 

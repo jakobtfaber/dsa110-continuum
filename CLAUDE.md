@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-A radio astronomy continuum imaging pipeline for DSA-110 (Deep Synoptic Array, 110 antennas) at OVRO, ported from the older `dsa110-contimg` codebase. Science goal: detect variable/transient compact radio sources (ESEs) via daily-cadenced per-source forced photometry on hourly-epoch mosaics (~1 hour each).
+A radio astronomy continuum imaging pipeline for DSA-110 (Deep Synoptic Array, 110 antennas) at OVRO. Science goal: detect variable/transient compact radio sources (ESEs) via daily-cadenced per-source forced photometry on hourly-epoch mosaics (~1 hour each).
 
 Verified working state: `scripts/run_pipeline.py` produces a calibrated image of 3C454.3 at 12.5 Jy/beam against test HDF5 in `/data/incoming/` on H17.
 
@@ -92,6 +92,7 @@ Set `PYTHONPATH=/workspace` when running scripts/tests from this workspace conte
 | `scripts/run_canary.sh` | QA smoke test against a reference FITS tile |
 | `PYTHONPATH=/workspace uvicorn scripts.monitor_server:app --host 0.0.0.0 --port 8765` | Start the monitor API (host-ops service) |
 | `scripts/check_import_migration.py` | Legacy-import gate: exits 1 if any `dsa110_contimg` import exists under `dsa110_continuum/` (CI runs this on every push/PR) |
+| `scripts/check_contimg_mentions.py` | Mention classifier: fails on vendored headers, stale API refs, and dead layout probes (ops path defaults are INFO until `--strict-paths`) |
 
 Pipeline DB: `dsa110 convert` queries the SQLite DB, NOT the filesystem. New dates must be indexed first:
 

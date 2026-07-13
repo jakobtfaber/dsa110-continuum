@@ -377,8 +377,8 @@ def validate_vla_calibrator_db(
     except sqlite3.Error as exc:
         reasons.append(f"DB_SQLITE_ERROR:{exc}")
 
-    if "dsa110_contimg" in config_owner:
-        reasons.append("CONFIG_OWNER_LEGACY_DSA110_CONTIMG")
+    if "contimg" in config_owner and "continuum" not in config_owner:
+        reasons.append("CONFIG_OWNER_LEGACY_CONTIMG")
 
     return VLABPreflight(
         path=path,

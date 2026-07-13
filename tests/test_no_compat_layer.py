@@ -6,7 +6,7 @@ The reference scan uses a word-boundary regex rather than the plan's plain
 substring so that legitimate identifiers like ``_validate_strip_compatibility``
 (which contain ``_compat`` as a substring) do not false-positive.
 
-Plan: docs/rse/specs/plan-contimg-import-retirement.md (Phase 7).
+Plan: docs/archive/contimg-retirement/plan-contimg-import-retirement.md (Phase 7).
 """
 
 import re
