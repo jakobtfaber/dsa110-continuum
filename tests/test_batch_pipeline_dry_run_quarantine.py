@@ -175,6 +175,7 @@ def test_collect_plan_basic_fields():
         quarantine_set={"/ms/c.ms"},
         skip_epoch_gaincal=False,
         skip_photometry=False,
+        skip_rfi_flagging=False,
         lenient_qa=False,
     )
     assert plan["date"] == "2026-04-27"
@@ -203,6 +204,7 @@ def test_collect_plan_lenient_qa_field():
         quarantine_threshold=3, quarantine_set=set(),
         skip_epoch_gaincal=False,
         skip_photometry=False,
+        skip_rfi_flagging=False,
         lenient_qa=True,
     )
     assert "lenient" in plan["phase3_photometry"]
@@ -221,7 +223,8 @@ def test_format_plan_includes_quarantine_lines():
         prior_manifest_verdict="DEGRADED", prior_manifest_present=True,
         checkpoint_completed=0, checkpoint_failures=[],
         quarantine_threshold=3, quarantine_set={"/ms/q.ms"},
-        skip_epoch_gaincal=False, skip_photometry=False, lenient_qa=False,
+        skip_epoch_gaincal=False, skip_photometry=False,
+        skip_rfi_flagging=False, lenient_qa=False,
     )
     lines = bp._format_dry_run_plan(plan)
     text = "\n".join(lines)
@@ -365,6 +368,7 @@ def test_dry_run_does_not_create_products_or_log(tmp_path, monkeypatch, caplog):
         quarantine_after_failures=3,
         skip_epoch_gaincal=False,
         skip_photometry=False,
+        no_rfi_flagging=False,
         lenient_qa=False,
         start_hour=None,
         end_hour=None,

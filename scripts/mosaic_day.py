@@ -26,6 +26,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from astropy.io import fits
@@ -48,6 +49,10 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger(__name__)
+
+RfiMode = Literal["full", "conditional", "off"]
+RFI_MODES = ("full", "conditional", "off")
+TILE_MAD_MAX_MJY = 50.0
 
 
 # ── Cal-path resolution (inlined to avoid dependency on untracked ensure.py) ─
@@ -85,7 +90,17 @@ class TileConfig:
     products_dir: str
     bp_table: str
     g_table: str
-    rfi_flagging: bool = True
+    rfi_mode: RfiMode = "full"
+    include_qa_failed_tiles: bool = False
+
+    def __post_init__(self) -> None:
+        if self.rfi_mode not in RFI_MODES:
+            raise ValueError(f"Invalid RFI mode {self.rfi_mode!r}; choose from {RFI_MODES}")
+
+    @property
+    def rfi_flagging(self) -> bool:
+        """Compatibility view: any mode except ``off`` performs RFI work."""
+        return self.rfi_mode != "off"
 
     @staticmethod
     def build(
@@ -267,10 +282,144 @@ def _fits_is_valid(fits_path: str) -> bool:
         with fits.open(fits_path) as hdul:
             if len(hdul) < 1 or hdul[0].data is None:
                 return False
-            _ = hdul[0].data.shape  # triggers decompression, catches truncation
+            _ = hdul[0].data.shape
             return True
     except Exception:
         return False
+
+
+def resolve_rfi_mode(rfi_mode: str | None, no_rfi_flagging: bool) -> RfiMode:
+    """Resolve the explicit mode and deprecated bypass alias without ambiguity."""
+    if no_rfi_flagging and rfi_mode not in (None, "off"):
+        raise ValueError(
+            "--no-rfi-flagging is a deprecated alias for --rfi-mode off and "
+            f"cannot be combined with --rfi-mode {rfi_mode}"
+        )
+    if no_rfi_flagging:
+        return "off"
+    return rfi_mode or "full"
+
+
+def tile_mad_rms_mjy(data: np.ndarray) -> float | None:
+    """Return finite-pixel MAD RMS in mJy, or None when no pixels are usable."""
+    valid = np.asarray(data)[np.isfinite(data)]
+    if valid.size == 0:
+        return None
+    median = float(np.median(valid))
+    return float(1.4826 * np.median(np.abs(valid - median)) * 1000.0)
+
+
+def tile_mad_gate(
+    data: np.ndarray,
+    *,
+    include_qa_failed_tiles: bool = False,
+    max_mad_rms_mjy: float = TILE_MAD_MAX_MJY,
+) -> tuple[bool, str]:
+    """Pure pre-coadd absolute MAD gate used by cached and fresh tile paths."""
+    mad_rms_mjy = tile_mad_rms_mjy(data)
+    if mad_rms_mjy is None:
+        return False, "no valid pixels"
+    if mad_rms_mjy > max_mad_rms_mjy:
+        reason = f"MAD RMS {mad_rms_mjy:.1f} mJy > {max_mad_rms_mjy:.0f} mJy"
+        if include_qa_failed_tiles:
+            return True, f"diagnostic override: {reason}"
+        return False, reason
+    return True, f"MAD RMS {mad_rms_mjy:.1f} mJy"
+
+
+def validate_tile_for_coadd(fits_path: str, cfg: TileConfig, tag: str) -> tuple[bool, str]:
+    """Apply structural image QA and the strict MAD gate before coaddition."""
+    from dsa110_continuum.validation.image_validator import validate_image_quality
+
+    tile_ok, tile_errors = validate_image_quality(
+        Path(fits_path),
+        min_snr=3.0,
+        max_flagged_fraction=0.5,
+        max_mad_rms_mjy=TILE_MAD_MAX_MJY,
+    )
+    if tile_ok:
+        return True, "tile QA passed"
+    for error in tile_errors:
+        log.warning("[%s] Tile QA: %s", tag, error)
+    always_fatal = [
+        error
+        for error in tile_errors
+        if "all zeros" in error.lower() or "no valid pixels" in error.lower()
+    ]
+    mad_failures = [error for error in tile_errors if "mad rms too high" in error.lower()]
+    if always_fatal:
+        return False, "; ".join(always_fatal)
+    if mad_failures and not cfg.include_qa_failed_tiles:
+        return False, "; ".join(mad_failures)
+    if mad_failures:
+        log.error(
+            "[%s] DEGRADED: including MAD-failed tile via --include-qa-failed-tiles",
+            tag,
+        )
+    return True, "; ".join(tile_errors)
+
+
+def _run_stage0(ms_path: str) -> None:
+    """Run the conservative pre-calibration Stage-0 flagging sequence."""
+    from dsa110_continuum.calibration.flagging import (
+        detect_and_flag_dead_antennas,
+        flag_autocorrelations,
+        flag_clip_amplitude,
+        flag_zeros,
+    )
+
+    flag_zeros(ms_path, datacolumn="data")
+    flag_autocorrelations(ms_path, datacolumn="data")
+    flag_clip_amplitude(ms_path, threshold_max=0.5, datacolumn="data")
+    detect_and_flag_dead_antennas(ms_path, threshold=0.95, dry_run=False)
+
+
+def _rfi_sentinel_path(meridian_ms: str, mode: RfiMode) -> str:
+    """Return a policy-versioned completion sentinel for RFI processing."""
+    from dsa110_continuum.calibration.rfi_preflight import PREFLIGHT_POLICY_VERSION
+
+    return f"{meridian_ms.rstrip('/')}.rfi_{PREFLIGHT_POLICY_VERSION}_{mode}_done"
+
+
+def _execute_rfi_policy(meridian_ms: str, mode: RfiMode, tag: str) -> None:
+    """Execute Stage 0 and, when selected, the mandatory full RFI chain."""
+    from dsa110_continuum.calibration.flagging_rfi import flag_rfi
+    from dsa110_continuum.calibration.rfi_preflight import measure_rfi_preflight
+
+    run_full_chain = mode == "full"
+    if mode == "conditional":
+        try:
+            preflight = measure_rfi_preflight(meridian_ms, datacolumn="DATA")
+            run_full_chain = preflight.decision.triggered
+            log.info(
+                "[%s] Conditional RFI preflight: trigger=%s; %s",
+                tag,
+                run_full_chain,
+                "; ".join(preflight.decision.reasons),
+            )
+        except Exception as preflight_error:
+            run_full_chain = True
+            log.error(
+                "[%s] Conditional RFI preflight unavailable; failing closed to full chain: %s",
+                tag,
+                preflight_error,
+            )
+
+    log.info("[%s] Running conservative RFI Stage 0", tag)
+    _run_stage0(meridian_ms)
+    if run_full_chain:
+        log.info("[%s] Applying mandatory RFI Stage 1/2/3 chain", tag)
+        flag_rfi(
+            meridian_ms,
+            datacolumn="data",
+            backend="aoflagger",
+            clip_residual=True,
+            clip_sigma=7.0,
+            extend_flags=True,
+            fail_closed=True,
+        )
+    else:
+        log.info("[%s] Preflight quiet: Stage 0 only", tag)
 
 
 def generate_windows(
@@ -342,11 +491,19 @@ def process_ms(
     # Skip if already fully processed — unless force_recal requests a fresh run
     if not force_recal:
         if _fits_is_valid(pbcor_fits):
-            log.info("[%s] PB-corrected image already exists — skipping", tag)
-            return TileResult("cached", fits_path=pbcor_fits)
+            accepted, reason = validate_tile_for_coadd(pbcor_fits, cfg, tag)
+            if accepted:
+                log.info("[%s] PB-corrected image already exists — skipping", tag)
+                return TileResult("cached", fits_path=pbcor_fits)
+            log.error("[%s] Cached tile rejected before coadd: %s", tag, reason)
+            return TileResult("failed", failed_stage="qa", error=reason)
         if _fits_is_valid(image_fits):
-            log.info("[%s] Image already exists (no pbcor) — skipping", tag)
-            return TileResult("cached", fits_path=image_fits)
+            accepted, reason = validate_tile_for_coadd(image_fits, cfg, tag)
+            if accepted:
+                log.info("[%s] Image already exists (no pbcor) — skipping", tag)
+                return TileResult("cached", fits_path=image_fits)
+            log.error("[%s] Cached tile rejected before coadd: %s", tag, reason)
+            return TileResult("failed", failed_stage="qa", error=reason)
         # Remove partial/corrupt FITS so imaging reruns cleanly
         for partial in (pbcor_fits, image_fits):
             if os.path.isfile(partial):
@@ -364,6 +521,8 @@ def process_ms(
         # Invalidate stale sentinel — the MS it referred to is gone
         if os.path.isfile(sentinel):
             os.remove(sentinel)
+        for stale_rfi_sentinel in glob.glob(f"{meridian_ms}.rfi_*_done"):
+            os.remove(stale_rfi_sentinel)
         if os.path.isdir(meridian_ms):
             log.warning(
                 "[%s] Corrupt or incomplete meridian MS detected — removing: %s", tag, meridian_ms
@@ -388,21 +547,30 @@ def process_ms(
             "trusting sentinel (use --force-recal to override)",
             tag,
         )
-    if applycal_needed:
-        if os.path.isfile(sentinel):
-            os.remove(sentinel)  # clear stale sentinel before starting
-        if cfg.rfi_flagging:
-            log.info("[%s] Applying two-stage RFI flagging before calibration ...", tag)
-            try:
-                # This is deliberately before applycal and imaging.  RFI left in
-                # the raw visibility data produces non-deconvolvable snapshot
-                # sidelobes; post-imaging clipping cannot repair that corruption.
-                from dsa110_continuum.calibration.flagging_rfi import flag_rfi
 
-                flag_rfi(meridian_ms, datacolumn="data", backend="aoflagger")
+    if cfg.rfi_mode == "off":
+        log.error(
+            "[%s] DEGRADED: RFI mode off; skipping Stage 0 and Stage 1/2/3. "
+            "Tile is diagnostic/emergency output only.",
+            tag,
+        )
+    else:
+        rfi_sentinel = _rfi_sentinel_path(meridian_ms, cfg.rfi_mode)
+        if force_recal or not os.path.isfile(rfi_sentinel):
+            try:
+                _execute_rfi_policy(meridian_ms, cfg.rfi_mode, tag)
+                Path(rfi_sentinel).write_text(
+                    f"mode={cfg.rfi_mode}\ncompleted=stage0-and-policy-action\n"
+                )
             except Exception as e:
                 log.error("[%s] RFI flagging failed: %s", tag, e)
                 return TileResult("failed", failed_stage="rfi_flagging", error=str(e))
+        else:
+            log.info("[%s] RFI policy already completed: %s", tag, rfi_sentinel)
+
+    if applycal_needed:
+        if os.path.isfile(sentinel):
+            os.remove(sentinel)  # clear stale sentinel before starting
         log.info("[%s] Applying calibration (force_recal=%s) ...", tag, force_recal)
         try:
             apply_to_target(
@@ -475,20 +643,10 @@ def process_ms(
         return TileResult("failed", failed_stage="no_output", error="no FITS after WSClean")
 
     # ── Per-tile image QA ─────────────────────────────────────────────────
-    from dsa110_continuum.validation.image_validator import validate_image_quality
-
-    tile_ok, tile_errors = validate_image_quality(
-        Path(result_fits), min_snr=3.0, max_flagged_fraction=0.5
-    )
+    tile_ok, tile_reason = validate_tile_for_coadd(result_fits, cfg, tag)
     if not tile_ok:
-        for err in tile_errors:
-            log.warning("[%s] Tile QA: %s", tag, err)
-        fatal = [
-            e for e in tile_errors if "all zeros" in e.lower() or "no valid pixels" in e.lower()
-        ]
-        if fatal:
-            log.error("[%s] Tile rejected by image QA", tag)
-            return TileResult("failed", failed_stage="qa", error="; ".join(fatal))
+        log.error("[%s] Tile rejected before coadd: %s", tag, tile_reason)
+        return TileResult("failed", failed_stage="qa", error=tile_reason)
 
     # ── Cleanup: delete meridian MS + sentinel now that imaging succeeded ─────
     if not keep_intermediates and os.path.isdir(meridian_ms):
@@ -500,6 +658,11 @@ def process_ms(
         if os.path.isfile(sentinel):
             try:
                 os.remove(sentinel)
+            except OSError:
+                pass
+        for completed_rfi_sentinel in glob.glob(f"{meridian_ms}.rfi_*_done"):
+            try:
+                os.remove(completed_rfi_sentinel)
             except OSError:
                 pass
 
@@ -787,6 +950,27 @@ def main():
         help="Keep *_meridian.ms files and skip moving the mosaic to products/ (useful for debugging).",
     )
     parser.add_argument(
+        "--rfi-mode",
+        choices=RFI_MODES,
+        default=None,
+        help=(
+            "RFI policy: full runs Stage 0+1/2/3 (default), conditional runs "
+            "Stage 0 and triggers Stage 1/2/3 from preflight, off bypasses all RFI flagging."
+        ),
+    )
+    parser.add_argument(
+        "--no-rfi-flagging",
+        action="store_true",
+        default=False,
+        help="Deprecated alias for --rfi-mode off.",
+    )
+    parser.add_argument(
+        "--include-qa-failed-tiles",
+        action="store_true",
+        default=False,
+        help="Diagnostic override: include tiles that fail the 50 mJy MAD gate.",
+    )
+    parser.add_argument(
         "--window-tiles",
         type=int,
         default=12,
@@ -817,6 +1001,10 @@ def main():
         ),
     )
     args = parser.parse_args()
+    try:
+        rfi_mode = resolve_rfi_mode(args.rfi_mode, args.no_rfi_flagging)
+    except ValueError as error:
+        parser.error(str(error))
     keep = args.keep_intermediates
 
     # ── Validate windowing parameters ─────────────────────────────────────────
@@ -828,7 +1016,12 @@ def main():
             sys.exit(1)
 
     # Build immutable config from CLI args
-    cfg = TileConfig.build(date=args.date, cal_date=args.cal_date)
+    cfg = TileConfig.build(date=args.date, cal_date=args.cal_date).replace(
+        rfi_mode=rfi_mode,
+        include_qa_failed_tiles=args.include_qa_failed_tiles,
+    )
+    if rfi_mode == "off":
+        log.error("DEGRADED: --rfi-mode off selected; outputs are diagnostic only")
 
     # ── Cal-table validation (ABORT early if missing) ─────────────────────────
     _missing = [t for t in [cfg.bp_table, cfg.g_table] if not os.path.exists(t)]
