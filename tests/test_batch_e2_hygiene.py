@@ -324,6 +324,7 @@ def test_dry_run_main_handles_missing_ms_dir(tmp_path, monkeypatch, caplog):
         quarantine_after_failures=3,
         skip_epoch_gaincal=False,
         skip_photometry=False,
+        no_rfi_flagging=False,
         lenient_qa=False,
         start_hour=None,
         end_hour=None,
