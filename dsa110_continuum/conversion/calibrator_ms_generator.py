@@ -406,7 +406,8 @@ class CalibratorMSGenerator:
         Parameters
         ----------
         groups : Sequence
-            List of SubbandGroup objects or file lists
+            List of group timestamp strings (as returned by
+            ``select_groups_by_position``), SubbandGroup objects, or file lists
         skip_existing : bool
             Skip conversion if MS already exists
 
@@ -421,14 +422,15 @@ class CalibratorMSGenerator:
         ms_paths = []
 
         for group in groups:
-            # Handle both SubbandGroup objects and raw file lists
-            files = group.files if hasattr(group, "files") else group
-            if not files:
-                continue
-
-            # Extract timestamp from first file
-            first_file = Path(files[0])
-            timestamp = first_file.stem.rsplit("_sb", 1)[0]
+            if isinstance(group, str):
+                # Group representative timestamp from select_groups_by_position
+                timestamp = group
+            else:
+                # SubbandGroup object or raw file list
+                files = group.files if hasattr(group, "files") else group
+                if not files:
+                    continue
+                timestamp = Path(files[0]).stem.rsplit("_sb", 1)[0]
 
             # Check if already exists
             ms_path = self.output_dir / f"{timestamp}.ms"
