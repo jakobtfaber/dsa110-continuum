@@ -1,0 +1,17 @@
+# Minimal dependencies for the pure-Python GitHub Actions test gate.
+# Keep this list aligned with imports exercised by scripts/run_cloud_safe_tests.py.
+astropy
+caskade
+fastapi
+h5py
+httpx
+matplotlib
+numpy
+pandas
+pydantic
+pydantic-settings
+pytest>=7.4,<10
+pyyaml
+scipy
+sqlalchemy
+uncertainties
