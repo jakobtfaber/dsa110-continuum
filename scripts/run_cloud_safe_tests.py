@@ -33,6 +33,8 @@ CLOUD_SAFE_TESTS = (
     "tests/test_init_reexports_new_namespace.py",
     "tests/test_no_compat_layer.py",
     "tests/test_imaging_worker_no_fast_imaging.py",
+    "tests/test_no_stale_contimg_api_refs.py",
+    "tests/test_paths_resolver.py",
 )
 
 
@@ -71,6 +73,10 @@ def main() -> int:
     with temp_context as basetemp:
         _run(
             [sys.executable, "scripts/check_import_migration.py", "--fail-on-any"],
+            env,
+        )
+        _run(
+            [sys.executable, "scripts/check_contimg_mentions.py", "--fail"],
             env,
         )
         _run(

@@ -85,6 +85,7 @@ class TileConfig:
     products_dir: str
     bp_table: str
     g_table: str
+    rfi_flagging: bool = True
 
     @staticmethod
     def build(
@@ -330,7 +331,7 @@ def process_ms(
     keep_intermediates: bool = False,
     force_recal: bool = False,
 ) -> TileResult:
-    """Phaseshift → applycal → image one MS. Returns a TileResult."""
+    """Phaseshift → RFI flag → applycal → image one MS. Returns a TileResult."""
     tag = Path(ms_path).stem  # e.g. 2026-01-25T21:17:33
     meridian_ms = get_meridian_path(ms_path)
     imagename = os.path.join(cfg.image_dir, tag)
@@ -379,7 +380,7 @@ def process_ms(
             log.error("[%s] Phaseshift failed: %s", tag, e)
             return TileResult("failed", failed_stage="phaseshift", error=str(e))
 
-    # ── Step 2: Calibration ────────────────────────────────────────────────
+    # ── Step 2: RFI flagging + calibration ─────────────────────────────────
     applycal_needed = force_recal or not os.path.isfile(sentinel)
     if not applycal_needed and needs_calibration(meridian_ms):
         log.warning(
@@ -390,6 +391,18 @@ def process_ms(
     if applycal_needed:
         if os.path.isfile(sentinel):
             os.remove(sentinel)  # clear stale sentinel before starting
+        if cfg.rfi_flagging:
+            log.info("[%s] Applying two-stage RFI flagging before calibration ...", tag)
+            try:
+                # This is deliberately before applycal and imaging.  RFI left in
+                # the raw visibility data produces non-deconvolvable snapshot
+                # sidelobes; post-imaging clipping cannot repair that corruption.
+                from dsa110_continuum.calibration.flagging_rfi import flag_rfi
+
+                flag_rfi(meridian_ms, datacolumn="data", backend="aoflagger")
+            except Exception as e:
+                log.error("[%s] RFI flagging failed: %s", tag, e)
+                return TileResult("failed", failed_stage="rfi_flagging", error=str(e))
         log.info("[%s] Applying calibration (force_recal=%s) ...", tag, force_recal)
         try:
             apply_to_target(

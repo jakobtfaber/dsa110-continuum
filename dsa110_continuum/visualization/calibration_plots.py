@@ -9,7 +9,7 @@ Provides functions for:
 
 Adapted from:
 - dsa110-calib/dsacalib/plotting.py (Dana Simard)
-- dsa110_contimg/calibration/plotting.py (existing CASA plotbandpass wrapper)
+- dsa110_continuum/calibration plotting helpers (CASA plotbandpass wrapper)
 """
 
 from __future__ import annotations

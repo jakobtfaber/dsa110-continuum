@@ -56,7 +56,7 @@ def export_fits(
             if register_metadata:
                 print(
                     f"Metadata registration unavailable for {fits_out}: "
-                    "register_products was retired with dsa110_contimg",
+                    "register_products was retired with the legacy contimg stack",
                     file=__import__("sys").stderr,
                 )
         except Exception as e:

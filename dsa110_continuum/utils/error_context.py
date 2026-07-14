@@ -1,5 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# as part of the contimg-import-retirement migration (docs/rse/specs/plan-contimg-import-retirement.md).
 """
 Enhanced error context utilities.
 
@@ -181,7 +179,7 @@ def format_ms_error_with_suggestions(
         except Exception as e:
         suggestions = [
         'Use --auto-fields to auto-select fields',
-        'Check MS integrity: python -m dsa110_contimg.core.calibration.cli validate --ms <ms>'
+        'Check MS integrity: python -m dsa110_continuum.calibration.cli validate --ms <ms>'
         ]
         error_msg = format_ms_error_with_suggestions(e, ms_path, 'calibration', suggestions)
         raise RuntimeError(error_msg) from e

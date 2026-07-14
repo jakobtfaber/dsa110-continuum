@@ -1,9 +1,6 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# as part of the contimg-import-retirement migration (docs/rse/specs/plan-contimg-import-retirement.md).
 """Template loading utilities for DSA-110."""
 
 from pathlib import Path
-from dsa110_continuum.utils import get_env_path
 
 
 def _get_shared_css() -> str:
@@ -23,9 +20,8 @@ def render_template(template_name: str, **kwargs) -> str:
     that include {shared_css} placeholder.
 
     The templates directory is searched in the following order:
-    1. dsa110_contimg/templates/
-    2. dsa110_contimg/api/templates/ (deprecated)
-    3. Absolute path (fallback)
+    1. dsa110_continuum/templates/
+    2. dsa110_continuum/api/templates/
     """
     # 1. Check relative to this file
     # Structure: .../utils/templates.py -> .../templates/
@@ -33,23 +29,8 @@ def render_template(template_name: str, **kwargs) -> str:
     template_path = current_dir.parent / "templates" / template_name
 
     if not template_path.exists():
-        # 2. Check in api/templates (where they currently are)
+        # 2. Check in api/templates
         template_path = current_dir.parent / "api" / "templates" / template_name
-
-    if not template_path.exists():
-        # 3. Fallback to absolute path
-        import os
-
-        contimg_base = str(get_env_path("CONTIMG_BASE_DIR", default="/data/dsa110-contimg"))
-        template_path = (
-            Path(contimg_base)
-            / "backend"
-            / "src"
-            / "dsa110_contimg"
-            / "api"
-            / "templates"
-            / template_name
-        )
 
     if not template_path.exists():
         raise FileNotFoundError(f"Template not found: {template_name}")

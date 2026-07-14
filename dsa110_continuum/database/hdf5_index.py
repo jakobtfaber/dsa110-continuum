@@ -1,6 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# infrastructure/database/hdf5_index.py, as part of the contimg-import-retirement migration
-# (docs/rse/specs/plan-contimg-import-retirement.md, Phase 5).
 """
 HDF5 file indexing and querying for DSA-110 Continuum Imaging Pipeline.
 

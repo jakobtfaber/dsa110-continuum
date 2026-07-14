@@ -1,11 +1,9 @@
-# backend/src/dsa110_contimg/imaging/__init__.py
-
 """Imaging module for DSA-110 continuum pipeline.
 
 .. note::
-    For new code, prefer using the public API which provides a simpler interface:
+    For new code, prefer the imaging CLI entrypoint:
 
-        from dsa110_contimg.interfaces.public_api import image_ms
+        from dsa110_continuum.imaging.cli_imaging import image_ms
 
     This module is primarily for internal use and advanced customization.
 

@@ -1,6 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# infrastructure/tracking/provenance.py, as part of the contimg-import-retirement migration
-# (docs/rse/specs/plan-contimg-import-retirement.md, Phase 5).
 """
 Provenance tracking for DSA-110 pipeline.
 
@@ -13,7 +10,7 @@ full processing lineage for debugging and reproducibility:
 - **When** things happened (timing, stage durations)
 
 Usage:
-    from dsa110_contimg.infrastructure.tracking.provenance import (
+    from dsa110_continuum.database.tracking import (
         ProvenanceTracker,
         record_provenance,
         get_provenance,

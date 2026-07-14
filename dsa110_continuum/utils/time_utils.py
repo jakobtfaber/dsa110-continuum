@@ -1,5 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# as part of the contimg-import-retirement migration (docs/rse/specs/plan-contimg-import-retirement.md).
 """Utilities for handling TIME in Measurement Sets using astropy.
 
 This module provides robust TIME conversion utilities that leverage astropy.Time

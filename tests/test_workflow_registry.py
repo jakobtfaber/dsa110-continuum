@@ -1,7 +1,7 @@
 """The vendored job/pipeline framework must work without dsa110_contimg.
 
 Phase 4 of the contimg-import-retirement migration
-(docs/rse/specs/plan-contimg-import-retirement.md). The vendored registry is
+(docs/archive/contimg-retirement/plan-contimg-import-retirement.md). The vendored registry is
 a distinct object from the legacy package's registry, so old and new
 packages co-load without the double-registration ValueError documented in
 CLAUDE.md (proven on H17 in Phase 8).

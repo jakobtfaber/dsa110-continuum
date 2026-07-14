@@ -1,9 +1,3 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# workflow/pipeline/stages/calibration_helpers.py (consumed subset: _resolve_refant +
-# solve_calibration_tables), as part of the contimg-import-retirement migration
-# (docs/rse/specs/plan-contimg-import-retirement.md, Phase 4). Internal imports
-# rewritten to the dsa110_continuum siblings (refant_selection, solve_delay,
-# solve_gains, solve_bandpass, casa_service).
 """Calibration solve orchestration.
 
 Orchestrates the individual solve functions (delay, pre-bandpass phase,

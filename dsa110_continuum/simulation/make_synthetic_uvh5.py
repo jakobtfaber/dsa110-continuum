@@ -38,8 +38,6 @@ from dsa110_continuum.utils.paths import get_repo_root
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = get_repo_root()
-if (REPO_ROOT / "backend" / "src" / "dsa110_contimg").exists():
-    REPO_ROOT = REPO_ROOT / "backend"
 CONFIG_DIR = PACKAGE_ROOT / "config"
 PYUVSIM_DIR = PACKAGE_ROOT / "pyuvsim"
 SECONDS_PER_DAY = 86400.0

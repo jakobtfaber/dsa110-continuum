@@ -1,12 +1,7 @@
-# Vendored from dsa110-contimg @ /data/dsa110-contimg/backend/src (H17), 2026-07-03,
-# as part of the contimg-import-retirement migration
-# (docs/rse/specs/plan-contimg-import-retirement.md, Phase 4).
 """Job/pipeline framework for dsa110_continuum.
 
-This package owns the job and pipeline registries. It is a distinct object
-from the legacy ``dsa110_contimg.workflow.pipeline`` registry, so both
-packages co-load without the double-registration ``ValueError`` the old
-shared-registry arrangement produced.
+This package owns the job and pipeline registries as a first-party continuum
+module (distinct from any sibling checkout of the retired contimg package).
 """
 
 from dsa110_continuum.workflow.base import (

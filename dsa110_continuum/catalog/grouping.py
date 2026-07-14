@@ -33,7 +33,7 @@ def group_id_from_path(path: str) -> str:
     warnings.warn(
         "group_id_from_path() is deprecated. "
         "Use parse_subband_filename(os.path.basename(path))[0] from "
-        "dsa110_contimg.infrastructure.database.hdf5_index instead.",
+        "dsa110_continuum.database.hdf5_index instead.",
         DeprecationWarning,
         stacklevel=2,
     )

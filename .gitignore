@@ -58,3 +58,7 @@ outputs/photometry-bench/
 
 # /graphify skill output (regenerable knowledge-graph artifacts)
 graphify-out/
+
+# Local brainstorming / agent worktrees (not for git)
+.superpowers/
+.emdash/
