@@ -108,7 +108,7 @@ Issues = "https://github.com/dsa110/dsa110-continuum/issues"
 
 [project.optional-dependencies]
 dev = [
-    "pytest",
+    "pytest>=7.4,<10",
     "pytest-cov",
     "pytest-asyncio",
     "pytest-timeout",
@@ -156,6 +156,8 @@ dsa110-validate = "dsa110_continuum.validation.package_health:main"
 where = ["."]
 
 [tool.pytest.ini_options]
+minversion = "7.4"
+addopts = ["--strict-config", "--strict-markers"]
 # pytest temp dirs are re-rooted under
 # <rootdir>/.pytest_tmp/uid-<uid>/run-<pid> by tests/conftest.py, keeping large
 # tmp_path output on the checkout's filesystem (not tiny /tmp on H17) while

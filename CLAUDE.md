@@ -73,6 +73,7 @@ Set `PYTHONPATH=/workspace` when running scripts/tests from this workspace conte
 
 | Command | What it does |
 | --- | --- |
+| `make test-cloud PYTHON=/opt/miniforge/envs/casa6/bin/python` | Authoritative pure-Python CI gate (legacy-import guard + cloud-safe test subset) |
 | `/opt/miniforge/envs/casa6/bin/python -m pytest tests/ -q` | Full suite (~1000 tests as of 2026-05; collection ~47 s, full run ~14 min — dominated by `test_integration_e2e.py` and `test_simulated_pipeline.py`) |
 | `/opt/miniforge/envs/casa6/bin/python -m pytest tests/test_X.py::test_Y -q` | Single test |
 | `ruff check dsa110_continuum/ scripts/ tests/` | Lint |
@@ -108,6 +109,7 @@ Fallback: system Python 3.12 with `PYTHONPATH=/workspace` mandatory.
 
 | Command | What it does |
 | --- | --- |
+| `make test-cloud PYTHON=python3` | Authoritative pure-Python CI gate (legacy-import guard + cloud-safe test subset) |
 | `PYTHONPATH=/workspace python3 -m pytest tests/ -q` | Full suite (cloud-VM variant) |
 | `ruff check dsa110_continuum/ scripts/ tests/` | Lint |
 | `ruff format --check dsa110_continuum/ scripts/ tests/` | Format check |

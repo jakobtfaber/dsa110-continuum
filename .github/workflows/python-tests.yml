@@ -7,7 +7,9 @@ on:
       - "dsa110_continuum/**"
       - "scripts/**"
       - "tests/**"
+      - "Makefile"
       - "pyproject.toml"
+      - "requirements/cloud-safe-tests.txt"
       - ".github/workflows/python-tests.yml"
   pull_request:
     branches: [main]
@@ -15,7 +17,9 @@ on:
       - "dsa110_continuum/**"
       - "scripts/**"
       - "tests/**"
+      - "Makefile"
       - "pyproject.toml"
+      - "requirements/cloud-safe-tests.txt"
       - ".github/workflows/python-tests.yml"
 
 # Workflow scope:
@@ -56,72 +60,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install minimal cloud-safe deps
-        # Transitive dependencies surfaced during CI bring-up:
-        #   - scipy: dsa110_continuum.calibration.beam_model imports
-        #     scipy.special.j1 for the Airy disk PB model (loaded via
-        #     provenance -> calibration.qa -> beam_model).
-        #   - pandas: dsa110_continuum.catalog.unified imports pandas at
-        #     module level (loaded via forced_photometry CLI tests ->
-        #     catalog.query -> catalog.unified).
-        #   - uncertainties: dsa110_continuum.catalog.crossmatch imports
-        #     uncertainties.ufloat / AffineScalarFunc at module level
-        #     (loaded via forced_photometry CLI -> catalog.query chain).
-        # Added by the contimg-import-retirement migration (the vendored
-        # modules are hard imports now; set verified in a local CI-replica
-        # venv, docs/archive/contimg-retirement/plan-contimg-import-retirement.md Phase 8):
-        #   - pyyaml/pydantic/pydantic-settings: dsa110_continuum.unified_config
-        #     (hard-imported via photometry.forced).
-        #   - caskade: dsa110_continuum.simulation.control (hard import in
-        #     simulation/__init__).
-        #   - sqlalchemy: dsa110_continuum.database.models.
-        #   - fastapi: dsa110_continuum.mosaic.api (mosaic jobs chain).
-        #   - matplotlib: visualization + utils.plotting re-export layers.
-        #   - httpx: dsa110_continuum.visualization.carta_scripting.
-        #   - h5py: dsa110_continuum.database.hdf5_index.
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy scipy pandas astropy uncertainties pytest \
-            pyyaml pydantic pydantic-settings caskade sqlalchemy fastapi \
-            matplotlib httpx h5py
+          python -m pip install -r requirements/cloud-safe-tests.txt
 
-      - name: No legacy imports
-        env:
-          PYTHONPATH: ${{ github.workspace }}
-        run: python scripts/check_import_migration.py --fail-on-any
-
-      - name: No stale contimg mentions
-        env:
-          PYTHONPATH: ${{ github.workspace }}
-        run: python scripts/check_contimg_mentions.py --fail
-
-      - name: Run focused cloud-safe subset
-        # --basetemp overrides the project default in pyproject.toml
-        # (--basetemp=/data/dsa110-continuum/.pytest_tmp), which only exists
-        # on the H17 dev workstation. CI runners need a workspace-local tmp.
-        env:
-          PYTHONPATH: ${{ github.workspace }}
-          CASKADE_BACKEND: numpy
-        run: |
-          python -m pytest -q --basetemp=${{ runner.temp }}/pytest \
-            tests/test_provenance.py \
-            tests/test_resume_semantics.py \
-            tests/test_qa_default_strict.py \
-            tests/test_run_logging.py \
-            tests/test_run_report.py \
-            tests/test_forced_photometry_parallel.py \
-            tests/test_batch_pipeline_dry_run_quarantine.py \
-            tests/test_batch_e1_hygiene.py \
-            tests/test_batch_e2_hygiene.py \
-            tests/test_skymodel_phase_dir.py \
-            tests/test_epoch_gaincal_field_shape.py \
-            tests/test_import_migration_checker.py \
-            tests/test_no_latent_nameerror_imports.py \
-            tests/test_vendored_utils.py \
-            tests/test_unified_config.py \
-            tests/test_workflow_registry.py \
-            tests/test_vendored_database.py \
-            tests/test_init_reexports_new_namespace.py \
-            tests/test_no_compat_layer.py \
-            tests/test_imaging_worker_no_fast_imaging.py \
-            tests/test_no_stale_contimg_api_refs.py \
-            tests/test_paths_resolver.py
+      - name: Run authoritative cloud-safe gate
+        run: make test-cloud CLOUD_SAFE_BASETEMP=${{ runner.temp }}/pytest
