@@ -342,7 +342,9 @@ def test_cli_simple_peak_sim_produces_csv(tmp_path):
     with open(out_csv) as f:
         rows = list(_csv.DictReader(f))
     assert len(rows) > 0
-    assert "measured_flux_jy" in rows[0]
+    # canonical contract (photometry/phot_csv.py, #133): measured_flux_jy is
+    # normalized to flux_jy on write; extras like injected_flux_jy survive.
+    assert "flux_jy" in rows[0]
     assert "snr" in rows[0]
     assert "injected_flux_jy" in rows[0]
 

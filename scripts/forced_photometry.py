@@ -13,7 +13,7 @@ Usage:
     python scripts/forced_photometry.py --mosaic /path/to/mosaic.fits --method simple_peak --sim
     python scripts/forced_photometry.py --mosaic /path/to/mosaic.fits --method two_stage --sim --snr-coarse 0.0
 """
-import csv
+
 import logging
 import sys
 from pathlib import Path
@@ -121,7 +121,11 @@ def run_forced_photometry(
     Returns
     -------
     dict
-        ``{"n_sources": int, "median_ratio": float, "csv_path": str}``
+        ``n_sources`` (measurements written, post sanity gate),
+        ``n_flux_rejected`` + ``flux_rejected_reasons`` (per-measurement
+        sanity gate, issue #134), ``median_ratio``, ``csv_path``, and the
+        noise-floor QA fields. The CSV follows the canonical contract in
+        ``dsa110_continuum.photometry.phot_csv`` (issue #133).
     """
     if not Path(mosaic_path).exists():
         raise FileNotFoundError(f"Mosaic not found: {mosaic_path}")
@@ -316,36 +320,27 @@ def run_forced_photometry(
     if not rows and not sim_mode:
         raise RuntimeError("No rows to write — forced photometry failed")
 
-    # ── Write CSV ──────────────────────────────────────────────────────────────
-    if method == "simple_peak":
-        base_fields = ["source_name", "ra_deg", "dec_deg", "measured_flux_jy", "snr"]
-        if sim_mode:
-            base_fields.insert(3, "injected_flux_jy")
-        elif not sim_mode:
-            base_fields.insert(3, "catalog_flux_jy")
-        fieldnames = base_fields
+    # ── Write CSV via the canonical contract (issues #133/#134) ───────────────
+    # normalize_phot_rows maps the legacy row fields (source_name,
+    # measured_flux_jy, catalog_flux_jy, flux_ratio, ...) onto the canonical
+    # schema; write_forced_phot_csv applies the per-measurement flux sanity
+    # gate and is the single sanctioned *_forced_phot.csv writer.
+    from dsa110_continuum.photometry.phot_csv import write_forced_phot_csv
 
-    elif method == "two_stage":
-        ref_field = "injected_flux_jy" if sim_mode else "catalog_flux_jy"
-        fieldnames = [
-            "source_name", "ra_deg", "dec_deg",
-            ref_field, "measured_flux_jy", "flux_err_jy",
-            "flux_ratio", "snr", "coarse_snr", "passed_coarse",
-        ]
+    if rows:
+        write_stats = write_forced_phot_csv(rows, out_csv)
+    else:
+        # sim_mode may legitimately measure nothing; keep a header-only
+        # canonical CSV so downstream readers see the contract, not EOF.
+        from dsa110_continuum.photometry.phot_csv import CANONICAL_COLUMNS
 
-    else:  # condon
-        fieldnames = [
-            "source_name", "ra_deg", "dec_deg",
-            "catalog_flux_jy", "measured_flux_jy", "flux_err_jy",
-            "flux_ratio", "snr",
-        ]
-        if actual_catalog == "master":
-            fieldnames.append("spectral_index")
-
-    with open(out_csv, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(rows)
+        Path(out_csv).write_text(",".join(CANONICAL_COLUMNS) + "\n")
+        write_stats = {
+            "n_written": 0, "n_rejected": 0, "rejected_reasons": [],
+            "median_ratio": float("nan"), "path": str(out_csv),
+        }
+    n_written = write_stats["n_written"]
+    n_flux_rejected = write_stats["n_rejected"]
 
     # ── QA summary ─────────────────────────────────────────────────────────────
     valid_ratios = []
@@ -354,10 +349,15 @@ def run_forced_photometry(
             float(r["flux_ratio"]) for r in rows
             if r.get("flux_ratio", "") != "" and np.isfinite(float(r["flux_ratio"]))
         ]
-    median_ratio = float(np.median(valid_ratios)) if valid_ratios else float("nan")
+    median_ratio = write_stats["median_ratio"]
+    if not np.isfinite(median_ratio) and valid_ratios:
+        median_ratio = float(np.median(valid_ratios))
 
     log.info("\n=== Forced Photometry QA ===")
-    log.info("Catalog: %s | Sources measured: %d", actual_catalog, len(rows))
+    log.info(
+        "Catalog: %s | Sources measured: %d (written: %d, sanity-rejected: %d)",
+        actual_catalog, len(rows), n_written, n_flux_rejected,
+    )
     if method != "simple_peak" and valid_ratios:
         log.info("Flux ratio (DSA/catalog): median=%.3f, std=%.3f", median_ratio, np.std(valid_ratios))
         log.info("Ratio range: %.3f – %.3f", min(valid_ratios), max(valid_ratios))
@@ -429,7 +429,9 @@ def run_forced_photometry(
         log.debug("Epoch QA log skipped: %s", exc)
 
     return {
-        "n_sources": len(rows),
+        "n_sources": n_written,
+        "n_flux_rejected": n_flux_rejected,
+        "flux_rejected_reasons": write_stats["rejected_reasons"],
         "median_ratio": median_ratio,
         "csv_path": out_csv,
         "rms_mjy": round(_rms_mjy, 3) if np.isfinite(_rms_mjy) else float("nan"),
