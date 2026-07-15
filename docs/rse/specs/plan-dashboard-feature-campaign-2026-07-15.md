@@ -15,7 +15,7 @@ Walkthrough + efficacy evidence: `outputs/dashboard-walkthrough-2026-07-15/`.
 
 | Phase | Feature | Issues | Notes |
 | --- | --- | --- | --- |
-| A | Per-artifact QA views: MS / tile / caltable | #54 #55 #56 | Closes the "QA gate says why → show me the artifact" loop (e.g. gaincal LOW_SNR → inspect the .g). Read-only pages on the existing routed substrate. |
+| ✅ A | Per-artifact QA views: MS / tile / caltable | #54 #55 #56 (closed 2026-07-15, PRs #120–#122; record: `implement-phase-a-artifact-qa-views.md`) | Closes the "QA gate says why → show me the artifact" loop (e.g. gaincal LOW_SNR → inspect the .g). Read-only pages on the existing routed substrate. |
 | B | Per-artifact in-flight job state | #57 | Then retire `monitor_server.py` `POST /exec` (#62 — security item, blocked by #57). |
 | C | Artifact browser + stage events | #53 #52 | #52's stage-event → diagnostic-card contract is the foundation; #53 layers lifecycle badges on discovery. |
 | D | File-exploration UI (diagnostic + science products) | #115 | Generalizes #53; hard root allowlist, traversal-guard reuse. |

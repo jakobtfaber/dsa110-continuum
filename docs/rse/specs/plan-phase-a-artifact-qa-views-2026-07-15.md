@@ -3,8 +3,9 @@
 ---
 **Date:** 2026-07-15
 **Author:** AI Assistant
-**Status:** Draft (authored in Direct mode — user away; deviations from issue module lists are
-flagged for async review before the #56/#55/#54 close-out)
+**Status:** Implemented 2026-07-15 (PRs #120/#121/#122; record:
+[implement-phase-a-artifact-qa-views.md](implement-phase-a-artifact-qa-views.md)).
+Manual verification pending Jakob; deviations recorded on the closed issues
 **Related Documents:**
 - [Campaign roadmap](plan-dashboard-feature-campaign-2026-07-15.md) — Phase A is the first gate row
 - [Plan: dashboard production readiness](plan-dashboard-production-readiness.md) — decisions 1–5 bind the substrate
