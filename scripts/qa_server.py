@@ -549,7 +549,8 @@ def render_dashboard(config: DashboardConfig) -> str:
     for metric in all_metrics:
         has_cal = any(metric["date"] in name for name in cals)
         rows.append(
-            f"<tr><td><b>{metric['date']}</b><small>{metric['epoch']}</small></td>"
+            f'<tr><td><b><a href="/runs/{metric["date"]}">{metric["date"]}</a></b>'
+            f"<small>{metric['epoch']}</small></td>"
             f"<td>{_badge(metric['status'])}</td>"
             f"<td>{_badge('ready' if has_cal else 'missing', 'yes' if has_cal else 'no')}</td>"
             f"<td>{_format_number(metric['peak'])}</td>"
@@ -790,6 +791,91 @@ pre{{background:#090b0e;color:#b9c6d0;border-radius:6px;padding:12px;max-height:
 <tr><th>Log file</th><td><code>{html.escape(record["log_path"])}</code></td></tr>
 </table>
 <h2>Log tail</h2><pre>{log_tail}</pre></main></body></html>"""
+    )
+
+
+def _manifest_value(value, decimals: int | None = None) -> str:
+    if value is None:
+        return "—"
+    if decimals is not None and isinstance(value, (int, float)):
+        return f"{value:.{decimals}f}"
+    return html.escape(str(value))
+
+
+@control_page_router.get("/runs/{date}", response_class=HTMLResponse)
+def run_provenance_page(date: str, request: Request):
+    """Render one date's manifest: verdict, gates, epochs, and the run report."""
+    _validate_date_epoch(date)
+    config = _config(request)
+    manifest_path = config.products / date / f"{date}_manifest.json"
+    if not manifest_path.is_file():
+        raise HTTPException(status_code=404, detail="no manifest for this date")
+    try:
+        manifest = json.loads(manifest_path.read_text(errors="replace"))
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail=f"unreadable manifest: {exc}") from None
+    if not isinstance(manifest, dict):
+        manifest = {}
+    verdict = str(manifest.get("pipeline_verdict") or "UNKNOWN")
+    verdict_badge = _badge("pass" if verdict == "CLEAN" else "fail", verdict)
+    gates = manifest.get("gates") or []
+    gate_rows = (
+        "".join(
+            f"<tr><td>{_manifest_value(gate.get('gate'))}</td>"
+            f"<td>{_manifest_value(gate.get('verdict'))}</td>"
+            f"<td>{_manifest_value(gate.get('reason'))}</td></tr>"
+            for gate in gates
+            if isinstance(gate, dict)
+        )
+        or '<tr><td colspan="3">No gates triggered</td></tr>'
+    )
+    epoch_rows = []
+    for epoch in manifest.get("epochs") or []:
+        if not isinstance(epoch, dict):
+            continue
+        hour = epoch.get("hour")
+        token = f"T{hour:02d}00" if isinstance(hour, int) else "—"
+        link = (
+            f'<a href="/artifacts/mosaic/{date}/{token}/status">{token}</a>'
+            if token != "—"
+            else token
+        )
+        qa_result = str(epoch.get("qa_result") or "—")
+        qa_badge = _badge({"PASS": "pass", "FAIL": "fail"}.get(qa_result, "missing"), qa_result)
+        epoch_rows.append(
+            f"<tr><td>{link}</td><td>{_manifest_value(epoch.get('n_tiles'))}</td>"
+            f"<td>{_manifest_value(epoch.get('status'))}</td><td>{qa_badge}</td>"
+            f"<td>{_manifest_value(epoch.get('peak'), 2)}</td>"
+            f"<td>{_manifest_value(epoch.get('rms'), 4)}</td>"
+            f"<td>{_manifest_value(epoch.get('n_sources'))}</td>"
+            f"<td>{_manifest_value(epoch.get('median_ratio'), 3)}</td></tr>"
+        )
+    epoch_table = "".join(epoch_rows) or '<tr><td colspan="8">No epochs recorded</td></tr>'
+    report_path = config.products / date / "run_report.md"
+    report_text = (
+        html.escape(report_path.read_text(errors="replace"))
+        if report_path.is_file()
+        else "No run report found"
+    )
+    return HTMLResponse(
+        f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Run {html.escape(date)}</title>
+<style>body{{background:#0d1014;color:#e8edf2;font-family:Inter,-apple-system,sans-serif;margin:0}}
+.shell{{max-width:1250px;margin:auto;padding:22px}} a{{color:#4eb8ff}} h2{{font-size:1rem;text-transform:uppercase;letter-spacing:.1em;color:#bcc6d0}}
+table{{border-collapse:collapse;font-size:.83rem;margin:12px 0;width:100%}} td,th{{padding:8px 12px;border-bottom:1px solid #2a3038;text-align:left}} th{{background:#171b20;color:#9da8b4}}
+.badge{{display:inline-block;background:var(--badge);color:#081014;padding:3px 8px;border-radius:999px;font-size:.68rem;font-weight:800}}
+code{{color:#a9c8dd;word-break:break-all}}
+pre{{background:#090b0e;color:#b9c6d0;border-radius:6px;padding:12px;max-height:520px;overflow:auto;font-size:.74rem;line-height:1.45;white-space:pre-wrap}}</style></head>
+<body><main class="shell"><p><a href="/">← Dashboard</a></p>
+<h1>Pipeline run · {html.escape(date)} {verdict_badge}</h1>
+<p><code>{_manifest_value(manifest.get("command_line"))}</code></p>
+<p>cal date {_manifest_value(manifest.get("cal_date"))} · git {_manifest_value(manifest.get("git_sha"))} · log {_manifest_value(manifest.get("run_log"))}</p>
+<h2>QA gates</h2>
+<table><thead><tr><th>Gate</th><th>Verdict</th><th>Reason</th></tr></thead><tbody>{gate_rows}</tbody></table>
+<h2>Epochs</h2>
+<table><thead><tr><th>Epoch</th><th>Tiles</th><th>Status</th><th>QA</th><th>Peak (Jy)</th><th>RMS (Jy)</th><th>Sources</th><th>Median ratio</th></tr></thead><tbody>{epoch_table}</tbody></table>
+<h2>Run report</h2><pre>{report_text}</pre></main></body></html>"""
     )
 
 

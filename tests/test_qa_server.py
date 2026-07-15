@@ -736,3 +736,79 @@ class TestControlUi:
         monkeypatch.setenv("DSA110_CONTROL_DIR", str(tmp_path / "control"))
         with TestClient(create_app(_make_config(tmp_path))) as client:
             assert client.get("/control/runs/nope").status_code == 404
+
+
+class TestRunProvenancePage:
+    """Criterion: /runs/{date} surfaces manifest truth (pipeline_verdict, gate
+    reasons, per-epoch QA) plus the run report; a partial manifest renders with
+    placeholder fields instead of 500; unknown dates are 404 and traversal
+    inputs are 4xx. Basis: manifest schema written by qa/provenance.py."""
+
+    def _write_manifest(self, config: DashboardConfig, date: str = "2026-01-25") -> None:
+        import json as _json
+
+        directory = config.products / date
+        directory.mkdir(parents=True, exist_ok=True)
+        manifest = {
+            "date": date,
+            "cal_date": date,
+            "git_sha": "abc1234",
+            "command_line": "batch_pipeline.py --date " + date,
+            "pipeline_verdict": "DEGRADED",
+            "gates": [
+                {
+                    "gate": "epoch_qa:22",
+                    "verdict": "FAIL",
+                    "reason": "catalog completeness 0.42 < 0.5",
+                }
+            ],
+            "epochs": [
+                {
+                    "hour": 22,
+                    "n_tiles": 11,
+                    "status": "ok",
+                    "qa_result": "FAIL",
+                    "peak": 12.5,
+                    "rms": 0.008,
+                    "mosaic_path": "/x.fits",
+                    "gaincal_status": "ok",
+                    "n_sources": 40,
+                    "median_ratio": 0.9,
+                    "weight_path": "/x.w.fits",
+                }
+            ],
+            "tiles": [],
+            "run_log": "run_x.log",
+        }
+        (directory / f"{date}_manifest.json").write_text(_json.dumps(manifest))
+        (directory / "run_report.md").write_text("# Run report\nverdict DEGRADED\n")
+
+    def test_renders_verdict_gates_and_epochs(self, tmp_path: Path):
+        config = _make_config(tmp_path)
+        self._write_manifest(config)
+        with TestClient(create_app(config)) as client:
+            page = client.get("/runs/2026-01-25")
+        assert page.status_code == 200
+        assert "DEGRADED" in page.text
+        assert "catalog completeness" in page.text
+        assert "T2200" in page.text
+        assert "Run report" in page.text
+
+    def test_partial_manifest_renders_without_500(self, tmp_path: Path):
+        import json as _json
+
+        config = _make_config(tmp_path)
+        directory = config.products / "2026-01-25"
+        directory.mkdir(parents=True)
+        (directory / "2026-01-25_manifest.json").write_text(
+            _json.dumps({"pipeline_verdict": "CLEAN"})
+        )
+        with TestClient(create_app(config)) as client:
+            page = client.get("/runs/2026-01-25")
+        assert page.status_code == 200
+        assert "CLEAN" in page.text
+
+    def test_missing_manifest_is_404_and_traversal_rejected(self, tmp_path: Path):
+        with TestClient(create_app(_make_config(tmp_path))) as client:
+            assert client.get("/runs/2026-01-26").status_code == 404
+            assert 400 <= client.get("/runs/..%2f..%2fetc").status_code < 500
