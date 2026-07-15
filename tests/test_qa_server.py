@@ -812,3 +812,80 @@ class TestRunProvenancePage:
         with TestClient(create_app(_make_config(tmp_path))) as client:
             assert client.get("/runs/2026-01-26").status_code == 404
             assert 400 <= client.get("/runs/..%2f..%2fetc").status_code < 500
+
+
+class TestLightcurveView:
+    """Criterion: /sources/lightcurve matches the nearest forced-photometry
+    source per epoch within a positional radius (RA scaled by cos(dec)), renders
+    a table + PNG + eta/V variability metrics from the canonical formulas, and
+    rejects out-of-range coordinates. Basis: forced-phot CSV schema on disk
+    (ra_deg, dec_deg, dsa_peak_jyb, ...) and beam-scale positional matching."""
+
+    HEADER = "ra_deg,dec_deg,nvss_flux_jy,dsa_peak_jyb,dsa_peak_err_jyb,dsa_nvss_ratio\n"
+
+    def _write_epoch_csv(self, config: DashboardConfig, date: str, epoch: str, flux: float):
+        directory = config.products / date
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / f"{date}{epoch}_forced_phot.csv").write_text(
+            self.HEADER
+            + f"47.499,17.099833,4.87,{flux},0.02,0.95\n"
+            + "120.0,-5.0,1.0,1.1,0.05,1.1\n"
+        )
+
+    def test_matches_position_across_epochs(self, tmp_path: Path):
+        config = _make_config(tmp_path)
+        self._write_epoch_csv(config, "2026-01-25", "T0200", 3.9)
+        self._write_epoch_csv(config, "2026-02-12", "T0000", 4.1)
+        points = qa_server.lightcurve_points(
+            config, ra_deg=47.499, dec_deg=17.0998, radius_arcsec=30.0
+        )
+        assert len(points) == 2
+        assert {point["epoch"] for point in points} == {"2026-01-25T0200", "2026-02-12T0000"}
+        assert all(abs(point["flux_jy"] - 4.0) < 0.2 for point in points)
+        assert all(point["separation_arcsec"] < 30.0 for point in points)
+
+    def test_no_match_outside_radius(self, tmp_path: Path):
+        config = _make_config(tmp_path)
+        self._write_epoch_csv(config, "2026-01-25", "T0200", 3.9)
+        assert qa_server.lightcurve_points(config, 47.499, 18.5, 30.0) == []
+
+    def test_csv_missing_columns_is_skipped(self, tmp_path: Path):
+        config = _make_config(tmp_path)
+        directory = config.products / "2026-01-25"
+        directory.mkdir(parents=True)
+        (directory / "2026-01-25T0200_forced_phot.csv").write_text("other\n1\n")
+        assert qa_server.lightcurve_points(config, 47.499, 17.0998, 30.0) == []
+
+    def test_lightcurve_page_and_png(self, tmp_path: Path):
+        config = _make_config(tmp_path)
+        self._write_epoch_csv(config, "2026-01-25", "T0200", 3.9)
+        self._write_epoch_csv(config, "2026-02-12", "T0000", 4.1)
+        with TestClient(create_app(config)) as client:
+            page = client.get("/sources/lightcurve?ra=47.499&dec=17.0998")
+            png = client.get("/sources/lightcurve.png?ra=47.499&dec=17.0998")
+        assert page.status_code == 200 and "2026-01-25" in page.text
+        assert "eta" in page.text.lower()
+        assert png.status_code == 200 and png.content.startswith(b"\x89PNG")
+
+    def test_no_points_page_is_200_png_is_404(self, tmp_path: Path):
+        with TestClient(create_app(_make_config(tmp_path))) as client:
+            page = client.get("/sources/lightcurve?ra=47.499&dec=17.0998")
+            png = client.get("/sources/lightcurve.png?ra=47.499&dec=17.0998")
+        assert page.status_code == 200 and "No matching source" in page.text
+        assert png.status_code == 404
+
+    def test_bad_coords_rejected(self, tmp_path: Path):
+        with TestClient(create_app(_make_config(tmp_path))) as client:
+            assert 400 <= client.get("/sources/lightcurve?ra=999&dec=0").status_code < 500
+            assert 400 <= client.get("/sources/lightcurve?ra=10&dec=95").status_code < 500
+            assert (
+                400
+                <= client.get("/sources/lightcurve?ra=10&dec=10&radius_arcsec=9999").status_code
+                < 500
+            )
+
+    def test_dashboard_links_lightcurve_lookup(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(qa_server, "process_status", lambda: [])
+        with TestClient(create_app(_make_config(tmp_path))) as client:
+            page = client.get("/").text
+        assert "/sources/lightcurve" in page

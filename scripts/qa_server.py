@@ -100,6 +100,77 @@ def cal_tables(config: DashboardConfig) -> set[str]:
 
 
 MOSAIC_NAME_RE = re.compile(r"(\d{4}-\d{2}-\d{2})(T\d{4})_mosaic\.fits")
+PHOT_NAME_RE = re.compile(r"(\d{4}-\d{2}-\d{2})(T\d{4})_forced_phot\.csv")
+
+
+def lightcurve_points(
+    config: DashboardConfig, ra_deg: float, dec_deg: float, radius_arcsec: float = 30.0
+) -> list[dict]:
+    """Nearest forced-photometry match per epoch within the match radius."""
+    points: list[dict] = []
+    if not config.products.is_dir():
+        return points
+    radius_deg = radius_arcsec / 3600.0
+    cos_dec = max(float(np.cos(np.radians(dec_deg))), 1e-6)
+    for csv_path in sorted(config.products.glob("*/*_forced_phot.csv")):
+        match = PHOT_NAME_RE.fullmatch(csv_path.name)
+        if not match:
+            continue
+        try:
+            frame = pd.read_csv(csv_path)
+        except Exception as exc:
+            logger.warning("Lightcurve CSV error %s: %s", csv_path, exc)
+            continue
+        if not {"ra_deg", "dec_deg", "dsa_peak_jyb"}.issubset(frame.columns) or not len(frame):
+            continue
+        separation = np.hypot((frame["ra_deg"] - ra_deg) * cos_dec, frame["dec_deg"] - dec_deg)
+        index = separation.idxmin()
+        if not np.isfinite(separation[index]) or separation[index] > radius_deg:
+            continue
+        row = frame.loc[index]
+        error = row.get("dsa_peak_err_jyb")
+        points.append(
+            {
+                "epoch": match.group(1) + match.group(2),
+                "date": match.group(1),
+                "epoch_token": match.group(2),
+                "flux_jy": float(row["dsa_peak_jyb"]),
+                "flux_err_jy": float(error) if error is not None else float("nan"),
+                "separation_arcsec": float(separation[index] * 3600.0),
+                "csv": str(csv_path),
+            }
+        )
+    points.sort(key=lambda point: point["epoch"])
+    return points
+
+
+def _lightcurve_metrics(points: list[dict]) -> dict:
+    """Compute eta/V from the matched series via the canonical formulas."""
+    if len(points) < 2:
+        return {"eta": None, "v": None}
+    from dsa110_continuum.photometry.metrics import calculate_eta_metric, calculate_v_metric
+
+    fluxes = np.array([point["flux_jy"] for point in points], dtype=float)
+    errors = np.array([point["flux_err_jy"] for point in points], dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        weights = np.where(np.isfinite(errors) & (errors > 0), 1.0 / errors**2, 1.0)
+    try:
+        return {
+            "eta": float(calculate_eta_metric(fluxes, weights)),
+            "v": float(calculate_v_metric(fluxes)),
+        }
+    except Exception as exc:
+        logger.warning("Variability metric error: %s", exc)
+        return {"eta": None, "v": None}
+
+
+def _validate_lightcurve_query(ra: float, dec: float, radius_arcsec: float) -> None:
+    if not 0 <= ra < 360:
+        raise HTTPException(status_code=400, detail="ra must be in [0, 360)")
+    if not -90 <= dec <= 90:
+        raise HTTPException(status_code=400, detail="dec must be in [-90, 90]")
+    if not 1 <= radius_arcsec <= 300:
+        raise HTTPException(status_code=400, detail="radius_arcsec must be in [1, 300]")
 
 
 def discover_epochs(config: DashboardConfig, limit: int = 24) -> list[tuple[str, str]]:
@@ -653,7 +724,14 @@ pre{{background:#090b0e;color:#b9c6d0;border-radius:6px;padding:12px;margin:0;ma
 {control_section}
 <section><h2>Historical hourly-epoch QA</h2><div class="summary"><div class="stat"><strong style="color:#41c97a">{n_pass}</strong><span>Pass</span></div><div class="stat"><strong style="color:#ff6470">{n_fail}</strong><span>Fail</span></div><div class="stat"><strong style="color:#d99b35">{n_missing}</strong><span>Missing / pending photometry</span></div><div class="stat"><strong>{len(epochs)}</strong><span>Total</span></div></div>
 <div class="table-wrap"><table><thead><tr><th>Date</th><th>Status</th><th>Cal tables</th><th>Peak (Jy)</th><th>RMS (mJy)</th><th>Dyn range</th><th>DSA/NVSS</th><th>Bright sources</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div></section>
-<section><h2>Mosaic thumbnails</h2><div class="grid">{"".join(cards)}</div></section></main></body></html>"""
+<section><h2>Mosaic thumbnails</h2><div class="grid">{"".join(cards)}</div></section>
+<section><h2>Light curve lookup</h2>
+<form action="/sources/lightcurve" method="get" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+<input name="ra" type="number" step="any" min="0" max="359.9999" required placeholder="RA (deg)">
+<input name="dec" type="number" step="any" min="-90" max="90" required placeholder="Dec (deg)">
+<input name="radius_arcsec" type="number" step="any" min="1" max="300" value="30" title="match radius (arcsec)">
+<button type="submit">Show light curve</button>
+</form></section></main></body></html>"""
 
 
 mosaic_router = APIRouter(prefix="/artifacts/mosaic", tags=["mosaic artifacts"])
@@ -791,6 +869,89 @@ pre{{background:#090b0e;color:#b9c6d0;border-radius:6px;padding:12px;max-height:
 <tr><th>Log file</th><td><code>{html.escape(record["log_path"])}</code></td></tr>
 </table>
 <h2>Log tail</h2><pre>{log_tail}</pre></main></body></html>"""
+    )
+
+
+sources_router = APIRouter(prefix="/sources", tags=["science sources"])
+
+
+@sources_router.get("/lightcurve", response_class=HTMLResponse)
+def lightcurve_page(request: Request, ra: float, dec: float, radius_arcsec: float = 30.0):
+    """Render the positional light curve across all epochs with metrics."""
+    _validate_lightcurve_query(ra, dec, radius_arcsec)
+    config = _config(request)
+    points = lightcurve_points(config, ra, dec, radius_arcsec)
+    metrics = _lightcurve_metrics(points)
+    if points:
+        point_rows = "".join(
+            f'<tr><td><a href="/artifacts/mosaic/{point["date"]}/{point["epoch_token"]}/status">'
+            f"{point['epoch']}</a></td>"
+            f"<td>{point['flux_jy']:.4f}</td>"
+            f"<td>{point['flux_err_jy']:.4f}</td>"
+            f"<td>{point['separation_arcsec']:.1f}</td></tr>"
+            for point in points
+        )
+        plot = (
+            f'<img src="/sources/lightcurve.png?ra={ra}&dec={dec}'
+            f'&radius_arcsec={radius_arcsec}" alt="light curve" '
+            'style="max-width:100%;border-radius:8px">'
+        )
+    else:
+        point_rows = '<tr><td colspan="4">No matching source in any epoch</td></tr>'
+        plot = ""
+    eta = f"{metrics['eta']:.3f}" if metrics["eta"] is not None else "—"
+    v_metric = f"{metrics['v']:.3f}" if metrics["v"] is not None else "—"
+    return HTMLResponse(
+        f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Light curve {ra:.4f} {dec:+.4f}</title>
+<style>body{{background:#0d1014;color:#e8edf2;font-family:Inter,-apple-system,sans-serif;margin:0}}
+.shell{{max-width:1100px;margin:auto;padding:22px}} a{{color:#4eb8ff}} h2{{font-size:1rem;text-transform:uppercase;letter-spacing:.1em;color:#bcc6d0}}
+table{{border-collapse:collapse;font-size:.83rem;margin:12px 0}} td,th{{padding:8px 14px;border-bottom:1px solid #2a3038;text-align:left}} th{{background:#171b20;color:#9da8b4}}</style></head>
+<body><main class="shell"><p><a href="/">← Dashboard</a></p>
+<h1>Light curve · RA {ra:.4f}° Dec {dec:+.4f}° (r={radius_arcsec:.0f}&Prime;)</h1>
+<p>eta = {eta} · V = {v_metric} · {len(points)} epochs matched</p>
+{plot}
+<h2>Forced photometry</h2>
+<table><thead><tr><th>Epoch</th><th>Flux (Jy/beam)</th><th>Error</th><th>Sep (&Prime;)</th></tr></thead>
+<tbody>{point_rows}</tbody></table></main></body></html>"""
+    )
+
+
+@sources_router.get("/lightcurve.png")
+def lightcurve_png(request: Request, ra: float, dec: float, radius_arcsec: float = 30.0):
+    """Render the light-curve plot as PNG."""
+    _validate_lightcurve_query(ra, dec, radius_arcsec)
+    config = _config(request)
+    points = lightcurve_points(config, ra, dec, radius_arcsec)
+    if not points:
+        return Response(status_code=404)
+    labels = [point["epoch"] for point in points]
+    fluxes = [point["flux_jy"] for point in points]
+    errors = [
+        point["flux_err_jy"] if np.isfinite(point["flux_err_jy"]) else 0.0 for point in points
+    ]
+    figure, axis = plt.subplots(figsize=(10, 4), dpi=100)
+    axis.errorbar(range(len(points)), fluxes, yerr=errors, fmt="o-", color="#4eb8ff", capsize=3)
+    axis.set_xticks(range(len(points)))
+    axis.set_xticklabels(labels, rotation=30, ha="right", fontsize=7, color="white")
+    axis.set_ylabel("Peak flux (Jy/beam)", color="white")
+    axis.tick_params(colors="white")
+    axis.set_title(f"RA {ra:.4f}  Dec {dec:+.4f}", color="white", fontsize=10)
+    for spine in axis.spines.values():
+        spine.set_color("#2a3038")
+    axis.set_facecolor("#111")
+    figure.patch.set_facecolor("#111")
+    plt.tight_layout()
+    from io import BytesIO
+
+    buffer = BytesIO()
+    plt.savefig(buffer, format="png", facecolor="#111")
+    plt.close(figure)
+    return Response(
+        content=buffer.getvalue(),
+        media_type="image/png",
+        headers={"Cache-Control": "max-age=60"},
     )
 
 
@@ -941,6 +1102,7 @@ def create_app(config: DashboardConfig | None = None) -> FastAPI:
     application.include_router(ops_router)
     application.include_router(control_router)
     application.include_router(control_page_router)
+    application.include_router(sources_router)
     application.include_router(legacy_router)
 
     @application.get("/", response_class=HTMLResponse)
