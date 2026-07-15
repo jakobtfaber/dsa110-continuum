@@ -714,7 +714,8 @@ pre{{background:#090b0e;color:#b9c6d0;border-radius:6px;padding:12px;margin:0;ma
 .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}} .mosaic-card{{background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:hidden}} .mosaic-card header,.mosaic-card footer{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px}} .mosaic-card img{{display:block;width:100%;min-height:140px;object-fit:cover;background:#090b0e}} .mosaic-card footer{{font-size:.75rem;color:#aeb7c0;flex-wrap:wrap}} .empty{{display:grid;place-items:center;min-height:140px;background:#101318;color:#5d6670}} .empty-row{{color:var(--muted)}}
 @media(max-width:850px){{.stage-grid,.info-grid{{grid-template-columns:repeat(2,1fr)}}.ops-grid{{grid-template-columns:1fr}}}} @media(max-width:560px){{.shell{{padding:16px}}.summary,.stage-grid,.info-grid{{grid-template-columns:1fr 1fr}}.grid{{grid-template-columns:1fr}}}}
 </style><script>setTimeout(()=>{{const token=document.getElementById("control-token");if(!token||!token.value)location.reload();}},30000)</script></head>
-<body><main class="shell"><h1>DSA-110 Continuum Observatory</h1><div class="subtitle">Updated {now} · auto-refresh 30s · read-only</div>
+<body><main class="shell"><h1>DSA-110 Continuum Observatory</h1><div class="subtitle">Updated {now} · auto-refresh 30s · read-only ·
+<a href="/artifacts/caltable/">caltables</a></div>
 <section class="campaign"><div class="campaign-head"><div><h2>Active campaign · {campaign["date"]} hour {campaign["hour"]:02d}</h2><p>Hourly-epoch mosaic progress from incoming HDF5 through science products</p></div>{_badge("active" if processes else "not_yet", "process visible" if processes else ("PID recorded" if campaign["pid_hints"] else "process not visible"))}</div>
 <div class="stage-grid">{"".join(stage_cards)}</div><div class="info-grid">{"".join(disk_cards)}
 <div class="info-card"><span>Incoming slow-vis</span><strong>{incoming["hdf5_count"]} HDF5</strong><small class="path">{html.escape(incoming["directory"])}</small></div></div>
@@ -1102,11 +1103,14 @@ def operations_status(request: Request, date: str | None = None, hour: int | Non
 
 def create_app(config: DashboardConfig | None = None) -> FastAPI:
     """Create a routed dashboard application."""
+    from scripts.artifact_pages import caltable_router
+
     dashboard_config = config or DashboardConfig()
     dashboard_config.thumb_dir.mkdir(parents=True, exist_ok=True)
     application = FastAPI(title="DSA-110 Continuum Observatory", version="2.0")
     application.state.dashboard_config = dashboard_config
     application.include_router(mosaic_router)
+    application.include_router(caltable_router)
     application.include_router(ops_router)
     application.include_router(control_router)
     application.include_router(control_page_router)
