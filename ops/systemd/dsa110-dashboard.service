@@ -1,0 +1,15 @@
+[Unit]
+Description=DSA-110 continuum QA dashboard (qa_server, port 8767)
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/data/dsa110-continuum
+Environment=PYTHONPATH=/data/dsa110-continuum
+EnvironmentFile=-/data/dsa110-proc/products/control/dashboard.env
+ExecStart=/opt/miniforge/envs/casa6/bin/python -m uvicorn scripts.qa_server:app --host 0.0.0.0 --port 8767 --log-level warning
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
