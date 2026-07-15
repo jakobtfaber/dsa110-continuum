@@ -94,5 +94,7 @@ curl -s -X POST http://127.0.0.1:8767/api/runs \
 The Cloudflare tunnel (see `outputs/observability-dashboard-2026-07-14/CLOUDFLARE.md`) points
 at this origin. Mutating routes are safe to expose only because of the token gate; for
 defense in depth, enable Cloudflare Access (SSO) on the tunnel hostname before advertising
-the URL beyond the group. LAN access needs no extra step. `scripts/monitor_server.py` and its
-`POST /exec` remain unmounted and must stay that way (issue #62 tracks retirement).
+the URL beyond the group. LAN access needs no extra step. The former host-ops service
+(`scripts/monitor_server.py`, incl. its `POST /exec` shell hook) was deleted under issue #62 —
+auth posture is recorded in `docs/adr/0002-observability-auth-posture.md`; no shell-execution
+endpoint exists in this repo.

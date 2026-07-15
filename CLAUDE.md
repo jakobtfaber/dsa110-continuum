@@ -92,7 +92,6 @@ Set `PYTHONPATH=/workspace` when running scripts/tests from this workspace conte
 | `scripts/validate_date.py` | Run validation on one date's outputs |
 | `scripts/run_canary.sh` | QA smoke test against a reference FITS tile |
 | `scripts/auto_pipeline.py` | Scheduled launcher: runs `batch_pipeline.py` for yesterday UTC via the control registry (systemd timer entrypoint; skips if a launcher-owned run is active) |
-| `PYTHONPATH=/workspace uvicorn scripts.monitor_server:app --host 0.0.0.0 --port 8765` | Start the monitor API (host-ops service) |
 | `scripts/check_import_migration.py` | Legacy-import gate: exits 1 if any `dsa110_contimg` import exists under `dsa110_continuum/` (CI runs this on every push/PR) |
 | `scripts/check_contimg_mentions.py` | Mention classifier: fails on vendored headers, stale API refs, and dead layout probes (ops path defaults are INFO until `--strict-paths`) |
 
@@ -114,7 +113,6 @@ Fallback: system Python 3.12 with `PYTHONPATH=/workspace` mandatory.
 | `PYTHONPATH=/workspace python3 -m pytest tests/ -q` | Full suite (cloud-VM variant) |
 | `ruff check dsa110_continuum/ scripts/ tests/` | Lint |
 | `ruff format --check dsa110_continuum/ scripts/ tests/` | Format check |
-| `PYTHONPATH=/workspace uvicorn scripts.monitor_server:app --host 0.0.0.0 --port 8765` | Start monitor API |
 
 The old cloud-VM compatibility shim (`~/.local/lib/python3.12/site-packages/dsa110_contimg_shim.py` + its `.pth` loader) is obsolete: `dsa110_continuum` is self-contained and never imports `dsa110_contimg`. If a cloud VM still has the shim installed, delete both files — nothing depends on them.
 
@@ -256,13 +254,13 @@ Save under `/data/dsa110-continuum/outputs/` (organize by topic or date). Do NOT
 
 </important>
 
-<important if="you are touching FastAPI services: dsa110_continuum/mosaic/api.py, scripts/qa_server.py, or scripts/monitor_server.py">
+<important if="you are touching FastAPI services: dsa110_continuum/mosaic/api.py or scripts/qa_server.py">
 
-Three FastAPI services exist; their statuses differ:
+Two FastAPI services exist; their statuses differ:
 
 - `dsa110_continuum/mosaic/api.py` — **dormant**. Defines a router but no caller currently mounts it. Do NOT assume users hit this path; verify the mount before changing behavior.
 - `scripts/qa_server.py` — **live**. The QA dashboard users currently rely on. Treat as production: changes need the same care as pipeline code. Includes the token-gated pipeline control API (`/api/runs`, launch/dry-run/terminate via `dsa110_continuum/observability/control.py`); mutating routes fail closed when `DSA110_CONTROL_TOKEN` is unset and are audited to `control/audit.jsonl`. Ops runbook: `docs/operations/dashboard.md`.
-- `scripts/monitor_server.py` — **not currently running** (no launcher in repo; verified 2026-07-15). Exposes a `POST /exec` shell hook; any change to that endpoint is a security-relevant edit and must be flagged. Never mount or proxy it; #62 tracks retirement.
+- `scripts/monitor_server.py` was **deleted** (issue #62, 2026-07-15): every read-only endpoint is superseded by qa_server (`/api/status`, `/artifacts/*`, per-artifact job cards) and its `POST /exec` shell hook is banned per `docs/adr/0002-observability-auth-posture.md`. Never reintroduce shell-execution endpoints.
 
 The live-observability-stack work lands across these services; tracking issues #48–#62 (`gh issue list --label needs-triage --state open`).
 
