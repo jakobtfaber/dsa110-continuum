@@ -202,6 +202,18 @@ class Source:
             if "normalized_flux_err_jy" not in df.columns:
                 df["normalized_flux_err_jy"] = np.nan
 
+            # All-NULL SQLite REAL columns arrive from pandas as object-dtype
+            # None arrays; coerce every flux/error column to float so numpy
+            # ufuncs downstream never see object arrays.
+            for col in (
+                "peak_jyb",
+                "peak_err_jyb",
+                "normalized_flux_jy",
+                "normalized_flux_err_jy",
+            ):
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+
             # Convert measured_at to datetime if present
             if "measured_at" in df.columns:
                 df["measured_at"] = pd.to_datetime(df["measured_at"], unit="s", errors="coerce")
@@ -215,15 +227,18 @@ class Source:
     def _flux_columns(self) -> tuple[str, str]:
         """Select flux/error columns for downstream computations.
 
-        Normalized columns are used when the normalized flux carries at least
-        one finite value, otherwise the raw peak columns. A raw products DB
-        has no normalized photometry, so preferring the (NaN-filled)
-        normalized column unconditionally made every downstream computation
-        degenerate (issue #118).
+        Normalized columns are used when BOTH the normalized flux and its
+        error carry at least one finite value (weighted metrics are impossible
+        without errors), otherwise the raw peak columns. A raw products DB has
+        no normalized photometry, so preferring the (NaN-filled) normalized
+        column unconditionally made every downstream computation degenerate
+        (issue #118). A partially normalized target keeps NaN gaps at
+        unnormalized epochs rather than mixing normalizations.
         """
-        if "normalized_flux_jy" in self.measurements.columns:
-            normalized = pd.to_numeric(self.measurements["normalized_flux_jy"], errors="coerce")
-            if np.isfinite(normalized).any():
+        if {"normalized_flux_jy", "normalized_flux_err_jy"} <= set(self.measurements.columns):
+            flux = pd.to_numeric(self.measurements["normalized_flux_jy"], errors="coerce")
+            err = pd.to_numeric(self.measurements["normalized_flux_err_jy"], errors="coerce")
+            if bool(np.isfinite(flux).any()) and bool(np.isfinite(err).any()):
                 return "normalized_flux_jy", "normalized_flux_err_jy"
         return "peak_jyb", "peak_err_jyb"
 
@@ -282,9 +297,11 @@ class Source:
         if flux_col not in self.measurements.columns:
             raise SourceError(f"Flux column {flux_col} not found in measurements")
 
-        flux = self.measurements[flux_col].values
+        flux = pd.to_numeric(self.measurements[flux_col], errors="coerce").to_numpy()
         flux_err = (
-            self.measurements[err_col].values if err_col in self.measurements.columns else None
+            pd.to_numeric(self.measurements[err_col], errors="coerce").to_numpy()
+            if err_col in self.measurements.columns
+            else None
         )
 
         # Filter out NaN/inf values
@@ -567,8 +584,17 @@ class Source:
                 # Reindex to target epochs (puts NaNs where missing)
                 aligned = n_data.reindex(target_epochs.index)
 
-                neighbor_flux_matrix.append(aligned[flux_col].values)
-                neighbor_error_matrix.append(aligned[err_col].values)
+                flux_vals = pd.to_numeric(aligned[flux_col], errors="coerce").to_numpy()
+                err_vals = pd.to_numeric(aligned[err_col], errors="coerce").to_numpy()
+                # A neighbor with no finite flux or no finite error after
+                # alignment cannot contribute to the inverse-variance
+                # ensemble; counting it would return an all-NaN relative
+                # flux as success.
+                if not (np.isfinite(flux_vals).any() and np.isfinite(err_vals).any()):
+                    continue
+
+                neighbor_flux_matrix.append(flux_vals)
+                neighbor_error_matrix.append(err_vals)
                 valid_neighbor_ids.append(nid)
 
             except Exception as e:

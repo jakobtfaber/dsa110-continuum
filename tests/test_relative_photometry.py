@@ -376,6 +376,123 @@ class TestCalculateRelativeLightcurveAssembly:
         assert_allclose(result["relative_flux"], [1.0, 2.0, 2.0], rtol=1e-12)
 
 
+class TestNullColumnRobustness:
+    """All-NULL SQLite REAL columns arrive from pandas as object-dtype None
+    arrays (findings of the #124 adversarial review). The loader must coerce
+    every flux/err column to float, normalized columns are selected only when
+    flux AND error carry finite values, and neighbors with no usable flux or
+    error are skipped instead of crashing or silently producing all-NaN
+    relative fluxes. Partially normalized tables are an expected mid-pipeline
+    state (photometry/normalize.py filters WHERE normalized_flux_jy IS NOT
+    NULL), so these are realistic DB states, not corruption."""
+
+    def test_all_null_columns_load_as_float(self, tmp_path):
+        db = _make_products_db(
+            tmp_path / "products.sqlite3",
+            [
+                ("SRC1", 180.0, 16.1, 500.0, 0.5, None, 1.7e9, 60000.0, "e1.fits", None, None),
+                (
+                    "SRC1",
+                    180.0,
+                    16.1,
+                    500.0,
+                    0.6,
+                    None,
+                    1.7e9 + 3600,
+                    60000.042,
+                    "e2.fits",
+                    None,
+                    None,
+                ),
+            ],
+            with_normalized=True,
+        )
+        src = Source("SRC1", products_db=db)
+        for col in (
+            "peak_jyb",
+            "peak_err_jyb",
+            "normalized_flux_jy",
+            "normalized_flux_err_jy",
+        ):
+            assert src.measurements[col].dtype == np.float64, col
+
+    def test_neighbor_with_all_null_normalized_is_skipped(self, tmp_path):
+        """Target fully normalized; the only selected neighbor has NULL
+        normalized columns. No usable neighbor remains, so the result is {}
+        (pre-fix: TypeError from None**2 on the object-dtype error matrix,
+        uncaught because it fires after the per-neighbor try/except)."""
+        rows = [
+            ("T0", 180.0, 16.1, 500.0, 0.4, 0.01, 1.7e9, 60000.0, "e1.fits", 0.4, 0.01),
+            (
+                "T0",
+                180.0,
+                16.1,
+                500.0,
+                0.6,
+                0.01,
+                1.7e9 + 3600,
+                60000.042,
+                "e2.fits",
+                0.6,
+                0.01,
+            ),
+            ("GOOD", 180.1, 16.15, 200.0, 0.2, 0.02, 1.7e9, 60000.0, "e1.fits", None, None),
+            (
+                "GOOD",
+                180.1,
+                16.15,
+                200.0,
+                0.2,
+                0.02,
+                1.7e9 + 3600,
+                60000.042,
+                "e2.fits",
+                None,
+                None,
+            ),
+        ]
+        stats = [("GOOD", 180.1, 16.15, 200.0, 0.5, 20)]
+        db = _make_products_db(tmp_path / "products.sqlite3", rows, stats, with_normalized=True)
+        src = Source("T0", products_db=db)
+
+        assert src.calculate_relative_lightcurve() == {}
+
+    def test_target_normalized_err_all_null_falls_back_to_peak(self, tmp_path):
+        """normalized_flux_jy populated but normalized_flux_err_jy all NULL:
+        weighted metrics are impossible in the normalized system, so column
+        selection falls back to peak — v = 0.5 and eta = 100 from the peak
+        f=[1,2,3], e=0.1 derivation (criterion 4). Pre-fix: TypeError from
+        np.isfinite on the object-dtype error column."""
+        rows = [
+            ("SRC1", 180.0, 16.1, 500.0, 1.0, 0.1, 1.7e9, 60000.0, "e1.fits", 1.0, None),
+            ("SRC1", 180.0, 16.1, 500.0, 2.0, 0.1, 1.7e9 + 3600, 60000.042, "e2.fits", 2.0, None),
+            ("SRC1", 180.0, 16.1, 500.0, 3.0, 0.1, 1.7e9 + 7200, 60000.083, "e3.fits", 3.0, None),
+        ]
+        db = _make_products_db(tmp_path / "products.sqlite3", rows, with_normalized=True)
+        src = Source("SRC1", products_db=db)
+
+        metrics = src.calc_variability_metrics()
+
+        assert_allclose(metrics["v"], 0.5, rtol=1e-12)
+        assert_allclose(metrics["eta"], 100.0, rtol=1e-12)
+
+    def test_raw_db_neighbor_with_null_errors_is_skipped(self, tmp_path):
+        """Raw DB: the neighbor's peak_err_jyb is all NULL, so inverse-
+        variance weighting cannot use it; the neighbor is skipped and with no
+        usable neighbor left the result is {} (pre-fix: TypeError None**2)."""
+        rows = [
+            ("T0", 180.0, 16.1, 500.0, 0.4, 0.01, 1.7e9, 60000.0, "e1.fits"),
+            ("T0", 180.0, 16.1, 500.0, 0.6, 0.01, 1.7e9 + 3600, 60000.042, "e2.fits"),
+            ("GOOD", 180.1, 16.15, 200.0, 0.2, None, 1.7e9, 60000.0, "e1.fits"),
+            ("GOOD", 180.1, 16.15, 200.0, 0.2, None, 1.7e9 + 3600, 60000.042, "e2.fits"),
+        ]
+        stats = [("GOOD", 180.1, 16.15, 200.0, 0.5, 20)]
+        db = _make_products_db(tmp_path / "products.sqlite3", rows, stats)
+        src = Source("T0", products_db=db)
+
+        assert src.calculate_relative_lightcurve() == {}
+
+
 class TestRawDbEndToEnd:
     """Issue #118 item 1: the full path DB -> stable neighbors -> relative
     flux must run on a raw products DB (peak fluxes only, nothing

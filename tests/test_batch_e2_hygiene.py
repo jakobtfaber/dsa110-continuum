@@ -110,7 +110,14 @@ def test_forced_convolve_works_without_dsa110_contimg():
                 any(name.startswith(p) for p in evict_prefixes)
                 and name not in saved_modules
             ):
-                del sys.modules[name]
+                stale = sys.modules.pop(name)
+                # Also unbind the stale module from its parent package, or a
+                # never-previously-imported subtree would leave the fresh
+                # module reachable by attribute traversal.
+                parent, _, child = name.rpartition(".")
+                parent_mod = sys.modules.get(parent)
+                if parent_mod is not None and getattr(parent_mod, child, None) is stale:
+                    delattr(parent_mod, child)
         for name, mod in saved_modules.items():
             sys.modules[name] = mod
             parent, _, child = name.rpartition(".")
