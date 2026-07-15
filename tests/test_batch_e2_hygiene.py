@@ -97,15 +97,32 @@ def test_forced_convolve_works_without_dsa110_contimg():
         flux, flux_err, chisq = forced_mod._weighted_convolution(data, noise, kernel)
         assert np.isfinite(flux) and np.isfinite(flux_err) and np.isfinite(chisq)
     finally:
-        # Restore meta_path exactly + drop the polluted forced module so the
-        # next test that imports it gets the normal (non-fallback) version.
+        # Restore meta_path exactly, drop every module created under the
+        # blocker, and put the ORIGINAL module objects back — including the
+        # parent-package attributes: the fresh import rebinds `photometry` as
+        # an attribute of the (never-evicted) `dsa110_continuum` package, and
+        # string-target monkeypatch resolution in later tests traverses
+        # attributes, so a leaked fresh package would make them patch the
+        # wrong namespace (surfaced by test_relative_photometry's eta test).
         sys.meta_path[:] = saved_meta_path
         for name in list(sys.modules):
-            if (name.startswith("dsa110_contimg")
-                    or name.startswith("dsa110_continuum.photometry.forced")):
-                del sys.modules[name]
+            if (
+                any(name.startswith(p) for p in evict_prefixes)
+                and name not in saved_modules
+            ):
+                stale = sys.modules.pop(name)
+                # Also unbind the stale module from its parent package, or a
+                # never-previously-imported subtree would leave the fresh
+                # module reachable by attribute traversal.
+                parent, _, child = name.rpartition(".")
+                parent_mod = sys.modules.get(parent)
+                if parent_mod is not None and getattr(parent_mod, child, None) is stale:
+                    delattr(parent_mod, child)
         for name, mod in saved_modules.items():
             sys.modules[name] = mod
+            parent, _, child = name.rpartition(".")
+            if parent and parent in sys.modules:
+                setattr(sys.modules[parent], child, mod)
 
 
 # ─── B1: no double-nesting of date directory ────────────────────────────────

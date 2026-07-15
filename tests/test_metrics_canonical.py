@@ -210,12 +210,17 @@ class TestSourceModuleMetricImports:
 
     def test_import_failure_propagates_instead_of_stubbing(self, monkeypatch):
         monkeypatch.setitem(sys.modules, "dsa110_continuum.catalog.multiwavelength", None)
-        sys.modules.pop("dsa110_continuum.photometry.source", None)
+        # Restore the ORIGINAL module object afterwards: leaving sys.modules
+        # empty makes later imports create a fresh module, so tests that bound
+        # Source at collection time would monkeypatch a stale namespace.
+        original = sys.modules.pop("dsa110_continuum.photometry.source", None)
         try:
             with pytest.raises(ImportError):
                 importlib.import_module("dsa110_continuum.photometry.source")
         finally:
             sys.modules.pop("dsa110_continuum.photometry.source", None)
+            if original is not None:
+                sys.modules["dsa110_continuum.photometry.source"] = original
 
     def test_source_metrics_are_the_variability_implementations(self):
         psource = importlib.import_module("dsa110_continuum.photometry.source")

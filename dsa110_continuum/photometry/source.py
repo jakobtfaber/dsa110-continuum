@@ -31,6 +31,7 @@ from dsa110_continuum.catalog.multiwavelength import (
 from dsa110_continuum.photometry.variability import (
     calculate_eta_metric,
     calculate_m_metric,
+    calculate_v_metric,
     calculate_vs_metric,
 )
 
@@ -153,14 +154,20 @@ class Source:
                 }
 
                 if "source_id" in columns:
-                    query = """
+                    normalized_select = (
+                        ", normalized_flux_jy, normalized_flux_err_jy"
+                        if {"normalized_flux_jy", "normalized_flux_err_jy"} <= columns
+                        else ""
+                    )
+                    query = f"""
                         SELECT
                             ra_deg, dec_deg, nvss_flux_mjy,
-                            peak_jyb, peak_err_jyb, measured_at, mjd, image_path
+                            peak_jyb, peak_err_jyb, measured_at, mjd,
+                            image_path{normalized_select}
                         FROM photometry
                         WHERE source_id = ? OR source_id LIKE ?
                         ORDER BY measured_at ASC
-                    """
+                    """  # nosec B608 - normalized_select is built from constants
                     df = pd.read_sql_query(
                         query, conn, params=(self.source_id, f"%{self.source_id}%")
                     )
@@ -171,10 +178,6 @@ class Source:
                             df["mjd"] = pd.to_datetime(
                                 df["measured_at"], unit="s", errors="coerce"
                             ).apply(lambda x: Time(x).mjd if pd.notna(x) else None)
-
-                    # Add normalized flux columns (will be NaN if not available)
-                    df["normalized_flux_jy"] = np.nan
-                    df["normalized_flux_err_jy"] = np.nan
                 else:
                     # No source_id column, can't query
                     df = pd.DataFrame()
@@ -199,6 +202,18 @@ class Source:
             if "normalized_flux_err_jy" not in df.columns:
                 df["normalized_flux_err_jy"] = np.nan
 
+            # All-NULL SQLite REAL columns arrive from pandas as object-dtype
+            # None arrays; coerce every flux/error column to float so numpy
+            # ufuncs downstream never see object arrays.
+            for col in (
+                "peak_jyb",
+                "peak_err_jyb",
+                "normalized_flux_jy",
+                "normalized_flux_err_jy",
+            ):
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+
             # Convert measured_at to datetime if present
             if "measured_at" in df.columns:
                 df["measured_at"] = pd.to_datetime(df["measured_at"], unit="s", errors="coerce")
@@ -208,6 +223,24 @@ class Source:
         except Exception as e:
             conn.close()
             raise SourceError(f"Failed to load measurements for {self.source_id}: {e}") from e
+
+    def _flux_columns(self) -> tuple[str, str]:
+        """Select flux/error columns for downstream computations.
+
+        Normalized columns are used when BOTH the normalized flux and its
+        error carry at least one finite value (weighted metrics are impossible
+        without errors), otherwise the raw peak columns. A raw products DB has
+        no normalized photometry, so preferring the (NaN-filled) normalized
+        column unconditionally made every downstream computation degenerate
+        (issue #118). A partially normalized target keeps NaN gaps at
+        unnormalized epochs rather than mixing normalizations.
+        """
+        if {"normalized_flux_jy", "normalized_flux_err_jy"} <= set(self.measurements.columns):
+            flux = pd.to_numeric(self.measurements["normalized_flux_jy"], errors="coerce")
+            err = pd.to_numeric(self.measurements["normalized_flux_err_jy"], errors="coerce")
+            if bool(np.isfinite(flux).any()) and bool(np.isfinite(err).any()):
+                return "normalized_flux_jy", "normalized_flux_err_jy"
+        return "peak_jyb", "peak_err_jyb"
 
     @property
     def coord(self) -> SkyCoord:
@@ -235,16 +268,7 @@ class Source:
             return (self.measurements["snr"] > 5).sum()
 
         # Estimate from flux and error
-        flux_col = (
-            "normalized_flux_jy"
-            if "normalized_flux_jy" in self.measurements.columns
-            else "peak_jyb"
-        )
-        err_col = (
-            "normalized_flux_err_jy"
-            if "normalized_flux_err_jy" in self.measurements.columns
-            else "peak_err_jyb"
-        )
+        flux_col, err_col = self._flux_columns()
 
         if flux_col in self.measurements.columns and err_col in self.measurements.columns:
             flux = self.measurements[flux_col]
@@ -267,24 +291,17 @@ class Source:
                 "n_epochs": len(self.measurements),
             }
 
-        # Use normalized flux if available, otherwise peak flux
-        flux_col = (
-            "normalized_flux_jy"
-            if "normalized_flux_jy" in self.measurements.columns
-            else "peak_jyb"
-        )
-        err_col = (
-            "normalized_flux_err_jy"
-            if "normalized_flux_err_jy" in self.measurements.columns
-            else "peak_err_jyb"
-        )
+        # Use normalized flux when populated, otherwise peak flux
+        flux_col, err_col = self._flux_columns()
 
         if flux_col not in self.measurements.columns:
             raise SourceError(f"Flux column {flux_col} not found in measurements")
 
-        flux = self.measurements[flux_col].values
+        flux = pd.to_numeric(self.measurements[flux_col], errors="coerce").to_numpy()
         flux_err = (
-            self.measurements[err_col].values if err_col in self.measurements.columns else None
+            pd.to_numeric(self.measurements[err_col], errors="coerce").to_numpy()
+            if err_col in self.measurements.columns
+            else None
         )
 
         # Filter out NaN/inf values
@@ -304,8 +321,9 @@ class Source:
         flux_valid = flux[valid_mask]
         flux_err_valid = flux_err[valid_mask] if flux_err is not None else None
 
-        # V metric (coefficient of variation)
-        v = float(np.std(flux_valid) / np.mean(flux_valid)) if np.mean(flux_valid) > 0 else 0.0
+        # V metric (coefficient of variation, canonical ddof=1 convention
+        # from photometry/metrics.py — consolidated in #118)
+        v = calculate_v_metric(flux_valid)
 
         # η metric (weighted variance)
         if flux_err_valid is not None and len(flux_valid) >= 2:
@@ -337,7 +355,7 @@ class Source:
 
         return {
             "v": v,
-            "eta": float(eta),
+            "eta": float(eta) if eta is not None else None,
             "vs_mean": float(np.mean(vs_metrics)) if vs_metrics else None,
             "m_mean": float(np.mean(m_metrics)) if m_metrics else None,
             "n_epochs": len(self.measurements),
@@ -374,10 +392,7 @@ class Source:
         if self.measurements.empty:
             return []
 
-        flux_col = "peak_jyb"
-        has_normalized = "normalized_flux_jy" in self.measurements.columns
-        if has_normalized:
-            flux_col = "normalized_flux_jy"
+        flux_col, _ = self._flux_columns()
         target_flux = self.measurements[flux_col].median()
         if np.isnan(target_flux):
             return []
@@ -454,13 +469,18 @@ class Source:
             ra_degs = df["ra_deg"].to_numpy()
             dec_degs = df["dec_deg"].to_numpy()
 
-            # 1. Vectorized distance check
-            cos_dec = np.cos(np.deg2rad(self.dec_deg))
-            dists_sq = (
-                ((ra_degs - self.ra_deg) * cos_dec) ** 2
-                + (dec_degs - self.dec_deg) ** 2
+            # 1. Vectorized exact angular separation (haversine). The planar
+            # small-angle approximation rejected genuinely-close candidates
+            # across the 0/360 RA boundary and near the poles (issue #118).
+            dec1 = np.deg2rad(self.dec_deg)
+            dec2 = np.deg2rad(dec_degs)
+            d_ra = np.deg2rad(ra_degs - self.ra_deg)
+            hav = (
+                np.sin((dec2 - dec1) / 2.0) ** 2
+                + np.cos(dec1) * np.cos(dec2) * np.sin(d_ra / 2.0) ** 2
             )
-            dist_mask = dists_sq <= radius_deg**2
+            seps_deg = np.rad2deg(2.0 * np.arcsin(np.sqrt(np.clip(hav, 0.0, 1.0))))
+            dist_mask = seps_deg <= radius_deg
 
             # 2. Vectorized flux ratio check
             flux_ratios = df["mean_flux_mjy"].to_numpy() / target_flux_mjy
@@ -531,13 +551,18 @@ class Source:
         if self.measurements.empty:
             return {}
 
+        # Target and neighbors use the same flux/error columns: normalized
+        # when populated, raw peak otherwise (mixing normalizations across
+        # the ensemble would bias the relative flux).
+        flux_col, err_col = self._flux_columns()
+
         # Ensure required columns exist
-        required_cols = ["image_path", "mjd", "normalized_flux_jy"]
+        required_cols = ["image_path", "mjd", flux_col]
         if not all(col in self.measurements.columns for col in required_cols):
             logger.warning(f"Missing required columns for relative photometry: {required_cols}")
             return {}
 
-        target_epochs = self.measurements[["image_path", "mjd", "normalized_flux_jy"]].copy()
+        target_epochs = self.measurements[["image_path", "mjd", flux_col]].copy()
         target_epochs = target_epochs.set_index("image_path")
 
         neighbor_flux_matrix = []
@@ -554,15 +579,22 @@ class Source:
 
                 # Align with target
                 # Join on image_path
-                n_data = n_meas[
-                    ["image_path", "normalized_flux_jy", "normalized_flux_err_jy"]
-                ].set_index("image_path")
+                n_data = n_meas[["image_path", flux_col, err_col]].set_index("image_path")
 
                 # Reindex to target epochs (puts NaNs where missing)
                 aligned = n_data.reindex(target_epochs.index)
 
-                neighbor_flux_matrix.append(aligned["normalized_flux_jy"].values)
-                neighbor_error_matrix.append(aligned["normalized_flux_err_jy"].values)
+                flux_vals = pd.to_numeric(aligned[flux_col], errors="coerce").to_numpy()
+                err_vals = pd.to_numeric(aligned[err_col], errors="coerce").to_numpy()
+                # A neighbor with no finite flux or no finite error after
+                # alignment cannot contribute to the inverse-variance
+                # ensemble; counting it would return an all-NaN relative
+                # flux as success.
+                if not (np.isfinite(flux_vals).any() and np.isfinite(err_vals).any()):
+                    continue
+
+                neighbor_flux_matrix.append(flux_vals)
+                neighbor_error_matrix.append(err_vals)
                 valid_neighbor_ids.append(nid)
 
             except Exception as e:
@@ -583,7 +615,7 @@ class Source:
 
         # 3. Calculate Relative Flux
         rel_flux, mean_val, std_val = calculate_relative_flux(
-            target_fluxes=target_epochs["normalized_flux_jy"].values,
+            target_fluxes=target_epochs[flux_col].values,
             neighbor_fluxes=neighbor_fluxes,
             neighbor_errors=neighbor_errors,
             use_robust_stats=True,
