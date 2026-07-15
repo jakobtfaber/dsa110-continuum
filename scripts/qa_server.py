@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import html
+import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -21,9 +23,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from astropy.io import fits
+from dsa110_continuum.observability import control as pipeline_control
 from fastapi import APIRouter, FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from matplotlib.colors import PowerNorm
+from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -526,6 +530,103 @@ pre{{background:#090b0e;color:#b9c6d0;border-radius:6px;padding:12px;margin:0;ma
 mosaic_router = APIRouter(prefix="/artifacts/mosaic", tags=["mosaic artifacts"])
 ops_router = APIRouter(prefix="/api", tags=["read-only operations"])
 legacy_router = APIRouter(include_in_schema=False)
+control_router = APIRouter(prefix="/api/runs", tags=["pipeline control"])
+
+CONTROL_TOKEN_ENV = "DSA110_CONTROL_TOKEN"
+
+
+class RunRequestBody(BaseModel):
+    """JSON body for launching or previewing a batch_pipeline run."""
+
+    date: str
+    cal_date: str | None = None
+    start_hour: int | None = None
+    end_hour: int | None = None
+    rfi_mode: str | None = None
+    tile_timeout: int | None = None
+    quarantine_after_failures: int | None = None
+    photometry_workers: int | None = None
+    retry_failed: bool = False
+    force_recal: bool = False
+    skip_photometry: bool = False
+    lenient_qa: bool = False
+    clear_quarantine: bool = False
+    dry_run: bool = False
+
+
+def _require_control_token(request: Request) -> None:
+    expected = os.environ.get(CONTROL_TOKEN_ENV, "")
+    provided = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    if not expected or not secrets.compare_digest(provided, expected):
+        raise HTTPException(status_code=403, detail="control token missing or invalid")
+
+
+def _audit(
+    config: pipeline_control.ControlConfig, action: str, request: Request, payload: dict
+) -> None:
+    config.control_dir.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "time": datetime.now(timezone.utc).isoformat(),
+        "action": action,
+        "remote": request.client.host if request.client else None,
+        "payload": payload,
+    }
+    with (config.control_dir / "audit.jsonl").open("a") as stream:
+        stream.write(json.dumps(entry) + "\n")
+
+
+@control_router.get("")
+def control_list_runs():
+    """List the newest launcher-owned pipeline runs (read-only)."""
+    return {"runs": pipeline_control.list_runs(pipeline_control.ControlConfig())}
+
+
+@control_router.get("/{run_id}")
+def control_get_run(run_id: str, tail: int = 40):
+    """Return one run's registry record plus a bounded log tail (read-only)."""
+    config = pipeline_control.ControlConfig()
+    try:
+        record = pipeline_control.get_run(run_id, config)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="unknown run") from None
+    record["log_tail"] = _tail(Path(record["log_path"]), max(1, min(tail, 500)))
+    return record
+
+
+@control_router.post("")
+def control_launch(body: RunRequestBody, request: Request):
+    """Launch batch_pipeline.py (or preview with dry_run) — token required."""
+    _require_control_token(request)
+    config = pipeline_control.ControlConfig()
+    try:
+        run_request = pipeline_control.RunRequest(**body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    _audit(config, "dry_run" if body.dry_run else "launch", request, body.model_dump())
+    if body.dry_run:
+        try:
+            plan = pipeline_control.run_dry_run(run_request, config)
+        except subprocess.TimeoutExpired:
+            raise HTTPException(status_code=504, detail="dry-run timed out") from None
+        return {"plan": plan}
+    try:
+        return pipeline_control.launch_run(run_request, config)
+    except pipeline_control.RunConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@control_router.post("/{run_id}/terminate")
+def control_terminate(run_id: str, request: Request):
+    """Terminate a running pipeline run's whole process group — token required."""
+    _require_control_token(request)
+    config = pipeline_control.ControlConfig()
+    _audit(config, "terminate", request, {"run_id": run_id})
+    try:
+        return pipeline_control.terminate_run(run_id, config)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="unknown run") from None
+    except pipeline_control.RunConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 @mosaic_router.get("/{date}/{epoch}/status")
@@ -574,6 +675,7 @@ def create_app(config: DashboardConfig | None = None) -> FastAPI:
     application.state.dashboard_config = dashboard_config
     application.include_router(mosaic_router)
     application.include_router(ops_router)
+    application.include_router(control_router)
     application.include_router(legacy_router)
 
     @application.get("/", response_class=HTMLResponse)

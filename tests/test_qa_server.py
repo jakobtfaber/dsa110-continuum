@@ -559,3 +559,101 @@ class TestDashboardAndHealth:
         assert body["status"] == "ok"
         parsed = datetime.fromisoformat(body["time"])
         assert parsed.tzinfo is not None
+
+
+class TestControlAuth:
+    """Criterion: mutating control routes fail closed -- no DSA110_CONTROL_TOKEN
+    in the environment means 403 for every mutating request regardless of the
+    header; a wrong or missing bearer is 403; the correct bearer is accepted;
+    request fields that fail RunRequest's closed grammar are 4xx; the audit log
+    records mutating requests without ever containing the token; run listing
+    stays readable without a token (read-only surface). Basis: fail-closed
+    auth invariant for a publicly-tunneled control surface."""
+
+    def _client(self, tmp_path, monkeypatch, token_env):
+        if token_env is None:
+            monkeypatch.delenv("DSA110_CONTROL_TOKEN", raising=False)
+        else:
+            monkeypatch.setenv("DSA110_CONTROL_TOKEN", token_env)
+        monkeypatch.setenv("DSA110_CONTROL_DIR", str(tmp_path / "control"))
+        monkeypatch.setenv("DSA110_REPO_ROOT", str(tmp_path))
+        import sys as _sys
+
+        monkeypatch.setenv("DSA110_PIPELINE_PYTHON", _sys.executable)
+        scripts = tmp_path / "scripts"
+        scripts.mkdir(exist_ok=True)
+        (scripts / "batch_pipeline.py").write_text("print('plan ok')\n")
+        return TestClient(create_app(_make_config(tmp_path)))
+
+    def test_launch_without_token_env_is_403_even_with_header(self, tmp_path, monkeypatch):
+        with self._client(tmp_path, monkeypatch, token_env=None) as client:
+            response = client.post(
+                "/api/runs",
+                json={"date": "2026-01-25", "dry_run": True},
+                headers={"Authorization": "Bearer anything"},
+            )
+        assert response.status_code == 403
+
+    def test_wrong_or_missing_token_is_403(self, tmp_path, monkeypatch):
+        with self._client(tmp_path, monkeypatch, token_env="s3cret") as client:
+            wrong = client.post(
+                "/api/runs",
+                json={"date": "2026-01-25", "dry_run": True},
+                headers={"Authorization": "Bearer wrong"},
+            )
+            missing = client.post("/api/runs", json={"date": "2026-01-25", "dry_run": True})
+        assert wrong.status_code == 403
+        assert missing.status_code == 403
+
+    def test_dry_run_with_token_returns_plan_and_audits(self, tmp_path, monkeypatch):
+        with self._client(tmp_path, monkeypatch, token_env="s3cret") as client:
+            response = client.post(
+                "/api/runs",
+                json={"date": "2026-01-25", "dry_run": True},
+                headers={"Authorization": "Bearer s3cret"},
+            )
+        assert response.status_code == 200
+        assert "plan ok" in response.json()["plan"]
+        audit = (tmp_path / "control" / "audit.jsonl").read_text()
+        assert '"dry_run": true' in audit
+        assert "s3cret" not in audit
+
+    def test_injection_shaped_date_is_4xx(self, tmp_path, monkeypatch):
+        with self._client(tmp_path, monkeypatch, token_env="s3cret") as client:
+            response = client.post(
+                "/api/runs",
+                json={"date": "2026-01-25; rm -rf /", "dry_run": True},
+                headers={"Authorization": "Bearer s3cret"},
+            )
+        assert response.status_code in (400, 422)
+
+    def test_run_listing_is_readable_without_token(self, tmp_path, monkeypatch):
+        with self._client(tmp_path, monkeypatch, token_env="s3cret") as client:
+            response = client.get("/api/runs")
+        assert response.status_code == 200
+        assert response.json() == {"runs": []}
+
+    def test_launch_terminate_roundtrip_with_token(self, tmp_path, monkeypatch):
+        with self._client(tmp_path, monkeypatch, token_env="s3cret") as client:
+            (tmp_path / "scripts" / "batch_pipeline.py").write_text("import time; time.sleep(60)\n")
+            headers = {"Authorization": "Bearer s3cret"}
+            launched = client.post("/api/runs", json={"date": "2026-01-25"}, headers=headers)
+            assert launched.status_code == 200
+            run_id = launched.json()["run_id"]
+            detail = client.get(f"/api/runs/{run_id}")
+            assert detail.status_code == 200
+            assert detail.json()["status"] == "running"
+            terminated = client.post(f"/api/runs/{run_id}/terminate", headers=headers)
+            assert terminated.status_code == 200
+            assert terminated.json()["status"] == "terminated"
+            unauth = client.post(f"/api/runs/{run_id}/terminate")
+            assert unauth.status_code == 403
+
+    def test_unknown_run_detail_is_404(self, tmp_path, monkeypatch):
+        with self._client(tmp_path, monkeypatch, token_env="s3cret") as client:
+            client.post(
+                "/api/runs",
+                json={"date": "2026-01-25", "dry_run": True},
+                headers={"Authorization": "Bearer s3cret"},
+            )
+            assert client.get("/api/runs/nope").status_code == 404
