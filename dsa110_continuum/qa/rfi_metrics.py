@@ -9,7 +9,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 try:
     from dsa110_continuum.adapters import casa_tables as casatables
 
@@ -67,9 +66,9 @@ def calculate_rfi_occupancy(ms_path: str | Path) -> dict[str, np.ndarray]:
         freqs = sw.getcol("CHAN_FREQ")[0]  # Assuming SPW 0 for now
 
     # Calculate occupancy vs Frequency (average over Time and Pol)
-    # flags shape: (n_row, n_chan, n_pol)
+    # flags shape via the casa_tables adapter: (n_row, n_pol, n_chan)
     # Result: (n_chan,)
-    freq_occupancy = np.mean(flags, axis=(0, 2)) * 100.0
+    freq_occupancy = np.mean(flags, axis=(0, 1)) * 100.0
 
     # Calculate occupancy vs Time (average over Freq and Pol)
     # Result: (n_row,) - This is per-baseline-time.
@@ -122,7 +121,7 @@ def get_rfi_waterfall_data(
 
     with casatables.table(ms_path, ack=False) as tb:
         times = tb.getcol("TIME")
-        flags = tb.getcol("FLAG")  # (Row, Chan, Pol)
+        flags = tb.getcol("FLAG")  # adapter layout: (Row, Pol, Chan)
 
     with casatables.table(f"{ms_path}/SPECTRAL_WINDOW", ack=False) as sw:
         freqs = sw.getcol("CHAN_FREQ")[0]
@@ -130,7 +129,7 @@ def get_rfi_waterfall_data(
     # Collapse Pol axis -> (Row, Chan)
     # If any pol is flagged, we count it? Or average?
     # Usually RFI affects all pols, but let's average to get a "fraction flagged" 0.0-1.0
-    flags_row_chan = np.mean(flags, axis=2)
+    flags_row_chan = np.mean(flags, axis=1)
 
     # Bin by time
     # Find unique times and inverse indices

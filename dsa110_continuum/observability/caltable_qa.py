@@ -97,8 +97,8 @@ def render_plot(table_path: Path, kind: str, target: Path) -> None:
         shutil.move(str(produced), str(target))
     except ArtifactRenderError:
         raise
-    except (ImportError, RuntimeError, OSError, ValueError, KeyError) as exc:
-        raise ArtifactRenderError(f"{kind}: {exc}") from exc
+    except Exception as exc:
+        raise ArtifactRenderError(f"{kind}: {type(exc).__name__}: {exc}") from exc
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 

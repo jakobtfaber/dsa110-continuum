@@ -39,6 +39,7 @@ CLOUD_SAFE_TESTS = (
     "tests/test_artifact_substrate.py",
     "tests/test_caltable_pages.py",
     "tests/test_tile_pages.py",
+    "tests/test_ms_pages.py",
 )
 
 
