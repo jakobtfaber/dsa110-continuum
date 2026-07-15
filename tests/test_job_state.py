@@ -83,6 +83,28 @@ class TestJobsForTimestamp:
         assert len(lines) == 2
         assert all(TS in line for line in lines)
 
+    def test_registry_run_without_timestamp_log_is_not_an_artifact_match(self, tmp_path, monkeypatch):
+        """A date-scoped run is not evidence that this artifact is active."""
+        log = tmp_path / "run_x.log"
+        log.write_text("processing 2026-01-25T23:00:00.ms stage=applycal\n")
+        monkeypatch.setattr(job_state, "active_processes", lambda: [])
+        monkeypatch.setattr(
+            job_state,
+            "_running_runs",
+            lambda config: [
+                {
+                    "run_id": "r1",
+                    "pid": 999,
+                    "log_path": str(log),
+                    "request_json": '{"date": "2026-01-25"}',
+                }
+            ],
+        )
+
+        job = job_state.jobs_for_timestamp(TS)
+
+        assert job == {"processes": [], "batch": [], "runs": [], "active": False}
+
     def test_date_in_unrelated_process_argv_not_matched(self, monkeypatch):
         """A shell/session process that merely mentions the date is not a batch hit."""
         monkeypatch.setattr(

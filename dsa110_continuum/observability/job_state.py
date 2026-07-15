@@ -83,8 +83,7 @@ def jobs_for_timestamp(ts: str, control_config=None, max_lines: int = 40) -> dic
         for run in _running_runs(control_config):
             log_path = run.get("log_path")
             lines = _filtered_tail(Path(log_path), ts, max_lines) if log_path else []
-            request_blob = str(run.get("request_json") or "") + str(run.get("argv_json") or "")
-            if lines or date in request_blob:
+            if lines:
                 runs.append(
                     {
                         "run_id": run.get("run_id"),
