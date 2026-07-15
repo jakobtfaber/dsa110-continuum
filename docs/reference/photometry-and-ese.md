@@ -174,3 +174,37 @@ Catalog coverage limits:
 Sky model seeding (skymodels.py):
   make_unified_wsclean_list(center_ra, center_dec, radius_deg, min_mjy=2.0, freq_ghz=1.4)
   Source priority: FIRST > RACS > NVSS
+
+## Forced-photometry CSV contract (photometry/phot_csv.py; issues #133, #134)
+
+Canonical columns for `{date}T{HH}00_forced_phot.csv` products, in order:
+
+  source_id, ra_deg, dec_deg, flux_jy, flux_err_jy,
+  nvss_flux_jy, dsa_nvss_ratio, snr
+
+Extra columns (coarse_snr, passed_coarse, spectral_index, injected_flux_jy,
+...) are preserved after the canonical block. `nvss_flux_jy` /
+`dsa_nvss_ratio` are historical names kept for consumer compatibility — the
+reference flux is whatever catalog forced photometry ran against (usually
+master).
+
+Historical schema drift (2026-07 H17 audit) — two legacy schemas exist in
+archived products and are mapped by `normalize_phot_rows` /
+`read_forced_phot_csv` via `COLUMN_ALIASES`:
+
+  source_name       -> source_id
+  measured_flux_jy  -> flux_jy      dsa_peak_jyb      -> flux_jy
+  dsa_peak_err_jyb  -> flux_err_jy  catalog_flux_jy   -> nvss_flux_jy
+  flux_ratio        -> dsa_nvss_ratio                 ratio -> dsa_nvss_ratio
+
+Writers MUST go through `write_forced_phot_csv` (the only sanctioned writer;
+`scripts/forced_photometry.py` does). It applies the per-measurement flux
+sanity gate: rows with non-finite flux or |flux_jy| > MAX_ABS_FLUX_JY
+(5000 Jy — brightest possible field source is Cas A at ~1.7 kJy) are dropped
+and reported. Motivating incident: a 297 kJy artifact row in
+2026-02-15T0000_forced_phot.csv ranked as the top variable source.
+
+Epoch-level gate: an epoch CSV with fewer than MIN_EPOCH_MEASUREMENTS (10;
+operator override `--min-phot-sources`) recovered measurements records a
+`phot_min_measurements` FAIL gate in the run manifest, degrading the pipeline
+verdict (batch_pipeline.py).

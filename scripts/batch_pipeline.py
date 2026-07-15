@@ -60,6 +60,10 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from dsa110_continuum.photometry.epoch_qa import EpochQAResult, measure_epoch_qa
 from dsa110_continuum.photometry.epoch_qa_plot import plot_epoch_qa
+from dsa110_continuum.photometry.phot_csv import (
+    MIN_EPOCH_MEASUREMENTS,
+    check_min_measurements,
+)
 from dsa110_continuum.qa.provenance import RunManifest, try_load_prior_manifest
 
 logging.basicConfig(
@@ -1418,6 +1422,18 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--min-phot-sources",
+        type=int,
+        default=MIN_EPOCH_MEASUREMENTS,
+        metavar="N",
+        help=(
+            "Minimum forced-photometry measurements for an epoch CSV to count "
+            f"as a science product (default: {MIN_EPOCH_MEASUREMENTS}). Below "
+            "this a phot_min_measurements gate is recorded and the run verdict "
+            "degrades (issue #134)."
+        ),
+    )
+    parser.add_argument(
         "--photometry-chunk-size",
         type=int,
         default=0,
@@ -2138,6 +2154,30 @@ def main() -> None:
                 median_ratio = phot_result["median_ratio"]
                 if np.isfinite(median_ratio):
                     log.info("  Median DSA/Cat ratio: %.3f  (%d sources)", median_ratio, n_sources)
+                # ── Photometry product gates (#134) ──────────────────────────
+                n_flux_rejected = phot_result.get("n_flux_rejected", 0)
+                if n_flux_rejected:
+                    manifest.add_gate(
+                        gate="phot_flux_sanity",
+                        verdict="REJECTED_ROWS",
+                        reason=(
+                            f"{n_flux_rejected} unphysical measurement(s) dropped "
+                            f"for epoch {label}: "
+                            + "; ".join(phot_result.get("flux_rejected_reasons", [])[:3])
+                        ),
+                        epoch_label=label,
+                    )
+                min_ok, min_reason = check_min_measurements(
+                    n_sources, minimum=args.min_phot_sources
+                )
+                if not min_ok:
+                    log.warning("  Photometry gate: %s (epoch %s)", min_reason, label)
+                    manifest.add_gate(
+                        gate="phot_min_measurements",
+                        verdict="FAIL",
+                        reason=f"epoch {label}: {min_reason}",
+                        epoch_label=label,
+                    )
             except Exception as e:
                 log.error("  Forced photometry failed for epoch %s: %s", label, e)
                 manifest.add_gate(
