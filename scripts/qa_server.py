@@ -341,6 +341,7 @@ def process_status() -> list[dict]:
             ["ps", "-eo", "pid=,etimes=,stat=,args="],
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=5,
             check=False,
         )
