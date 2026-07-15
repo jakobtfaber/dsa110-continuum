@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
@@ -17,6 +18,7 @@ from pathlib import Path
 
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 RFI_MODES = ("full", "conditional", "off")
+CONTROL_TOKEN_ENV = "DSA110_CONTROL_TOKEN"
 
 
 class RunConflictError(RuntimeError):
@@ -134,7 +136,8 @@ CREATE TABLE IF NOT EXISTS runs (
     pid INTEGER NOT NULL,
     log_path TEXT NOT NULL,
     status TEXT NOT NULL,
-    exit_code INTEGER
+    exit_code INTEGER,
+    proc_start INTEGER
 )
 """
 
@@ -143,6 +146,9 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     connection = sqlite3.connect(db_path, timeout=10)
     connection.row_factory = sqlite3.Row
     connection.execute(_SCHEMA)
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(runs)")}
+    if "proc_start" not in columns:
+        connection.execute("ALTER TABLE runs ADD COLUMN proc_start INTEGER")
     return connection
 
 
@@ -150,12 +156,40 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _pid_alive(pid: int) -> bool:
-    return Path(f"/proc/{pid}").exists()
+def _proc_start_ticks(pid: int) -> int | None:
+    """Start time (clock ticks since boot) of the current occupant of pid.
+
+    Returns None when the pid is free or its stat is unreadable. A zombie is
+    reported as None: it can no longer be signaled meaningfully and its group
+    is gone or dying.
+    """
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return None
+    tail = stat.rpartition(")")[2].split()
+    try:
+        if tail[0] == "Z":
+            return None
+        return int(tail[19])
+    except (IndexError, ValueError):
+        return None
+
+
+def _run_process_alive(pid: int, expected_start: int | None) -> bool:
+    """Report whether pid is still occupied by the same process this row launched.
+
+    Rows without a recorded identity (legacy schema, or stat unreadable at
+    launch) can never be verified, so they are never treated as alive — they
+    reconcile to 'orphaned' and terminate refuses to signal them.
+    """
+    if expected_start is None:
+        return False
+    return _proc_start_ticks(pid) == expected_start
 
 
 def _reconcile(row: dict) -> dict:
-    if row["status"] == "running" and not _pid_alive(row["pid"]):
+    if row["status"] == "running" and not _run_process_alive(row["pid"], row.get("proc_start")):
         row["status"] = "orphaned"
     return row
 
@@ -171,42 +205,58 @@ def _reap(db_path: Path, run_id: str, process: subprocess.Popen) -> None:
         )
 
 
-def launch_run(request: RunRequest, config: ControlConfig) -> dict:
-    """Start batch_pipeline.py detached in its own process group and register it."""
-    config.control_dir.mkdir(parents=True, exist_ok=True)
-    live = [row for row in list_runs(config) if row["status"] == "running"]
-    if live:
-        raise RunConflictError(f"run {live[0]['run_id']} is still running")
-    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:6]
-    log_path = config.control_dir / f"run_{run_id}.log"
-    argv = request.to_argv(config)
+def _launch_env(config: ControlConfig) -> dict[str, str]:
+    """Pipeline child env: repo on PYTHONPATH, control token never inherited."""
     environment = {**os.environ, "PYTHONPATH": str(config.repo_root)}
-    with log_path.open("wb") as stream:
-        process = subprocess.Popen(
-            argv,
-            cwd=config.repo_root,
-            stdout=stream,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-            env=environment,
-        )
-    record = {
-        "run_id": run_id,
-        "created_at": _now(),
-        "finished_at": None,
-        "request_json": request.to_json(),
-        "argv_json": json.dumps(argv),
-        "pid": process.pid,
-        "log_path": str(log_path),
-        "status": "running",
-        "exit_code": None,
-    }
-    with _connect(config.db_path) as connection:
-        connection.execute(
-            "INSERT INTO runs VALUES (:run_id, :created_at, :finished_at, :request_json,"
-            " :argv_json, :pid, :log_path, :status, :exit_code)",
-            record,
-        )
+    environment.pop(CONTROL_TOKEN_ENV, None)
+    return environment
+
+
+def launch_run(request: RunRequest, config: ControlConfig) -> dict:
+    """Start batch_pipeline.py detached in its own process group and register it.
+
+    The single-flight guard, spawn, and registry insert run under an exclusive
+    file lock so a concurrent launcher (dashboard click vs systemd timer)
+    cannot both pass the guard.
+    """
+    config.control_dir.mkdir(parents=True, exist_ok=True)
+    with (config.control_dir / "launch.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        live = [row for row in list_runs(config) if row["status"] == "running"]
+        if live:
+            raise RunConflictError(f"run {live[0]['run_id']} is still running")
+        run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:6]
+        log_path = config.control_dir / f"run_{run_id}.log"
+        argv = request.to_argv(config)
+        with log_path.open("wb") as stream:
+            process = subprocess.Popen(
+                argv,
+                cwd=config.repo_root,
+                stdout=stream,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                env=_launch_env(config),
+            )
+        record = {
+            "run_id": run_id,
+            "created_at": _now(),
+            "finished_at": None,
+            "request_json": request.to_json(),
+            "argv_json": json.dumps(argv),
+            "pid": process.pid,
+            "log_path": str(log_path),
+            "status": "running",
+            "exit_code": None,
+            "proc_start": _proc_start_ticks(process.pid),
+        }
+        with _connect(config.db_path) as connection:
+            connection.execute(
+                "INSERT INTO runs (run_id, created_at, finished_at, request_json, argv_json,"
+                " pid, log_path, status, exit_code, proc_start)"
+                " VALUES (:run_id, :created_at, :finished_at, :request_json, :argv_json,"
+                " :pid, :log_path, :status, :exit_code, :proc_start)",
+                record,
+            )
     threading.Thread(target=_reap, args=(config.db_path, run_id, process), daemon=True).start()
     return record
 
@@ -221,7 +271,7 @@ def run_dry_run(request: RunRequest, config: ControlConfig, timeout: int = 120) 
         capture_output=True,
         text=True,
         timeout=timeout,
-        env={**os.environ, "PYTHONPATH": str(config.repo_root)},
+        env=_launch_env(config),
     )
     return result.stdout + result.stderr
 
@@ -247,17 +297,31 @@ def get_run(run_id: str, config: ControlConfig) -> dict:
 
 
 def terminate_run(run_id: str, config: ControlConfig, grace_seconds: float = 10.0) -> dict:
-    """SIGTERM the run's process group, escalate to SIGKILL after the grace period."""
+    """SIGTERM the run's process group, escalate to SIGKILL after the grace period.
+
+    Signals only after the pid's current occupant is verified to be the
+    launched process (get_run reconciles identity mismatches to 'orphaned').
+    A run that exits between the check and the signal is not an error.
+    """
     row = get_run(run_id, config)
     if row["status"] != "running":
         raise RunConflictError(f"run {run_id} is not running (status={row['status']})")
     pgid = row["pid"]
-    os.killpg(pgid, signal.SIGTERM)
+    expected_start = row.get("proc_start")
+    if not _run_process_alive(pgid, expected_start):
+        raise RunConflictError(f"run {run_id} process identity unverified; refusing to signal")
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except ProcessLookupError:
+        return get_run(run_id, config)
     deadline = time.monotonic() + grace_seconds
-    while time.monotonic() < deadline and _pid_alive(pgid):
+    while time.monotonic() < deadline and _run_process_alive(pgid, expected_start):
         time.sleep(0.25)
-    if _pid_alive(pgid):
-        os.killpg(pgid, signal.SIGKILL)
+    if _run_process_alive(pgid, expected_start):
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
     with _connect(config.db_path) as connection:
         connection.execute(
             "UPDATE runs SET status = 'terminated', finished_at = ? WHERE run_id = ?",

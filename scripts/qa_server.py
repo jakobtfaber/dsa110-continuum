@@ -767,7 +767,12 @@ class RunRequestBody(BaseModel):
 def _require_control_token(request: Request) -> None:
     expected = os.environ.get(CONTROL_TOKEN_ENV, "")
     provided = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
-    if not expected or not secrets.compare_digest(provided, expected):
+    try:
+        authorized = bool(expected) and secrets.compare_digest(provided, expected)
+    except TypeError:
+        # compare_digest rejects non-ASCII str (headers decode as latin-1)
+        authorized = False
+    if not authorized:
         raise HTTPException(status_code=403, detail="control token missing or invalid")
 
 

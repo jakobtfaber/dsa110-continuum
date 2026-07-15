@@ -939,3 +939,20 @@ class TestLightcurveView:
         )
         points = qa_server.lightcurve_points(config, 47.499, 17.0998, 30.0)
         assert [point["epoch"] for point in points] == ["2026-01-25T0200"]
+
+
+def test_non_ascii_authorization_header_is_403_not_500(monkeypatch):
+    monkeypatch.setenv("DSA110_CONTROL_TOKEN", "expected-token")
+    from fastapi import HTTPException
+    from starlette.requests import Request
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/runs",
+        "headers": [(b"authorization", "Bearer sekr\xedt".encode("latin-1"))],
+        "query_string": b"",
+    }
+    with pytest.raises(HTTPException) as excinfo:
+        qa_server._require_control_token(Request(scope))
+    assert excinfo.value.status_code == 403

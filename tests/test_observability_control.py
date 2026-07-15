@@ -1,10 +1,16 @@
 """Tests for the pipeline control module (launcher, registry, terminate)."""
 
+import json
+import os
+import signal
+import sqlite3
+import subprocess
 import sys
 import time
 from pathlib import Path
 
 import pytest
+from dsa110_continuum.observability import control as control_module
 from dsa110_continuum.observability.control import (
     ControlConfig,
     RunConflictError,
@@ -184,3 +190,85 @@ class TestLaunchAndReap:
         launch_run(RunRequest(date="2026-01-25"), config)
         with pytest.raises(KeyError):
             get_run("nope", config)
+
+
+class TestProcessIdentity:
+    """Criterion: a registry row may only be treated as live — and signaled —
+    when the current occupant of its PID is the same process that was launched
+    (verified via /proc/<pid>/stat start time). PID reuse after a reboot or
+    wraparound must reconcile to 'orphaned' and make terminate refuse; it must
+    never signal a stranger's process group. Basis: PR #117 review finding 1."""
+
+    def test_identity_mismatch_reconciles_orphaned_and_refuses_terminate(self, tmp_path):
+        _install_fake_pipeline(tmp_path, FAKE_SLEEPER)
+        config = _config(tmp_path)
+        record = launch_run(RunRequest(date="2026-01-25"), config)
+        try:
+            with sqlite3.connect(config.db_path) as connection:
+                connection.execute(
+                    "UPDATE runs SET proc_start = proc_start + 991 WHERE run_id = ?",
+                    (record["run_id"],),
+                )
+            assert get_run(record["run_id"], config)["status"] == "orphaned"
+            with pytest.raises(RunConflictError):
+                terminate_run(record["run_id"], config, grace_seconds=1.0)
+            assert Path(f"/proc/{record['pid']}").exists(), "refusal must not signal the pgid"
+        finally:
+            os.killpg(record["pid"], signal.SIGKILL)
+
+    def test_legacy_row_without_identity_is_orphaned_and_not_killable(self, tmp_path):
+        config = _config(tmp_path)
+        config.control_dir.mkdir(parents=True, exist_ok=True)
+        decoy = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(120)"], start_new_session=True
+        )
+        try:
+            with control_module._connect(config.db_path) as connection:
+                connection.execute(
+                    "INSERT INTO runs (run_id, created_at, finished_at, request_json,"
+                    " argv_json, pid, log_path, status, exit_code, proc_start)"
+                    " VALUES (?, ?, NULL, '{}', '[]', ?, ?, 'running', NULL, NULL)",
+                    ("legacy-1", "2026-07-15T00:00:00+00:00", decoy.pid, str(tmp_path / "x.log")),
+                )
+            assert get_run("legacy-1", config)["status"] == "orphaned"
+            with pytest.raises(RunConflictError):
+                terminate_run("legacy-1", config, grace_seconds=1.0)
+            assert decoy.poll() is None, "legacy row must never be signaled"
+        finally:
+            decoy.kill()
+            decoy.wait()
+
+    def test_terminate_survives_exit_race_without_error(self, tmp_path):
+        _install_fake_pipeline(tmp_path, FAKE_SLEEPER)
+        config = _config(tmp_path)
+        record = launch_run(RunRequest(date="2026-01-25"), config)
+        try:
+
+            def _gone(pgid, sig):
+                raise ProcessLookupError(pgid)
+
+            with pytest.MonkeyPatch.context() as patcher:
+                patcher.setattr(os, "killpg", _gone)
+                result = terminate_run(record["run_id"], config, grace_seconds=0.5)
+            assert result["run_id"] == record["run_id"]
+        finally:
+            os.killpg(record["pid"], signal.SIGKILL)
+
+    def test_child_env_excludes_control_token(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("DSA110_CONTROL_TOKEN", "sekrit-test-token")
+        body = (
+            "import json, os, sys, pathlib\n"
+            "pathlib.Path(sys.argv[sys.argv.index('--date') + 1] + '.env.json')"
+            ".write_text(json.dumps({'token': os.environ.get('DSA110_CONTROL_TOKEN'),"
+            " 'pythonpath': os.environ.get('PYTHONPATH')}))\n"
+        )
+        _install_fake_pipeline(tmp_path, body)
+        config = _config(tmp_path)
+        launch_run(RunRequest(date="2026-01-25"), config)
+        marker = tmp_path / "2026-01-25.env.json"
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline and not marker.exists():
+            time.sleep(0.1)
+        data = json.loads(marker.read_text())
+        assert data["token"] is None, "control token must not leak into pipeline env"
+        assert data["pythonpath"] == str(tmp_path)
