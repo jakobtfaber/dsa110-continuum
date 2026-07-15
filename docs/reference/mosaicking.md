@@ -28,6 +28,17 @@ RMS estimate: astropy.stats.mad_std (robust).
 Note: alignment_order parameter is deprecated and unused (builder.py line 64).
 No astrometric cross-matching or source-based alignment is performed.
 
+## Production image-domain coadd (`mosaic/production.py`)
+
+Canonical hourly-epoch Quicklook path: Sault inverse-variance coadd of
+PB-corrected tile FITS (`coadd_tiles_with_weights`). Each tile is reprojected
+with `reproject_interp` onto its **overlap-only output WCS cutout** (11-sample
+edge bounds, same geometry as `reproject.mosaicking.reproject_and_coadd`), then
+pasted into the full mosaic numerator/weight arrays. Empty/no-overlap tiles are
+skipped. `ProcessPoolExecutor` parallelization (`DSA110_COADD_WORKERS`) is
+unchanged. Full-grid reprojection remains available via
+`use_overlap_cutouts=False` for equivalence tests.
+
 ## SCIENCE/DEEP tier (build_wsclean_mosaic, wsclean_mosaic.py)
 
 Visibility-domain joint deconvolution. Scientifically correct for wide-field mosaics.

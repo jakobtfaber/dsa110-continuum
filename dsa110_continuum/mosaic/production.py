@@ -25,6 +25,9 @@ Tiles are combined with a per-pixel inverse-variance (Sault) weighted mean:
   covers).
 - RA wrap uses a circular mean so 0/360-degree tile sets stay compact.
 - Day-batch callers can still split disjoint tile sets with a 10-degree RA gap.
+- Per-tile reprojection uses an overlap-only output WCS cutout (11-sample
+  edge bounds), then pastes into the full mosaic; full-grid mode remains
+  available via ``use_overlap_cutouts=False`` for equivalence tests.
 """
 
 from __future__ import annotations
@@ -206,11 +209,217 @@ def _pb_map_for_tile(fits_path: str, data_pb: np.ndarray) -> tuple[np.ndarray | 
     return None, "none"
 
 
+def _default_coadd_workers() -> int:
+    """Parallel reproject worker count (env ``DSA110_COADD_WORKERS``, default ≤8)."""
+    raw = os.environ.get("DSA110_COADD_WORKERS", "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            log.warning("Ignoring invalid DSA110_COADD_WORKERS=%r", raw)
+    ncpu = (
+        len(os.sched_getaffinity(0))
+        if hasattr(os, "sched_getaffinity")
+        else (os.cpu_count() or 4)
+    )
+    return max(1, min(8, ncpu))
+
+
+def _sample_array_edges(shape: tuple[int, ...], *, n_samples: int = 11) -> np.ndarray:
+    """Sample pixel coordinates along each edge of an N-D array (incl. corners).
+
+    Mirrors ``reproject.array_utils.sample_array_edges`` so overlap bounds stay
+    conservative under SIN/TAN edge bow without depending on that private helper.
+    Returns an array of shape ``(ndim, n_points)`` in array-axis order.
+    """
+    all_positions: list[np.ndarray] = []
+    ndim = len(shape)
+    shape_arr = np.asarray(shape, dtype=int)
+    for idim in range(ndim):
+        for vertex in range(2**ndim):
+            positions = -0.5 + shape_arr * ((vertex & (2 ** np.arange(ndim))) > 0).astype(int)
+            positions = np.broadcast_to(positions, (n_samples, ndim)).copy()
+            positions[:, idim] = np.linspace(-0.5, shape_arr[idim] - 0.5, n_samples)
+            all_positions.append(positions)
+    return np.unique(np.vstack(all_positions), axis=0).T
+
+
+def _overlap_output_bounds(
+    in_wcs: WCS,
+    out_wcs: WCS,
+    shape_in: tuple[int, int],
+    shape_out: tuple[int, int],
+    *,
+    n_samples: int = 11,
+) -> tuple[int, int, int, int] | None:
+    """Return ``(ymin, ymax, xmin, xmax)`` covering the input on the output grid.
+
+    Uses an 11-sample edge map (same geometry as
+    ``reproject.mosaicking.reproject_and_coadd``). Returns ``None`` when the
+    predicted overlap is empty. If any edge sample lacks valid coordinates,
+    falls back to the full output grid (safe for all-sky / blank corners).
+    """
+    ny_out, nx_out = shape_out
+    # sample_array_edges returns (y, x) for shape (ny, nx); flip to (x, y)
+    # for WCS pixel transforms, then flip the result back to (y, x).
+    edges_yx = _sample_array_edges(shape_in, n_samples=n_samples)
+    edges_xy = edges_yx[::-1]
+    try:
+        from astropy.wcs.utils import pixel_to_pixel
+
+        edges_out_xy = pixel_to_pixel(in_wcs, out_wcs, *edges_xy)
+        edges_out_yx = edges_out_xy[::-1]
+    except Exception:  # noqa: BLE001 — fall back to world round-trip
+        world = in_wcs.pixel_to_world(*edges_xy)
+        x_out, y_out = out_wcs.world_to_pixel(world)
+        edges_out_yx = (y_out, x_out)
+
+    if np.any(~np.isfinite(edges_out_yx[0]) | ~np.isfinite(edges_out_yx[1])):
+        return 0, ny_out, 0, nx_out
+
+    ymin = max(0, int(np.floor(float(np.min(edges_out_yx[0])) + 0.5)))
+    ymax = min(ny_out, int(np.ceil(float(np.max(edges_out_yx[0])) + 0.5)))
+    xmin = max(0, int(np.floor(float(np.min(edges_out_yx[1])) + 0.5)))
+    xmax = min(nx_out, int(np.ceil(float(np.max(edges_out_yx[1])) + 0.5)))
+    if ymax <= ymin or xmax <= xmin:
+        return None
+    return ymin, ymax, xmin, xmax
+
+
+def _sault_reproject_one_tile(
+    path: str,
+    out_header_bytes: bytes,
+    ny: int,
+    nx: int,
+    use_overlap_cutouts: bool = True,
+) -> dict:
+    """Reproject one tile's Sault numerator/weight planes onto the mosaic grid.
+
+    Module-level so :class:`concurrent.futures.ProcessPoolExecutor` can pickle
+    it. Returns a dict with ``ok``, cutout arrays + destination offsets (when
+    successful), or ``skipped`` when the tile has no predicted output overlap.
+    """
+    from astropy.io import fits as _fits
+
+    name = Path(path).name
+    out_header = _fits.Header.fromstring(out_header_bytes)
+    try:
+        from reproject import reproject_interp
+    except ModuleNotFoundError:
+        reproject_interp = None
+
+    with _fits.open(path) as hdul:
+        data = hdul[0].data.squeeze().astype(np.float64)
+        hdr = hdul[0].header
+
+    in_wcs = WCS(hdr).celestial
+    out_wcs_local = WCS(out_header)
+
+    if use_overlap_cutouts:
+        bounds = _overlap_output_bounds(in_wcs, out_wcs_local, data.shape, (ny, nx))
+        if bounds is None:
+            return {"ok": True, "skipped": True, "name": name}
+        ymin, ymax, xmin, xmax = bounds
+    else:
+        ymin, ymax, xmin, xmax = 0, ny, 0, nx
+
+    cut_ny, cut_nx = ymax - ymin, xmax - xmin
+    out_wcs_cut = out_wcs_local[ymin:ymax, xmin:xmax]
+    out_header_cut = out_wcs_cut.to_header()
+    out_header_cut["NAXIS1"] = cut_nx
+    out_header_cut["NAXIS2"] = cut_ny
+
+    pb, pb_source = _pb_map_for_tile(path, data)
+    if pb is None:
+        pb = np.ones_like(data)
+        pb_source = "uniform (no PB source)"
+
+    flat_plane = data * pb
+    cy, cx = data.shape[0] // 2, data.shape[1] // 2
+    margin = 200
+    inner = flat_plane[
+        max(0, cy - margin) : cy + margin,
+        max(0, cx - margin) : cx + margin,
+    ]
+    inner_finite = inner[np.isfinite(inner)]
+    noise = float(np.std(inner_finite)) if inner_finite.size else 0.0
+    if noise <= 0 or not np.isfinite(noise):
+        noise = 1.0
+    w_tile = 1.0 / (noise**2)
+
+    wmap = w_tile * pb**2
+    invalid = ~np.isfinite(data) | ~np.isfinite(pb) | (pb < PB_CUTOFF)
+    wmap[invalid] = 0.0
+    num_plane = np.where(invalid, 0.0, wmap * data)
+    support_plane = (~invalid).astype(np.float64)
+    n_floor = int(((pb < PB_CUTOFF) & np.isfinite(pb)).sum())
+
+    try:
+        if reproject_interp is None:
+            num_reproj, footprint = _nearest_reproject(
+                num_plane, in_wcs, out_wcs_cut, (cut_ny, cut_nx)
+            )
+            w_reproj, _ = _nearest_reproject(wmap, in_wcs, out_wcs_cut, (cut_ny, cut_nx))
+            support_reproj, _ = _nearest_reproject(
+                support_plane,
+                in_wcs,
+                out_wcs_cut,
+                (cut_ny, cut_nx),
+            )
+        else:
+            num_reproj, footprint = reproject_interp(
+                (num_plane, in_wcs),
+                out_header_cut,
+                shape_out=(cut_ny, cut_nx),
+            )
+            w_reproj, _ = reproject_interp(
+                (wmap, in_wcs),
+                out_header_cut,
+                shape_out=(cut_ny, cut_nx),
+            )
+            # Interpolating the zeroed weight plane alone can leak weight
+            # back into PB-rejected pixels from valid neighbours. Reproject
+            # the boolean support with nearest-neighbour sampling and use it
+            # as the authoritative cutoff mask on the output grid.
+            support_reproj, _ = reproject_interp(
+                (support_plane, in_wcs),
+                out_header_cut,
+                shape_out=(cut_ny, cut_nx),
+                order="nearest-neighbor",
+            )
+    except Exception as exc:  # noqa: BLE001 — worker must not kill the pool
+        return {"ok": False, "name": name, "error": str(exc)}
+
+    valid = (
+        footprint.astype(bool)
+        & np.isfinite(num_reproj)
+        & np.isfinite(w_reproj)
+        & np.isfinite(support_reproj)
+        & (support_reproj >= 0.5)
+    )
+    return {
+        "ok": True,
+        "skipped": False,
+        "name": name,
+        "num": np.asarray(num_reproj, dtype=np.float64),
+        "weight": np.asarray(w_reproj, dtype=np.float64),
+        "valid": valid,
+        "y0": int(ymin),
+        "x0": int(xmin),
+        "noise": noise,
+        "n_floor": n_floor,
+        "pb_source": pb_source,
+    }
+
+
 def coadd_tiles_with_weights(
     fits_paths: list[str],
     out_wcs: WCS,
     ny: int,
     nx: int,
+    *,
+    max_workers: int | None = None,
+    use_overlap_cutouts: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return the Sault-weighted mosaic and accumulated inverse-variance plane.
 
@@ -219,111 +428,107 @@ def coadd_tiles_with_weights(
     (1 / sigma_flat^2) * PB^2 (Sault weighting). The weighted-numerator and
     weight planes are reprojected identically and accumulated, and the mosaic
     is their ratio.
+
+    By default each tile is reprojected only onto its predicted output-WCS
+    overlap cutout (then pasted into the full mosaic arrays). Set
+    ``use_overlap_cutouts=False`` to force full-grid reprojection (tests /
+    equivalence checks).
+
+    Parameters
+    ----------
+    max_workers
+        Parallel tile reprojections via :class:`~concurrent.futures.ProcessPoolExecutor`.
+        ``None`` uses :func:`_default_coadd_workers` (env ``DSA110_COADD_WORKERS``,
+        capped at 8). ``1`` forces the serial path (tests / debugging).
+    use_overlap_cutouts
+        If ``True`` (default), reproject each tile onto its overlap bounding
+        box only. If ``False``, reproject onto the full ``(ny, nx)`` grid.
     """
-    try:
-        from reproject import reproject_interp
-    except ModuleNotFoundError:
-        reproject_interp = None
+    from concurrent.futures import ProcessPoolExecutor, as_completed
 
     sum_image = np.zeros((ny, nx), dtype=np.float64)
     sum_weight = np.zeros((ny, nx), dtype=np.float64)
     out_header = out_wcs.to_header()
     out_header["NAXIS1"] = nx
     out_header["NAXIS2"] = ny
+    # Binary round-trip preserves WCS float precision across process boundaries
+    # (Header.items() stringifies values and can perturb CRVAL/CDELT).
+    out_header_bytes = out_header.tostring()
 
-    for path in fits_paths:
-        log.info("Reprojecting %s ...", Path(path).name)
-        with fits.open(path) as hdul:
-            data = hdul[0].data.squeeze().astype(np.float64)
-            hdr = hdul[0].header
+    workers = _default_coadd_workers() if max_workers is None else max(1, int(max_workers))
+    workers = min(workers, max(1, len(fits_paths)))
 
-        pb, pb_source = _pb_map_for_tile(path, data)
-        if pb is None:
+    def _accumulate(result: dict, *, announce: bool = True) -> None:
+        if not result.get("ok"):
+            log.warning(
+                "Reproject failed for %s: %s; skipping",
+                result.get("name", "?"),
+                result.get("error", "unknown"),
+            )
+            return
+        if result.get("skipped"):
+            log.info("Skipping %s (no overlap with mosaic grid)", result["name"])
+            return
+        if announce:
+            log.info("Finished reprojecting %s", result["name"])
+        if result["pb_source"].startswith("uniform"):
             log.warning(
                 "  No PB source for %s (no -image sibling, no beam maps); "
                 "using uniform weight over the tile footprint",
-                Path(path).name,
+                result["name"],
             )
-            pb = np.ones_like(data)
         else:
-            log.info("  PB source: %s", pb_source)
-
-        # Per-tile scalar weight from flat-noise rms: PB-corrected central box
-        # has PB ~ 1 there, so measure on data * pb (the flat-noise plane).
-        flat_plane = data * pb
-        cy, cx = data.shape[0] // 2, data.shape[1] // 2
-        margin = 200
-        inner = flat_plane[
-            max(0, cy - margin) : cy + margin,
-            max(0, cx - margin) : cx + margin,
-        ]
-        inner_finite = inner[np.isfinite(inner)]
-        noise = float(np.std(inner_finite)) if inner_finite.size else 0.0
-        if noise <= 0 or not np.isfinite(noise):
-            noise = 1.0
-        w_tile = 1.0 / (noise**2)
-
-        # Per-pixel weight plane; PB_CUTOFF is a numerical floor, not blanking
-        # science: below it PB^2 weight is negligible and the ratio-derived PB
-        # gets noisy.
-        wmap = w_tile * pb**2
-        invalid = ~np.isfinite(data) | ~np.isfinite(pb) | (pb < PB_CUTOFF)
-        wmap[invalid] = 0.0
-        num_plane = np.where(invalid, 0.0, wmap * data)
-        support_plane = (~invalid).astype(np.float64)
-        n_floor = int(((pb < PB_CUTOFF) & np.isfinite(pb)).sum())
+            log.info("  PB source: %s", result["pb_source"])
         log.info(
             "  Sault weights: sigma_flat=%.4g, floor(PB<%.0f%%) zeroed %d px",
-            noise,
+            result["noise"],
             PB_CUTOFF * 100,
-            n_floor,
+            result["n_floor"],
         )
+        valid = result["valid"]
+        y0 = int(result["y0"])
+        x0 = int(result["x0"])
+        cut_ny, cut_nx = valid.shape
+        dest_num = sum_image[y0 : y0 + cut_ny, x0 : x0 + cut_nx]
+        dest_weight = sum_weight[y0 : y0 + cut_ny, x0 : x0 + cut_nx]
+        dest_num[valid] += result["num"][valid]
+        dest_weight[valid] += result["weight"][valid]
 
-        in_wcs = WCS(hdr).celestial
-        if reproject_interp is None:
-            num_reproj, footprint = _nearest_reproject(num_plane, in_wcs, out_wcs, (ny, nx))
-            w_reproj, _ = _nearest_reproject(wmap, in_wcs, out_wcs, (ny, nx))
-            support_reproj, _ = _nearest_reproject(
-                support_plane,
-                in_wcs,
-                out_wcs,
-                (ny, nx),
+    if workers <= 1 or len(fits_paths) <= 1:
+        for path in fits_paths:
+            log.info("Reprojecting %s ...", Path(path).name)
+            _accumulate(
+                _sault_reproject_one_tile(
+                    path,
+                    out_header_bytes,
+                    ny,
+                    nx,
+                    use_overlap_cutouts,
+                ),
+                announce=False,
             )
-        else:
-            try:
-                num_reproj, footprint = reproject_interp(
-                    (num_plane, in_wcs),
-                    out_header,
-                    shape_out=(ny, nx),
-                )
-                w_reproj, _ = reproject_interp(
-                    (wmap, in_wcs),
-                    out_header,
-                    shape_out=(ny, nx),
-                )
-                # Interpolating the zeroed weight plane alone can leak weight
-                # back into PB-rejected pixels from valid neighbours. Reproject
-                # the boolean support with nearest-neighbour sampling and use it
-                # as the authoritative cutoff mask on the output grid.
-                support_reproj, _ = reproject_interp(
-                    (support_plane, in_wcs),
-                    out_header,
-                    shape_out=(ny, nx),
-                    order="nearest-neighbor",
-                )
-            except Exception as exc:
-                log.warning("Reproject failed for %s: %s; skipping", Path(path).name, exc)
-                continue
-
-        valid = (
-            footprint.astype(bool)
-            & np.isfinite(num_reproj)
-            & np.isfinite(w_reproj)
-            & np.isfinite(support_reproj)
-            & (support_reproj >= 0.5)
+    else:
+        log.info(
+            "Parallel Sault coadd: %d tiles, max_workers=%d, cutouts=%s "
+            "(set DSA110_COADD_WORKERS to override)",
+            len(fits_paths),
+            workers,
+            use_overlap_cutouts,
         )
-        sum_image[valid] += num_reproj[valid]
-        sum_weight[valid] += w_reproj[valid]
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            futures = [
+                pool.submit(
+                    _sault_reproject_one_tile,
+                    path,
+                    out_header_bytes,
+                    ny,
+                    nx,
+                    use_overlap_cutouts,
+                )
+                for path in fits_paths
+            ]
+            for fut in as_completed(futures):
+                _accumulate(fut.result())
 
     with np.errstate(invalid="ignore", divide="ignore"):
         mosaic = np.where(sum_weight > 0, sum_image / sum_weight, np.nan)
