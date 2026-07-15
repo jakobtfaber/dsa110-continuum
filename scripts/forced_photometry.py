@@ -121,7 +121,11 @@ def run_forced_photometry(
     Returns
     -------
     dict
-        ``{"n_sources": int, "median_ratio": float, "csv_path": str}``
+        ``n_sources`` (measurements written, post sanity gate),
+        ``n_flux_rejected`` + ``flux_rejected_reasons`` (per-measurement
+        sanity gate, issue #134), ``median_ratio``, ``csv_path``, and the
+        noise-floor QA fields. The CSV follows the canonical contract in
+        ``dsa110_continuum.photometry.phot_csv`` (issue #133).
     """
     if not Path(mosaic_path).exists():
         raise FileNotFoundError(f"Mosaic not found: {mosaic_path}")
@@ -323,12 +327,18 @@ def run_forced_photometry(
     # gate and is the single sanctioned *_forced_phot.csv writer.
     from dsa110_continuum.photometry.phot_csv import write_forced_phot_csv
 
-    write_stats = write_forced_phot_csv(rows, out_csv) if rows else {
-        "n_written": 0, "n_rejected": 0, "rejected_reasons": [],
-        "median_ratio": float("nan"), "path": str(out_csv),
-    }
-    if not rows:
-        Path(out_csv).write_text("")  # sim_mode may legitimately measure nothing
+    if rows:
+        write_stats = write_forced_phot_csv(rows, out_csv)
+    else:
+        # sim_mode may legitimately measure nothing; keep a header-only
+        # canonical CSV so downstream readers see the contract, not EOF.
+        from dsa110_continuum.photometry.phot_csv import CANONICAL_COLUMNS
+
+        Path(out_csv).write_text(",".join(CANONICAL_COLUMNS) + "\n")
+        write_stats = {
+            "n_written": 0, "n_rejected": 0, "rejected_reasons": [],
+            "median_ratio": float("nan"), "path": str(out_csv),
+        }
     n_written = write_stats["n_written"]
     n_flux_rejected = write_stats["n_rejected"]
 
