@@ -143,6 +143,30 @@ class TestGenerateMultiple:
         assert convert.call_args.args[0] == [D1_GROUP]
 
 
+class TestConvertGroupsAcceptsTimestampStrings:
+    """select_groups_by_position returns timestamp strings; convert_groups must
+    treat a string group as the group timestamp, not a file list (regression:
+    it indexed the string, so Time("2", format="isot") raised ValueError and
+    auto-cal table generation always failed)."""
+
+    def test_string_group_uses_full_timestamp_window(self, generator):
+        import astropy.units as u
+
+        def fake_convert(**kwargs):
+            Path(kwargs["output_dir"], f"{kwargs['start_time']}.ms").mkdir(parents=True)
+
+        with patch(
+            "dsa110_continuum.conversion.convert_subband_groups_to_ms",
+            side_effect=fake_convert,
+        ) as conv:
+            ms_paths = generator.convert_groups([D1_GROUP])
+
+        kwargs = conv.call_args.kwargs
+        assert kwargs["start_time"] == D1_GROUP
+        assert kwargs["end_time"] == (Time(D1_GROUP, format="isot") + 2 * u.minute).isot
+        assert ms_paths == [generator.output_dir / f"{D1_GROUP}.ms"]
+
+
 class TestSiderealDayScoping:
     """Correctness criterion (analytic): in drift scan the same RA transits
     once per mean sidereal day (86164.0905 s = 1436.07 min). A positionally
