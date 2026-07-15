@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import html
 import json
@@ -11,6 +12,8 @@ import re
 import secrets
 import shutil
 import subprocess
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -66,6 +69,10 @@ EPOCHS = [
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 EPOCH_RE = re.compile(r"T\d{4}")
 PROCESS_NAMES = ("batch_pipeline.py", "wsclean", "aoflagger")
+_METRICS_CACHE_MAX_ENTRIES = 128
+_metrics_cache: OrderedDict[tuple[object, ...], dict] = OrderedDict()
+_metrics_cache_lock = threading.Lock()
+_metrics_inflight: dict[tuple[object, ...], threading.Event] = {}
 
 
 def _config(request: Request) -> DashboardConfig:
@@ -191,10 +198,20 @@ def discover_epochs(config: DashboardConfig, limit: int = 24) -> list[tuple[str,
     return discovered or EPOCHS
 
 
-def get_metrics(config: DashboardConfig, date: str, epoch: str) -> dict:
-    """Measure the legacy QA fields for one hourly-epoch mosaic."""
-    fits_path = find_mosaic(config, date, epoch)
-    csv_path = find_csv(config, date, epoch)
+def _metric_file_signature(path: Path | None) -> tuple[object, ...] | None:
+    """Return a cache signature that changes whenever a metric input changes."""
+    if path is None:
+        return None
+    try:
+        stat = path.stat()
+    except OSError:
+        # File vanished between discovery and stat; keep distinct from the no-file case.
+        return str(path), "unstattable"
+    return str(path), stat.st_mtime_ns, stat.st_size
+
+
+def _compute_metrics(fits_path: Path | None, csv_path: Path | None, date: str, epoch: str) -> dict:
+    """Compute QA fields from fixed mosaic and photometry inputs."""
     metrics = {
         "date": date,
         "epoch": epoch,
@@ -242,6 +259,43 @@ def get_metrics(config: DashboardConfig, date: str, epoch: str) -> dict:
     else:
         metrics["status"] = "no_phot"
     return metrics
+
+
+def get_metrics(config: DashboardConfig, date: str, epoch: str) -> dict:
+    """Measure one mosaic once per input revision and return an isolated result copy."""
+    fits_path = find_mosaic(config, date, epoch)
+    csv_path = find_csv(config, date, epoch)
+    key = (
+        date,
+        epoch,
+        _metric_file_signature(fits_path),
+        _metric_file_signature(csv_path),
+    )
+    while True:
+        with _metrics_cache_lock:
+            cached = _metrics_cache.get(key)
+            if cached is not None:
+                _metrics_cache.move_to_end(key)
+                return copy.deepcopy(cached)
+            event = _metrics_inflight.get(key)
+            if event is None:
+                event = threading.Event()
+                _metrics_inflight[key] = event
+                break
+        # Another request is computing this exact key; wait and reuse its result.
+        event.wait()
+    try:
+        metrics = _compute_metrics(fits_path, csv_path, date, epoch)
+        with _metrics_cache_lock:
+            _metrics_cache[key] = metrics
+            _metrics_cache.move_to_end(key)
+            while len(_metrics_cache) > _METRICS_CACHE_MAX_ENTRIES:
+                _metrics_cache.popitem(last=False)
+    finally:
+        with _metrics_cache_lock:
+            _metrics_inflight.pop(key, None)
+        event.set()
+    return copy.deepcopy(metrics)
 
 
 def make_thumbnail(config: DashboardConfig, date: str, epoch: str) -> Path | None:
@@ -694,7 +748,7 @@ def render_dashboard(config: DashboardConfig) -> str:
 
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DSA-110 Continuum Observatory</title>
+<title>DSA-110 Continuum Imaging Dashboard</title>
 <style>
 :root{{--ink:#e8edf2;--muted:#87919d;--panel:#171b20;--line:#2a3038;--blue:#4eb8ff;--green:#41c97a}}
 *{{box-sizing:border-box}} body{{background:#0d1014;color:var(--ink);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0}}
@@ -715,7 +769,7 @@ pre{{background:#090b0e;color:#b9c6d0;border-radius:6px;padding:12px;margin:0;ma
 .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}} .mosaic-card{{background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:hidden}} .mosaic-card header,.mosaic-card footer{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px}} .mosaic-card img{{display:block;width:100%;min-height:140px;object-fit:cover;background:#090b0e}} .mosaic-card footer{{font-size:.75rem;color:#aeb7c0;flex-wrap:wrap}} .empty{{display:grid;place-items:center;min-height:140px;background:#101318;color:#5d6670}} .empty-row{{color:var(--muted)}}
 @media(max-width:850px){{.stage-grid,.info-grid{{grid-template-columns:repeat(2,1fr)}}.ops-grid{{grid-template-columns:1fr}}}} @media(max-width:560px){{.shell{{padding:16px}}.summary,.stage-grid,.info-grid{{grid-template-columns:1fr 1fr}}.grid{{grid-template-columns:1fr}}}}
 </style><script>setTimeout(()=>{{const token=document.getElementById("control-token");if(!token||!token.value)location.reload();}},30000)</script></head>
-<body><main class="shell"><h1>DSA-110 Continuum Observatory</h1><div class="subtitle">Updated {now} · auto-refresh 30s · read-only ·
+<body><main class="shell"><h1>DSA-110 Continuum Imaging Dashboard</h1><div class="subtitle">Updated {now} · auto-refresh 30s · read-only ·
 <a href="/artifacts/caltable/">caltables</a> · <a href="/artifacts/tile/">tiles</a> · <a href="/artifacts/ms/">measurement sets</a></div>
 <section class="campaign"><div class="campaign-head"><div><h2>Active campaign · {campaign["date"]} hour {campaign["hour"]:02d}</h2><p>Hourly-epoch mosaic progress from incoming HDF5 through science products</p></div>{_badge("active" if processes else "not_yet", "process visible" if processes else ("PID recorded" if campaign["pid_hints"] else "process not visible"))}</div>
 <div class="stage-grid">{"".join(stage_cards)}</div><div class="info-grid">{"".join(disk_cards)}
@@ -1108,7 +1162,7 @@ def create_app(config: DashboardConfig | None = None) -> FastAPI:
 
     dashboard_config = config or DashboardConfig()
     dashboard_config.thumb_dir.mkdir(parents=True, exist_ok=True)
-    application = FastAPI(title="DSA-110 Continuum Observatory", version="2.0")
+    application = FastAPI(title="DSA-110 Continuum Imaging Dashboard", version="2.0")
     application.state.dashboard_config = dashboard_config
     application.include_router(mosaic_router)
     application.include_router(caltable_router)
