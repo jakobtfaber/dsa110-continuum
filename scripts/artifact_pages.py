@@ -6,7 +6,7 @@ import html
 import json
 from pathlib import Path
 
-from dsa110_continuum.observability import artifacts, caltable_qa, ms_qa, tile_qa
+from dsa110_continuum.observability import artifacts, caltable_qa, job_state, ms_qa, tile_qa
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 
@@ -24,7 +24,13 @@ border-radius:999px;font-size:.68rem;font-weight:800}
 padding:10px}
 .plot-grid img{width:100%;background:#090b0e;border-radius:4px;min-height:80px}
 .plot-grid figcaption{font-size:.75rem;color:#87919d;margin-top:6px}
-.muted{color:#87919d}</style>"""
+.muted{color:#87919d}
+pre{background:#090b0e;color:#b9c6d0;border-radius:6px;padding:12px;max-height:260px;
+overflow:auto;font-size:.72rem;line-height:1.45;white-space:pre-wrap}
+.process-list{list-style:none;padding:0;margin:0}
+.process-list li{display:flex;gap:10px;padding:6px 0;border-top:1px solid #2a3038;
+font-size:.76rem} .process-list li:first-child{border:0}
+.process-list span{word-break:break-all;color:#bdc6cf}</style>"""
 
 
 def _badge(state: str, label: str) -> str:
@@ -75,6 +81,33 @@ def _related_row(related: dict) -> str:
         )
     links.append(f'<a href="/runs/{related["date"]}">run {related["date"]}</a>')
     return " · ".join(links)
+
+
+def _job_card(job: dict) -> str:
+    """Render the in-flight job section for one artifact (#57)."""
+    if not job.get("active"):
+        return '<h2>In-flight job</h2><p class="muted">No active job touching this artifact</p>'
+    rows = []
+    for proc in job.get("processes", []):
+        rows.append(
+            f"<li><code>PID {proc['pid']}</code> <span>{html.escape(proc['command'])}</span></li>"
+        )
+    for proc in job.get("batch", []):
+        rows.append(
+            f"<li><code>PID {proc['pid']}</code> "
+            f"<span>date-level batch: {html.escape(proc['command'])}</span></li>"
+        )
+    process_html = f'<ul class="process-list">{"".join(rows)}</ul>' if rows else ""
+    runs_html = ""
+    for run in job.get("runs", []):
+        run_id = html.escape(str(run.get("run_id")))
+        tail = html.escape("\n".join(run.get("log_lines") or []) or "no matching log lines yet")
+        runs_html += (
+            f'<p class="muted">run <a href="/control/runs/{run_id}">{run_id}</a>'
+            f" · PID {run.get('pid')} · {html.escape(str(run.get('log_path')))}</p>"
+            f"<pre>{tail}</pre>"
+        )
+    return f"<h2>In-flight job</h2>{process_html}{runs_html}"
 
 
 def _cached_summary(config, category: str, name: str, source: Path, builder) -> dict:
@@ -139,6 +172,7 @@ def caltable_status(name: str, request: Request):
         "summary": summary,
         "related": artifacts.related_artifacts(Path(config.stage), name[:19]),
         "plot_kinds": list(caltable_qa.plot_kinds(name)),
+        "job": job_state.jobs_for_timestamp(name[:19]),
     }
 
 
@@ -209,6 +243,7 @@ def caltable_page(name: str, request: Request):
         or '<tr><td colspan="3" class="muted">—</td></tr>'
     )
     related = artifacts.related_artifacts(Path(config.stage), name[:19])
+    job = job_state.jobs_for_timestamp(name[:19])
     cal_type = caltable_qa.caltable_type(name)
     return _page(
         f"Caltable {name}",
@@ -218,6 +253,7 @@ def caltable_page(name: str, request: Request):
 modified {html.escape(record["modified"][:19])} ·
 <a href="/artifacts/caltable/{html.escape(name)}/status">JSON</a></p>
 <p>{_related_row(related)}</p>{summary_note}
+{_job_card(job)}
 <h2>Provenance</h2>{prov_html}
 <h2>Quality metrics</h2><table><tbody>{quality_rows}</tbody></table>
 <h2>Per-SPW flagging</h2>
@@ -284,6 +320,7 @@ def tile_status(name: str, request: Request):
         "summary": summary,
         "related": artifacts.related_artifacts(Path(config.stage), name),
         "plot_kinds": list(tile_qa.plot_kinds(products, ms_path is not None)),
+        "job": job_state.jobs_for_timestamp(name),
     }
 
 
@@ -345,12 +382,14 @@ def tile_page(name: str, request: Request):
         for key, path in products.items()
     )
     related = artifacts.related_artifacts(Path(config.stage), name)
+    job = job_state.jobs_for_timestamp(name)
     return _page(
         f"Tile {name}",
         f"""
 <h1>Single-tile FITS · {name} {gate_badge}</h1>
 <p class="muted"><a href="/artifacts/tile/{name}/status">JSON</a></p>
 <p>{_related_row(related)}</p>{note}
+{_job_card(job)}
 <h2>QA gate</h2><table><tbody>{gate_rows}</tbody></table>
 <h2>Products</h2><table><tbody>{product_rows}</tbody></table>
 <h2>Diagnostics</h2>{_plot_grid(f"/artifacts/tile/{name}", tile_qa.plot_kinds(products, ms_path is not None))}""",
@@ -374,12 +413,15 @@ def ms_index(request: Request):
     """List the newest Measurement Sets on stage."""
     config = _config(request)
     records = artifacts.list_ms(Path(config.stage) / "ms")
-    rows = "".join(
-        f'<tr><td><a href="/artifacts/ms/{html.escape(record["name"])}">'
-        f"{html.escape(record['name'])}</a></td>"
-        f"<td>{html.escape(record['modified'][:19])}</td></tr>"
-        for record in records
-    ) or '<tr><td colspan="2" class="muted">No Measurement Sets on stage</td></tr>'
+    rows = (
+        "".join(
+            f'<tr><td><a href="/artifacts/ms/{html.escape(record["name"])}">'
+            f"{html.escape(record['name'])}</a></td>"
+            f"<td>{html.escape(record['modified'][:19])}</td></tr>"
+            for record in records
+        )
+        or '<tr><td colspan="2" class="muted">No Measurement Sets on stage</td></tr>'
+    )
     return _page(
         "Measurement Sets",
         f"""<h1>Measurement Sets</h1>
@@ -402,6 +444,7 @@ def ms_status(name: str, request: Request):
         "summary": summary,
         "related": artifacts.related_artifacts(Path(config.stage), name[:19]),
         "plot_kinds": list(ms_qa.plot_kinds(path)),
+        "job": job_state.jobs_for_timestamp(name[:19]),
     }
 
 
@@ -444,6 +487,7 @@ def ms_page(name: str, request: Request):
         summary = {}
         note = f'<p class="muted">metrics unavailable: {html.escape(str(exc))}</p>'
     related = artifacts.related_artifacts(Path(config.stage), name[:19])
+    job = job_state.jobs_for_timestamp(name[:19])
     lifecycle = [
         ("Calibration tables", bool(related["caltables"])),
         ("Tile image", related["tile"] is not None),
@@ -454,10 +498,13 @@ def ms_page(name: str, request: Request):
         f"<td>{_badge('pass' if done else 'warn', 'ready' if done else 'not yet')}</td></tr>"
         for stage_name, done in lifecycle
     )
-    summary_rows = "".join(
-        f"<tr><th>{html.escape(str(key))}</th><td>{html.escape(str(value))}</td></tr>"
-        for key, value in summary.items()
-    ) or '<tr><td colspan="2" class="muted">—</td></tr>'
+    summary_rows = (
+        "".join(
+            f"<tr><th>{html.escape(str(key))}</th><td>{html.escape(str(value))}</td></tr>"
+            for key, value in summary.items()
+        )
+        or '<tr><td colspan="2" class="muted">—</td></tr>'
+    )
     return _page(
         f"MS {name}",
         f"""
@@ -466,6 +513,7 @@ def ms_page(name: str, request: Request):
 modified {html.escape(record["modified"][:19])} ·
 <a href="/artifacts/ms/{html.escape(name)}/status">JSON</a></p>
 <p>{_related_row(related)}</p>{note}
+{_job_card(job)}
 <h2>Lifecycle</h2><table><tbody>{lifecycle_rows}</tbody></table>
 <h2>Summary</h2><table><tbody>{summary_rows}</tbody></table>
 <h2>Diagnostics</h2>{_plot_grid(f"/artifacts/ms/{html.escape(name)}", ms_qa.plot_kinds(path))}""",
