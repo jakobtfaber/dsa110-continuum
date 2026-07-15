@@ -6,7 +6,7 @@ import html
 import json
 from pathlib import Path
 
-from dsa110_continuum.observability import artifacts, caltable_qa, tile_qa
+from dsa110_continuum.observability import artifacts, caltable_qa, ms_qa, tile_qa
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 
@@ -46,7 +46,8 @@ def _page(title: str, body: str) -> HTMLResponse:
 <title>{html.escape(title)}</title>{_STYLE}</head>
 <body><main class="shell"><p><a href="/">← Dashboard</a> ·
 <a href="/artifacts/caltable/">caltables</a> ·
-<a href="/artifacts/tile/">tiles</a></p>{body}</main></body></html>"""
+<a href="/artifacts/tile/">tiles</a> ·
+<a href="/artifacts/ms/">measurement sets</a></p>{body}</main></body></html>"""
     )
 
 
@@ -353,4 +354,119 @@ def tile_page(name: str, request: Request):
 <h2>QA gate</h2><table><tbody>{gate_rows}</tbody></table>
 <h2>Products</h2><table><tbody>{product_rows}</tbody></table>
 <h2>Diagnostics</h2>{_plot_grid(f"/artifacts/tile/{name}", tile_qa.plot_kinds(products, ms_path is not None))}""",
+    )
+
+
+# ---------------------------------------------------------------- ms (#54)
+
+ms_router = APIRouter(prefix="/artifacts/ms", tags=["ms artifacts"])
+
+
+def _resolve_ms_or_404(config, name: str) -> Path:
+    try:
+        return artifacts.resolve_ms(Path(config.stage) / "ms", name)
+    except artifacts.ArtifactNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+
+
+@ms_router.get("/", response_class=HTMLResponse)
+def ms_index(request: Request):
+    """List the newest Measurement Sets on stage."""
+    config = _config(request)
+    records = artifacts.list_ms(Path(config.stage) / "ms")
+    rows = "".join(
+        f'<tr><td><a href="/artifacts/ms/{html.escape(record["name"])}">'
+        f"{html.escape(record['name'])}</a></td>"
+        f"<td>{html.escape(record['modified'][:19])}</td></tr>"
+        for record in records
+    ) or '<tr><td colspan="2" class="muted">No Measurement Sets on stage</td></tr>'
+    return _page(
+        "Measurement Sets",
+        f"""<h1>Measurement Sets</h1>
+<table><thead><tr><th>MS</th><th>Modified (UTC)</th></tr></thead>
+<tbody>{rows}</tbody></table>""",
+    )
+
+
+@ms_router.get("/{name}/status")
+def ms_status(name: str, request: Request):
+    """Machine-readable summary for one Measurement Set."""
+    config = _config(request)
+    path = _resolve_ms_or_404(config, name)
+    try:
+        summary = _cached_summary(config, "ms", name, path, lambda: ms_qa.summary(path))
+    except (artifacts.ArtifactRenderError, RuntimeError, ImportError) as exc:
+        raise HTTPException(status_code=424, detail=str(exc)) from None
+    return {
+        "file": artifacts.file_record(path),
+        "summary": summary,
+        "related": artifacts.related_artifacts(Path(config.stage), name[:19]),
+        "plot_kinds": list(ms_qa.plot_kinds(path)),
+    }
+
+
+@ms_router.get("/{name}/plot/{kind}.png")
+def ms_plot(name: str, kind: str, request: Request):
+    """Lazily render (and cache) one MS diagnostic plot."""
+    config = _config(request)
+    path = _resolve_ms_or_404(config, name)
+    if kind not in ms_qa.plot_kinds(path):
+        raise HTTPException(status_code=404, detail=f"unknown plot kind {kind!r}")
+    try:
+        png = artifacts.cached_artifact_file(
+            Path(config.thumb_dir),
+            "ms",
+            name,
+            kind,
+            path.stat().st_mtime,
+            ".png",
+            lambda tmp: ms_qa.render_plot(path, kind, tmp),
+        )
+    except (artifacts.ArtifactRenderError, RuntimeError, ImportError) as exc:
+        raise HTTPException(status_code=424, detail=str(exc)) from None
+    return Response(
+        content=png.read_bytes(),
+        media_type="image/png",
+        headers={"Cache-Control": "max-age=300"},
+    )
+
+
+@ms_router.get("/{name}", response_class=HTMLResponse)
+def ms_page(name: str, request: Request):
+    """Human-readable per-MS QA page with lifecycle state."""
+    config = _config(request)
+    path = _resolve_ms_or_404(config, name)
+    record = artifacts.file_record(path)
+    try:
+        summary = _cached_summary(config, "ms", name, path, lambda: ms_qa.summary(path))
+        note = ""
+    except (artifacts.ArtifactRenderError, RuntimeError, ImportError) as exc:
+        summary = {}
+        note = f'<p class="muted">metrics unavailable: {html.escape(str(exc))}</p>'
+    related = artifacts.related_artifacts(Path(config.stage), name[:19])
+    lifecycle = [
+        ("Calibration tables", bool(related["caltables"])),
+        ("Tile image", related["tile"] is not None),
+        ("Hourly-epoch mosaic", related["mosaic_exists"]),
+    ]
+    lifecycle_rows = "".join(
+        f"<tr><th>{stage_name}</th>"
+        f"<td>{_badge('pass' if done else 'warn', 'ready' if done else 'not yet')}</td></tr>"
+        for stage_name, done in lifecycle
+    )
+    summary_rows = "".join(
+        f"<tr><th>{html.escape(str(key))}</th><td>{html.escape(str(value))}</td></tr>"
+        for key, value in summary.items()
+    ) or '<tr><td colspan="2" class="muted">—</td></tr>'
+    return _page(
+        f"MS {name}",
+        f"""
+<h1>Measurement Set · {html.escape(name)}</h1>
+<p class="muted">{html.escape(record["path"])} ·
+modified {html.escape(record["modified"][:19])} ·
+<a href="/artifacts/ms/{html.escape(name)}/status">JSON</a></p>
+<p>{_related_row(related)}</p>{note}
+<h2>Lifecycle</h2><table><tbody>{lifecycle_rows}</tbody></table>
+<h2>Summary</h2><table><tbody>{summary_rows}</tbody></table>
+<h2>Diagnostics</h2>{_plot_grid(f"/artifacts/ms/{html.escape(name)}", ms_qa.plot_kinds(path))}""",
     )

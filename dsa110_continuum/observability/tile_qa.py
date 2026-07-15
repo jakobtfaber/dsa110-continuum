@@ -129,8 +129,8 @@ def render_plot(
             raise ArtifactRenderError(f"unknown plot kind {kind!r}")
     except ArtifactRenderError:
         raise
-    except (ImportError, RuntimeError, OSError, ValueError, KeyError) as exc:
-        raise ArtifactRenderError(f"{kind}: {exc}") from exc
+    except Exception as exc:
+        raise ArtifactRenderError(f"{kind}: {type(exc).__name__}: {exc}") from exc
 
 
 def _render_scattering(image_path: Path, target: Path) -> None:

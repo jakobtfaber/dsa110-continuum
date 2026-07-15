@@ -41,10 +41,10 @@ if TYPE_CHECKING:
     from matplotlib.figure import Figure
     from numpy.typing import NDArray
 
-from astropy.coordinates import SkyCoord, EarthLocation, AltAz
-from astropy.time import Time
 from astropy import units as u
-from dsa110_continuum.utils.constants import DSA110_LOCATION, DSA110_LATITUDE, DSA110_LONGITUDE
+from astropy.coordinates import AltAz, EarthLocation, SkyCoord
+from astropy.time import Time
+from dsa110_continuum.utils.constants import DSA110_LATITUDE, DSA110_LOCATION, DSA110_LONGITUDE
 from dsa110_continuum.utils.time_utils import detect_casa_time_format, jd_to_mjd
 from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
 
@@ -86,7 +86,7 @@ def compute_parallactic_angle(
     # Ideally should pass location explicitly, but we'll use lat_deg for flexibility
     # We use a dummy longitude since HA is local
     loc = EarthLocation(lat=lat_deg * u.deg, lon=0 * u.deg, height=0 * u.m)
-    
+
     # Construct a dummy time where LST = 0 (so HA = -RA)
     # But simpler: HA = LST - RA.
     # If we set LST=0 (Time="..."), then RA = -HA.
@@ -735,7 +735,7 @@ def plot_observation_summary(
              # If lst_start is given, we can guess a date where LST matches? Too complex.
              # Fallback to geometry if no date.
              ts = None
-             
+
         if ts is not None:
              sc = SkyCoord(ra=ra_deg*u.deg, dec=dec_deg*u.deg, frame='icrs')
              # Transform
@@ -743,7 +743,7 @@ def plot_observation_summary(
              altaz = sc.transform_to(AltAz(obstime=ts, location=location))
              el = altaz.alt.deg
              az = altaz.az.deg
-             
+
              # Parallactic Angle
              # Astropy < 5.0 might not have it directly on SkyCoord, but let's check.
              # Easier to use the helper with calculated HA
@@ -849,7 +849,9 @@ def extract_geometry_from_ms(
 
     # Get field info
     with table(str(ms_path / "FIELD"), readonly=True, ack=False) as field_tb:
-        phase_dir = field_tb.getcol("PHASE_DIR")[0, 0]  # First field, first poly term
+        # First field, first poly term; squeeze handles both (nfields, 1, 2)
+        # and CASA column-major (nfields, 2, 1) layouts (CLAUDE.md invariant 4)
+        phase_dir = np.squeeze(field_tb.getcol("PHASE_DIR")[0])
         result["ra_rad"] = phase_dir[0]
         result["dec_rad"] = phase_dir[1]
         result["ra_deg"] = np.degrees(phase_dir[0])
