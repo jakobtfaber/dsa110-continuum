@@ -29,9 +29,12 @@ Correctness criteria (hardening-research-code):
    onto it in #118 — for f=[1,2,3] that is 0.5). When eta cannot be computed
    the metric is None, never a float coercion of None (issue #118 item 2).
 5. Flux-column selection — normalized_flux_jy/normalized_flux_err_jy are used
-   when the normalized column carries at least one finite value; otherwise
-   peak_jyb/peak_err_jyb are used. This makes the relative-photometry path
-   reachable from a raw products DB (issue #118 item 1). MJD recovery is
+   when BOTH carry at least one finite value (weighted metrics need errors);
+   otherwise peak_jyb/peak_err_jyb are used. This makes the relative-photometry
+   path reachable from a raw products DB (issue #118 item 1). All flux/error
+   columns are coerced to float on load (all-NULL SQLite columns otherwise
+   arrive object-dtype) and neighbors with no finite flux or error after
+   alignment are skipped. MJD recovery is
    analytic: the Unix epoch 1970-01-01T00:00 UTC is MJD 40587.0 exactly and
    both scales count 86400 s civil days (Unix time excludes leap seconds), so
    a row with mjd NULL and measured_at = t seconds loads as mjd = 40587 + t/86400.
