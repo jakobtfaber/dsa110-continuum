@@ -74,6 +74,7 @@ def _make_cfg(tmp_path):
         products_dir=str(tmp_path / "products"),
         bp_table=bp,
         g_table=ga,
+        rfi_mode="off",
     )
 
 

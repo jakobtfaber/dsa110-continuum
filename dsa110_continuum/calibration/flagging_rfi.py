@@ -54,6 +54,7 @@ def flag_rfi(
     extend_flags: bool = True,
     clip_residual: bool = True,
     clip_sigma: float = 7.0,
+    fail_closed: bool = True,
 ) -> None:
     """Flag RFI using CASA or AOFlagger, with optional post-clip.
 
@@ -80,12 +81,20 @@ def flag_rfi(
         (default: True).  Only used when *backend* is ``"aoflagger"``.
     clip_sigma :
         Threshold in MAD-σ units for the residual clip (default: 7.0).
+    fail_closed :
+        Require the validated Stage 1/2/3 chain to complete. Science tile
+        processing uses the default; diagnostic callers may explicitly opt
+        into legacy warning-only behavior.
     """
     require_headless()
     from dsa110_continuum.utils.ms_permissions import ensure_ms_writable
 
     ensure_ms_writable(ms)
     if backend == "aoflagger":
+        if fail_closed and (not clip_residual or not extend_flags):
+            raise ValueError(
+                "fail_closed AOFlagger requires residual clipping and flag extension"
+            )
         flag_rfi_aoflagger(
             ms, datacolumn=datacolumn, aoflagger_path=aoflagger_path, strategy=strategy
         )
@@ -103,6 +112,8 @@ def flag_rfi(
                     "Post-AOFlagger sigma-clip failed; AOFlagger flags are intact.",
                     exc_info=True,
                 )
+                if fail_closed:
+                    raise
 
         # Extend flags after AOFlagger (if enabled)
         # Note: Flag extension may fail when using Docker due to permission issues
@@ -141,6 +152,8 @@ def flag_rfi(
                     logger.warning(
                         f"Flag extension failed: {e}. RFI flags from AOFlagger are still applied."
                     )
+                if fail_closed:
+                    raise
     else:
         # Two-stage RFI flagging using flagdata modes (tfcrop then rflag)
         service = CASAService()
@@ -357,7 +370,11 @@ def flag_rfi_aoflagger(
     cmd = aoflagger_cmd.copy()
 
     # Determine strategy to use
-    strategy_to_use = strategy or os.environ.get("CONTIMG_AOFLAGGER_STRATEGY")
+    strategy_to_use = (
+        strategy
+        or os.environ.get("CONTIMG_AOFLAGGER_STRATEGY")
+        or _get_default_aoflagger_strategy()
+    )
     if strategy_to_use is None or str(strategy_to_use).strip() == "":
         strategy_to_use = None
     logger.info("AOFlagger strategy: %s", strategy_to_use or "auto-detect")

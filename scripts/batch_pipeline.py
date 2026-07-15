@@ -607,7 +607,9 @@ def _collect_dry_run_plan(
     quarantine_set: set[str],
     skip_epoch_gaincal: bool,
     skip_photometry: bool,
+    skip_rfi_flagging: bool,
     lenient_qa: bool,
+    rfi_mode: str = "full",
 ) -> dict:
     """Build a structured plan dict describing what a normal run would do.
 
@@ -645,6 +647,13 @@ def _collect_dry_run_plan(
         "quarantine_count": n_quarantined,
         "quarantine_ms_paths": sorted(ms for ms in ms_list_after_filters if ms in quarantine_set),
         "phase0_gaincal": "skipped (--skip-epoch-gaincal)" if skip_epoch_gaincal else "would run",
+        "phase1_rfi_flagging": (
+            "off (DEGRADED; no RFI chain)"
+            if skip_rfi_flagging or rfi_mode == "off"
+            else "conditional (Stage 0; Stage 1/2/3 on hard trigger)"
+            if rfi_mode == "conditional"
+            else "full (Stage 0 + mandatory Stage 1/2/3)"
+        ),
         "phase1_tiles_to_attempt": n_to_attempt,
         "phase1_tiles_quarantined": n_quarantined,
         "phase2_epochs_to_rebuild": n_epoch_rebuild,
@@ -683,6 +692,7 @@ def _format_dry_run_plan(plan: dict) -> list[str]:
         )
     lines.extend([
         f"Phase 0 (gaincal):    {plan['phase0_gaincal']}",
+        f"Phase 1 RFI:          {plan['phase1_rfi_flagging']}",
         f"Phase 1 (per-tile):   would attempt {plan['phase1_tiles_to_attempt']} tiles "
         f"({plan['phase1_tiles_quarantined']} quarantined)",
         f"Phase 2 (mosaic):     {plan['phase2_epochs_to_rebuild']} rebuild, "
@@ -823,7 +833,9 @@ def _dry_run_main(args, date: str, cal_date: str, obs_dec_deg: float | None) -> 
         quarantine_set=quarantine_set,
         skip_epoch_gaincal=args.skip_epoch_gaincal,
         skip_photometry=args.skip_photometry,
+        skip_rfi_flagging=False,
         lenient_qa=args.lenient_qa,
+        rfi_mode=getattr(args, "rfi_mode", "off" if args.no_rfi_flagging else "full"),
     )
     for line in _format_dry_run_plan(plan):
         log.info("%s", line)
@@ -1259,6 +1271,24 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--rfi-mode",
+        choices=("full", "conditional", "off"),
+        default=None,
+        help=(
+            "RFI policy: full runs Stage 0+1/2/3 (default), conditional runs "
+            "Stage 0 and triggers Stage 1/2/3 from preflight, off bypasses the chain."
+        ),
+    )
+    parser.add_argument(
+        "--no-rfi-flagging",
+        action="store_true",
+        default=False,
+        help=(
+            "Deprecated alias for --rfi-mode off. This bypasses Stage 0 and "
+            "Stage 1/2/3 and marks the run DEGRADED."
+        ),
+    )
+    parser.add_argument(
         "--start-hour",
         type=int,
         default=None,
@@ -1319,6 +1349,12 @@ def main() -> None:
             "gate so the run finishes with pipeline_verdict=DEGRADED. Use only "
             "for investigative re-runs; the default is strict (skip)."
         ),
+    )
+    parser.add_argument(
+        "--include-qa-failed-tiles",
+        action="store_true",
+        default=False,
+        help="Diagnostic override: include tiles that fail the 50 mJy MAD gate.",
     )
     parser.add_argument(
         "--archive-all",
@@ -1392,6 +1428,12 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
+    from mosaic_day import resolve_rfi_mode  # type: ignore
+
+    try:
+        args.rfi_mode = resolve_rfi_mode(args.rfi_mode, args.no_rfi_flagging)
+    except ValueError as error:
+        parser.error(str(error))
 
     date = args.date
     cal_date = args.cal_date if args.cal_date is not None else date
@@ -1561,6 +1603,18 @@ def main() -> None:
         image_dir=paths["stage_dir"],
         products_dir=paths["products_dir"],
     )
+    cfg = cfg.replace(
+        rfi_mode=args.rfi_mode,
+        include_qa_failed_tiles=args.include_qa_failed_tiles,
+    )
+    log.info("Per-tile RFI mode: %s", args.rfi_mode)
+    if args.rfi_mode == "off":
+        log.error("DEGRADED: RFI chain disabled; outputs have no science-promotion semantics")
+        manifest.add_gate(
+            gate="rfi_mode",
+            verdict="DEGRADED",
+            reason="RFI mode off: Stage 0 and Stage 1/2/3 bypassed",
+        )
 
     # ── Phase 1: Find + validate MS files ────────────────────────────────────
     ms_list = _md.find_valid_ms(cfg)
@@ -1902,6 +1956,25 @@ def main() -> None:
         "Tiles: %d imaged, %d already done, %d failed, %d quarantined",
         n_imaged, n_skipped_tiles, n_failed_tiles, n_quarantined,
     )
+
+    # Final safety net for checkpoint/resume state: every path is revalidated
+    # immediately before epoch binning, even if it entered from an older cache.
+    qa_accepted_tiles: list[str] = []
+    for tile_path in tile_fits:
+        accepted, reason = _md.validate_tile_for_coadd(
+            tile_path, cfg, Path(tile_path).stem
+        )
+        if accepted:
+            qa_accepted_tiles.append(tile_path)
+        else:
+            log.error("Excluding tile from every coadd: %s (%s)", tile_path, reason)
+            manifest.add_gate(
+                gate="tile_mad",
+                verdict="BLOCKED",
+                reason=reason,
+                tile_path=tile_path,
+            )
+    tile_fits = qa_accepted_tiles
 
     if len(tile_fits) < 2:
         log.error("Too few tiles to mosaic (%d) — aborting", len(tile_fits))
