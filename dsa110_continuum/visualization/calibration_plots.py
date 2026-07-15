@@ -344,7 +344,8 @@ def plot_gains(
         time_min = (time - time.min()) / 60.0
 
         nant = len(np.unique(antenna1))
-        _npol = cparam.shape[-1]  # Stored for potential future use
+        # casa_tables adapter returns caltable CPARAM as (nrow, npol, nchan)
+        npol = cparam.shape[1]
 
         # Plot amplitude
         if plot_amplitude:
@@ -352,11 +353,11 @@ def plot_gains(
                 2, 1, figsize=(config.figsize[0], config.figsize[1] * 2), sharex=True
             )
 
-            for pol_idx, pol_label in enumerate(["Pol A", "Pol B"]):
+            for pol_idx, pol_label in enumerate(["Pol A", "Pol B"][:npol]):
                 ax = axes[pol_idx]
                 for ant in range(min(nant, 10)):
                     mask = antenna1 == ant
-                    amp = np.abs(cparam[mask, 0, pol_idx])
+                    amp = np.abs(cparam[mask, pol_idx, 0])
                     t = time_min[mask]
                     ax.plot(t, amp, ".", alpha=0.7, label=f"Ant {ant}")
                 ax.set_ylabel("Amplitude")
@@ -378,11 +379,11 @@ def plot_gains(
                 2, 1, figsize=(config.figsize[0], config.figsize[1] * 2), sharex=True
             )
 
-            for pol_idx, pol_label in enumerate(["Pol A", "Pol B"]):
+            for pol_idx, pol_label in enumerate(["Pol A", "Pol B"][:npol]):
                 ax = axes[pol_idx]
                 for ant in range(min(nant, 10)):
                     mask = antenna1 == ant
-                    phase = np.angle(cparam[mask, 0, pol_idx], deg=True)
+                    phase = np.angle(cparam[mask, pol_idx, 0], deg=True)
                     t = time_min[mask]
                     ax.plot(t, phase, ".", alpha=0.7, label=f"Ant {ant}")
                 ax.set_ylabel("Phase (deg)")

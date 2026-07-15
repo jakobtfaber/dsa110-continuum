@@ -1,5 +1,6 @@
 import os
 import subprocess
+import threading
 import types
 from datetime import datetime
 from pathlib import Path
@@ -42,7 +43,7 @@ def test_dashboard_startup_and_mosaic_artifact_routes(tmp_path: Path):
         thumbnail = client.get("/artifacts/mosaic/2026-01-25/T0200/thumb.png")
 
     assert root.status_code == 200
-    assert "DSA-110 Continuum Observatory" in root.text
+    assert "DSA-110 Continuum Imaging Dashboard" in root.text
     assert status.status_code == 200
     assert status.json()["fits"] is True
     assert status.json()["ratio"] is None
@@ -50,6 +51,95 @@ def test_dashboard_startup_and_mosaic_artifact_routes(tmp_path: Path):
     assert thumbnail.status_code == 200
     assert thumbnail.headers["content-type"] == "image/png"
     assert thumbnail.content.startswith(b"\x89PNG")
+
+
+def test_get_metrics_caches_by_input_revision(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Repeated unchanged metrics reuse work, while revised FITS inputs recompute."""
+    stage = tmp_path / "stage"
+    products = tmp_path / "products"
+    mosaic_dir = stage / "images" / "mosaic_2026-01-25"
+    mosaic_dir.mkdir(parents=True)
+    products.mkdir()
+    fits_path = mosaic_dir / "2026-01-25T0200_mosaic.fits"
+    fits.writeto(fits_path, np.arange(64, dtype=np.float32).reshape(8, 8) / 1000)
+    config = DashboardConfig(stage=stage, products=products)
+    qa_server._metrics_cache.clear()
+
+    calls = 0
+    original_compute = qa_server._compute_metrics
+
+    def counted_compute(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original_compute(*args, **kwargs)
+
+    monkeypatch.setattr(qa_server, "_compute_metrics", counted_compute)
+
+    first = get_metrics(config, "2026-01-25", "T0200")
+    first["status"] = "mutated"
+    second = get_metrics(config, "2026-01-25", "T0200")
+
+    assert calls == 1
+    assert second["status"] != "mutated"
+
+    stat = fits_path.stat()
+    os.utime(fits_path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+
+    get_metrics(config, "2026-01-25", "T0200")
+
+    assert calls == 2
+
+
+def test_get_metrics_concurrent_requests_compute_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Simultaneous requests for the same epoch share one computation."""
+    stage = tmp_path / "stage"
+    products = tmp_path / "products"
+    mosaic_dir = stage / "images" / "mosaic_2026-01-25"
+    mosaic_dir.mkdir(parents=True)
+    products.mkdir()
+    fits.writeto(
+        mosaic_dir / "2026-01-25T0200_mosaic.fits",
+        np.arange(64, dtype=np.float32).reshape(8, 8) / 1000,
+    )
+    config = DashboardConfig(stage=stage, products=products)
+    qa_server._metrics_cache.clear()
+
+    calls = 0
+    calls_lock = threading.Lock()
+    compute_entered = threading.Event()
+    release_compute = threading.Event()
+    original_compute = qa_server._compute_metrics
+
+    def slow_compute(*args, **kwargs):
+        nonlocal calls
+        with calls_lock:
+            calls += 1
+        compute_entered.set()
+        assert release_compute.wait(timeout=10)
+        return original_compute(*args, **kwargs)
+
+    monkeypatch.setattr(qa_server, "_compute_metrics", slow_compute)
+
+    results = [None] * 6
+    threads = [
+        threading.Thread(
+            target=lambda i=i: results.__setitem__(i, get_metrics(config, "2026-01-25", "T0200"))
+        )
+        for i in range(6)
+    ]
+    for thread in threads:
+        thread.start()
+    assert compute_entered.wait(timeout=10)
+    release_compute.set()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    assert calls == 1
+    assert all(result == results[0] for result in results)
+    assert results[0] is not None
+    assert results[0]["fits"] is True
 
 
 def _make_config(tmp_path: Path) -> DashboardConfig:

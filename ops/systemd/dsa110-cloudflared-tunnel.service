@@ -1,0 +1,15 @@
+[Unit]
+Description=Cloudflare tunnel for DSA-110 Continuum Imaging Dashboard
+After=network-online.target dsa110-dashboard.service
+Wants=network-online.target dsa110-dashboard.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/data/dsa110-continuum
+ExecStart=/usr/bin/cloudflared tunnel --config /data/dsa110-continuum/outputs/observability-dashboard-2026-07-14/cloudflare/config.yml --no-autoupdate run
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
