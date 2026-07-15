@@ -561,6 +561,27 @@ class TestDashboardAndHealth:
         assert parsed.tzinfo is not None
 
 
+class TestCampaignStatusLogSelection:
+    """Criterion: an epoch's status may only adopt campaign logs whose filename
+    hour equals the requested hour (padded or unpadded form); hour 1 must never
+    adopt h11-h19 logs even when they are newer."""
+
+    def test_rejects_other_hours_sharing_digit_prefix(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(qa_server, "process_status", lambda: [])
+        config = _make_config(tmp_path)
+        config.campaign_outputs.mkdir(parents=True)
+        own = config.campaign_outputs / "batch_run_h1_a.log"
+        other = config.campaign_outputs / "batch_run_h11_b.log"
+        own.write_text("own\n")
+        other.write_text("other\n")
+        os.utime(own, (1_000, 1_000))
+        os.utime(other, (2_000, 2_000))
+
+        status = qa_server.campaign_status(config, "2026-07-13", 1)
+
+        assert status["log"]["file"]["path"].endswith("batch_run_h1_a.log")
+
+
 class TestControlAuth:
     """Criterion: mutating control routes fail closed -- no DSA110_CONTROL_TOKEN
     in the environment means 403 for every mutating request regardless of the
@@ -889,3 +910,14 @@ class TestLightcurveView:
         with TestClient(create_app(_make_config(tmp_path))) as client:
             page = client.get("/").text
         assert "/sources/lightcurve" in page
+
+    def test_nan_flux_epochs_are_excluded(self, tmp_path: Path):
+        config = _make_config(tmp_path)
+        self._write_epoch_csv(config, "2026-01-25", "T0200", 3.9)
+        directory = config.products / "2026-02-12"
+        directory.mkdir(parents=True)
+        (directory / "2026-02-12T0100_forced_phot.csv").write_text(
+            self.HEADER + "47.499,17.099833,4.87,nan,nan,nan\n"
+        )
+        points = qa_server.lightcurve_points(config, 47.499, 17.0998, 30.0)
+        assert [point["epoch"] for point in points] == ["2026-01-25T0200"]

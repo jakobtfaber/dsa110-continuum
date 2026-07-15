@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 from astropy.io import fits
 from dsa110_continuum.observability import control as pipeline_control
+from dsa110_continuum.observability.hour_state import campaign_hour_logs
 from fastapi import APIRouter, FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from matplotlib.colors import PowerNorm
@@ -121,7 +122,10 @@ def lightcurve_points(
         except Exception as exc:
             logger.warning("Lightcurve CSV error %s: %s", csv_path, exc)
             continue
-        if not {"ra_deg", "dec_deg", "dsa_peak_jyb"}.issubset(frame.columns) or not len(frame):
+        if not {"ra_deg", "dec_deg", "dsa_peak_jyb"}.issubset(frame.columns):
+            continue
+        frame = frame[np.isfinite(frame["dsa_peak_jyb"])]
+        if not len(frame):
             continue
         separation = np.hypot((frame["ra_deg"] - ra_deg) * cos_dec, frame["dec_deg"] - dec_deg)
         index = separation.idxmin()
@@ -400,8 +404,7 @@ def campaign_status(config: DashboardConfig, date: str, hour: int) -> dict:
     )
     logs = list(product_dir.glob("run_*.log")) if product_dir.is_dir() else []
     if config.campaign_outputs.is_dir():
-        logs.extend(config.campaign_outputs.glob(f"batch_run_h{hour:02d}*.log"))
-        logs.extend(config.campaign_outputs.glob(f"batch_run_h{hour}*.log"))
+        logs.extend(campaign_hour_logs(config.campaign_outputs, hour))
     latest_log = _latest(list(dict.fromkeys(logs)))
     manifest = product_dir / f"{date}_manifest.json"
     summary = product_dir / f"{date}_run_summary.json"

@@ -10,12 +10,14 @@ read-only metadata view (see `outputs/observability-dashboard-2026-07-14/REPRODU
 Generate once, store in the environment file the systemd unit loads:
 
 ```bash
-/opt/miniforge/envs/casa6/bin/python -c "import secrets; print(secrets.token_urlsafe(32))"
-sudo mkdir -p /data/dsa110-proc/products/control
-printf 'DSA110_CONTROL_TOKEN=%s\n' '<token>' | sudo tee /data/dsa110-proc/products/control/dashboard.env
-sudo chown ubuntu:ubuntu /data/dsa110-proc/products/control/dashboard.env
-sudo chmod 600 /data/dsa110-proc/products/control/dashboard.env
+mkdir -p ~/.config/dsa110
+/opt/miniforge/envs/casa6/bin/python -c "import secrets; print(secrets.token_urlsafe(32))" \
+  | xargs -I{} printf 'DSA110_CONTROL_TOKEN=%s\n' '{}' > ~/.config/dsa110/dashboard.env
+chmod 600 ~/.config/dsa110/dashboard.env
 ```
+
+The env file must live on a real POSIX filesystem (`~` is ext4). Do NOT put it under `/data`
+or `/stage` — both are fuseblk there and ignore chmod, leaving the token world-readable.
 
 Fail-closed: if `DSA110_CONTROL_TOKEN` is unset in the server environment, every mutating
 request returns 403 and the dashboard is effectively read-only. Never commit the env file.
