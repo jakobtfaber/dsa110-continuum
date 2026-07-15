@@ -91,6 +91,7 @@ Set `PYTHONPATH=/workspace` when running scripts/tests from this workspace conte
 | `scripts/verify_sources.py` | Verify fluxes against expected values |
 | `scripts/validate_date.py` | Run validation on one date's outputs |
 | `scripts/run_canary.sh` | QA smoke test against a reference FITS tile |
+| `scripts/auto_pipeline.py` | Scheduled launcher: runs `batch_pipeline.py` for yesterday UTC via the control registry (systemd timer entrypoint; skips if a launcher-owned run is active) |
 | `PYTHONPATH=/workspace uvicorn scripts.monitor_server:app --host 0.0.0.0 --port 8765` | Start the monitor API (host-ops service) |
 | `scripts/check_import_migration.py` | Legacy-import gate: exits 1 if any `dsa110_contimg` import exists under `dsa110_continuum/` (CI runs this on every push/PR) |
 | `scripts/check_contimg_mentions.py` | Mention classifier: fails on vendored headers, stale API refs, and dead layout probes (ops path defaults are INFO until `--strict-paths`) |
@@ -260,8 +261,8 @@ Save under `/data/dsa110-continuum/outputs/` (organize by topic or date). Do NOT
 Three FastAPI services exist; their statuses differ:
 
 - `dsa110_continuum/mosaic/api.py` — **dormant**. Defines a router but no caller currently mounts it. Do NOT assume users hit this path; verify the mount before changing behavior.
-- `scripts/qa_server.py` — **live**. The QA dashboard users currently rely on. Treat as production: changes need the same care as pipeline code.
-- `scripts/monitor_server.py` — **live, host-ops**. Exposes a `POST /exec` shell hook; any change to that endpoint is a security-relevant edit and must be flagged.
+- `scripts/qa_server.py` — **live**. The QA dashboard users currently rely on. Treat as production: changes need the same care as pipeline code. Includes the token-gated pipeline control API (`/api/runs`, launch/dry-run/terminate via `dsa110_continuum/observability/control.py`); mutating routes fail closed when `DSA110_CONTROL_TOKEN` is unset and are audited to `control/audit.jsonl`. Ops runbook: `docs/operations/dashboard.md`.
+- `scripts/monitor_server.py` — **not currently running** (no launcher in repo; verified 2026-07-15). Exposes a `POST /exec` shell hook; any change to that endpoint is a security-relevant edit and must be flagged. Never mount or proxy it; #62 tracks retirement.
 
 The live-observability-stack work lands across these services; tracking issues #48–#62 (`gh issue list --label needs-triage --state open`).
 
