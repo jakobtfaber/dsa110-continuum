@@ -15,7 +15,9 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from dsa110_continuum.mosaic.production import (
     PB_CUTOFF,
+    _overlap_output_bounds,
     _pb_map_for_tile,
+    _sault_reproject_one_tile,
     build_epoch_coadd,
     build_epoch_coadd_products,
     coadd_tiles,
@@ -213,6 +215,85 @@ def test_coadd_tiles_with_weights_matches_compatibility_wrapper(tmp_path):
 
     assert np.allclose(mosaic, coadd_tiles([str(tile)], wcs, *SHAPE), equal_nan=True)
     assert np.nanmax(weight) > 0
+
+
+def test_parallel_coadd_matches_serial(tmp_path):
+    """Process-pool Sault coadd must match the serial path pixel-for-pixel."""
+    paths = []
+    for i, (cy, cx) in enumerate(((12.0, 12.0), (16.0, 20.0), (20.0, 14.0))):
+        sky = np.full(SHAPE, 1.0 + 0.1 * i)
+        paths.append(str(_write_pair(tmp_path, f"t{i}", sky, _gaussian_pb((cy, cx)))))
+    wcs = _tile_wcs()
+
+    serial_m, serial_w = coadd_tiles_with_weights(paths, wcs, *SHAPE, max_workers=1)
+    parallel_m, parallel_w = coadd_tiles_with_weights(paths, wcs, *SHAPE, max_workers=3)
+
+    assert np.allclose(serial_m, parallel_m, equal_nan=True, rtol=1e-12, atol=1e-12)
+    assert np.allclose(serial_w, parallel_w, equal_nan=True, rtol=1e-12, atol=1e-12)
+
+
+def test_overlap_cutout_coadd_matches_full_grid(tmp_path):
+    """Overlap-only cutouts must match full-grid Sault coadd within float tol."""
+    paths = []
+    for i, (cy, cx) in enumerate(((12.0, 12.0), (16.0, 20.0), (20.0, 14.0))):
+        sky = np.full(SHAPE, 1.0 + 0.25 * i)
+        paths.append(str(_write_pair(tmp_path, f"t{i}", sky, _gaussian_pb((cy, cx)))))
+
+    # Larger mosaic grid so each tile is a strict cutout (not the full array).
+    out_wcs = _tile_wcs(ra_deg=10.0, dec_deg=16.0)
+    out_wcs.wcs.crpix = [48.5, 40.5]
+    ny, nx = 80, 96
+
+    cut_m, cut_w = coadd_tiles_with_weights(
+        paths, out_wcs, ny, nx, max_workers=1, use_overlap_cutouts=True
+    )
+    full_m, full_w = coadd_tiles_with_weights(
+        paths, out_wcs, ny, nx, max_workers=1, use_overlap_cutouts=False
+    )
+    cut_par_m, cut_par_w = coadd_tiles_with_weights(
+        paths, out_wcs, ny, nx, max_workers=3, use_overlap_cutouts=True
+    )
+
+    assert np.allclose(cut_m, full_m, equal_nan=True, rtol=1e-10, atol=1e-10)
+    assert np.allclose(cut_w, full_w, equal_nan=True, rtol=1e-10, atol=1e-10)
+    assert np.allclose(cut_par_m, full_m, equal_nan=True, rtol=1e-10, atol=1e-10)
+    assert np.allclose(cut_par_w, full_w, equal_nan=True, rtol=1e-10, atol=1e-10)
+
+
+def test_overlap_bounds_skip_no_overlap_tile(tmp_path):
+    """Tiles with no predicted output overlap return skipped without pasting."""
+    tile = _write_pair(tmp_path, "far", np.full(SHAPE, 1.0), _gaussian_pb((16.0, 16.0)))
+    # Rewrite header so the tile sits far from the mosaic WCS.
+    far_wcs = _tile_wcs(ra_deg=80.0, dec_deg=-40.0)
+    with fits.open(tile, mode="update") as hdul:
+        hdul[0].header.update(far_wcs.to_header())
+    flat = tile.parent / "far-image.fits"
+    with fits.open(flat, mode="update") as hdul:
+        hdul[0].header.update(far_wcs.to_header())
+
+    out_wcs = _tile_wcs(ra_deg=10.0, dec_deg=16.0)
+    out_header = out_wcs.to_header()
+    out_header["NAXIS1"] = SHAPE[1]
+    out_header["NAXIS2"] = SHAPE[0]
+    result = _sault_reproject_one_tile(
+        str(tile),
+        out_header.tostring(),
+        *SHAPE,
+        use_overlap_cutouts=True,
+    )
+    assert result["ok"] is True
+    assert result.get("skipped") is True
+
+    mosaic, weight = coadd_tiles_with_weights(
+        [str(tile)], out_wcs, *SHAPE, max_workers=1, use_overlap_cutouts=True
+    )
+    assert np.all(np.isnan(mosaic))
+    assert np.all(weight == 0)
+
+    # Bounds helper itself reports empty overlap for this geometry.
+    with fits.open(tile) as hdul:
+        in_wcs = WCS(hdul[0].header).celestial
+    assert _overlap_output_bounds(in_wcs, out_wcs, SHAPE, SHAPE) is None
 
 
 def test_write_weight_map_uses_stable_name_aligned_wcs_and_units(tmp_path):
