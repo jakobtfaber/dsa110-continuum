@@ -20,10 +20,15 @@ Correctness criteria (hardening-research-code):
    with ValueError (per-neighbor rows (2, 3) vs expected (n_epochs, n_neighbors)
    = (3, 2) — the test case is deliberately non-square).
 4. Variability-metric wiring — calc_variability_metrics must reproduce the
-   Mooley et al. (2016) closed forms already pinned canonically in
-   tests/test_metrics_canonical.py: v = std(f, ddof=0)/mean(f), eta = reduced
-   chi-squared about the weighted mean, Vs = (f_a - f_b)/sqrt(e_a^2 + e_b^2),
-   m = 2(f_a - f_b)/(f_a + f_b) over sequential epoch pairs.
+   Mooley et al. (2016) closed forms: eta = reduced chi-squared about the
+   weighted mean (pinned canonically in tests/test_metrics_canonical.py),
+   Vs = (f_a - f_b)/sqrt(e_a^2 + e_b^2), m = 2(f_a - f_b)/(f_a + f_b) over
+   sequential epoch pairs. CAUTION: the v value pins the CURRENT inline
+   computation in source.py (np.std default, ddof=0), which diverges from the
+   repo's canonical ddof=1 convention (test_metrics_canonical.py
+   TestVMetricConvention, aligned to VAST in #110). When source.py is
+   consolidated onto the canonical v, update that one expected value to
+   std(f, ddof=1)/mean(f) — for f=[1,2,3] that is 0.5, not sqrt(2/3)/2.
 
 Tolerances: every expected value is exact in a handful of double-precision
 operations, so assert_allclose(rtol=1e-12) covers accumulated rounding (~10 eps)
@@ -347,7 +352,9 @@ class TestCalcVariabilityMetrics:
     def test_metrics_match_hand_derivation(self, make_source):
         """f = [1, 2, 3], e = 0.1 everywhere:
 
-        v  = std(f, ddof=0)/mean(f) = sqrt(2/3)/2
+        v  = std(f, ddof=0)/mean(f) = sqrt(2/3)/2 — pins the current inline
+             ddof=0 computation, which DIVERGES from the canonical ddof=1
+             convention (see module docstring, criterion 4)
         eta = reduced chi-squared about the weighted mean (= 2):
               ((-1)^2 + 0 + 1^2)/0.01 / (N-1) = 200/2 = 100
         Vs pairs (1,2), (2,3): each (f_a - f_b)/sqrt(2*0.01) = -1/sqrt(0.02)
@@ -403,9 +410,11 @@ class TestLoadMeasurements:
     def test_loads_rows_and_coordinates_from_db(self, tmp_path):
         db = _make_products_db(
             tmp_path / "products.sqlite3",
+            # inserted out of chronological order so the expected row order
+            # can only come from ORDER BY measured_at, not insertion order
             [
-                ("SRC1", 180.0, 16.1, 500.0, 0.5, 0.01, 1.7e9, 60000.0, "e1.fits"),
                 ("SRC1", 180.0, 16.1, 500.0, 0.6, 0.01, 1.7e9 + 3600, 60000.042, "e2.fits"),
+                ("SRC1", 180.0, 16.1, 500.0, 0.5, 0.01, 1.7e9, 60000.0, "e1.fits"),
             ],
         )
         src = Source("SRC1", products_db=db)
@@ -464,6 +473,13 @@ class TestFindStableNeighbors:
 
     def test_returns_empty_when_target_flux_unknown(self, tmp_path):
         """With normalized_flux_jy all-NaN the flux-ratio filter is undefined,
-        so neighbor selection refuses to guess and returns no neighbors."""
+        so neighbor selection refuses to guess and returns no neighbors.
+
+        Pins CURRENT behavior, not a requirement: the loader NaN-fills
+        normalized_flux_jy unconditionally (source.py, _load_measurements) and
+        find_stable_neighbors prefers that column over the populated peak_jyb,
+        so the DB path can never select neighbors without a caller-side
+        normalization step. A legitimate fall-back-to-peak fix may change this
+        expectation — see the latent-issue notes in PR #113."""
         src = self._target(tmp_path)
         assert src.find_stable_neighbors() == []
