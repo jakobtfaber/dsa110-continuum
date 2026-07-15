@@ -23,12 +23,22 @@ Correctness criteria (hardening-research-code):
    Mooley et al. (2016) closed forms: eta = reduced chi-squared about the
    weighted mean (pinned canonically in tests/test_metrics_canonical.py),
    Vs = (f_a - f_b)/sqrt(e_a^2 + e_b^2), m = 2(f_a - f_b)/(f_a + f_b) over
-   sequential epoch pairs. CAUTION: the v value pins the CURRENT inline
-   computation in source.py (np.std default, ddof=0), which diverges from the
-   repo's canonical ddof=1 convention (test_metrics_canonical.py
-   TestVMetricConvention, aligned to VAST in #110). When source.py is
-   consolidated onto the canonical v, update that one expected value to
-   std(f, ddof=1)/mean(f) — for f=[1,2,3] that is 0.5, not sqrt(2/3)/2.
+   sequential epoch pairs, and v = std(f, ddof=1)/mean(f) via the canonical
+   photometry/metrics.py implementation (test_metrics_canonical.py
+   TestVMetricConvention, aligned to VAST in #110; source.py consolidated
+   onto it in #118 — for f=[1,2,3] that is 0.5). When eta cannot be computed
+   the metric is None, never a float coercion of None (issue #118 item 2).
+5. Flux-column selection — normalized_flux_jy/normalized_flux_err_jy are used
+   when the normalized column carries at least one finite value; otherwise
+   peak_jyb/peak_err_jyb are used. This makes the relative-photometry path
+   reachable from a raw products DB (issue #118 item 1). MJD recovery is
+   analytic: the Unix epoch 1970-01-01T00:00 UTC is MJD 40587.0 exactly and
+   both scales count 86400 s civil days (Unix time excludes leap seconds), so
+   a row with mjd NULL and measured_at = t seconds loads as mjd = 40587 + t/86400.
+6. Neighbor-search geometry — candidate distance uses the exact spherical
+   (haversine) separation, so a neighbor within radius_deg is selected
+   regardless of RA wrap at 0/360 or proximity to the pole; expected
+   separations below are derived from the haversine closed form in each test.
 
 Tolerances: every expected value is exact in a handful of double-precision
 operations, so assert_allclose(rtol=1e-12) covers accumulated rounding (~10 eps)
@@ -345,6 +355,57 @@ class TestCalculateRelativeLightcurveAssembly:
         target = make_source(frames, neighbor_ids=["N1"])
         assert target.calculate_relative_lightcurve() == {}
 
+    def test_max_neighbors_truncates_neighbor_list(self, make_source):
+        """With max_neighbors=2 only the first two ids are used: A over N1, N2
+        is [2, 3, 4.5] -> R = [1, 2, 2] (same derivation as the happy path).
+        If N3 (100x brighter) leaked past the truncation, three valid
+        neighbors would also engage the weighted median and change every
+        epoch's ensemble average."""
+        frames = {
+            "T": _measurements_frame(EPOCHS, MJDS, [2.0, 6.0, 9.0], [0.1, 0.1, 0.1]),
+            "N1": _measurements_frame(EPOCHS, MJDS, [1.0, 2.0, 3.0], [1.0, 1.0, 1.0]),
+            "N2": _measurements_frame(EPOCHS, MJDS, [3.0, 4.0, 6.0], [1.0, 1.0, 1.0]),
+            "N3": _measurements_frame(EPOCHS, MJDS, [100.0, 100.0, 100.0], [1.0, 1.0, 1.0]),
+        }
+        target = make_source(frames, neighbor_ids=["N1", "N2", "N3"])
+
+        result = target.calculate_relative_lightcurve(max_neighbors=2)
+
+        assert result["neighbor_ids"] == ["N1", "N2"]
+        assert result["n_neighbors"] == 2
+        assert_allclose(result["relative_flux"], [1.0, 2.0, 2.0], rtol=1e-12)
+
+
+class TestRawDbEndToEnd:
+    """Issue #118 item 1: the full path DB -> stable neighbors -> relative
+    flux must run on a raw products DB (peak fluxes only, nothing
+    pre-normalized)."""
+
+    def test_relative_lightcurve_from_raw_products_db(self, tmp_path):
+        """T0 peak fluxes [0.4, 0.6] (median 0.5 Jy -> 500 mJy); single
+        neighbor GOOD with constant peak 0.2 at (180.1, 16.15), separation
+        ~0.11 deg, flux ratio 0.4 — passes every filter. One neighbor makes
+        the ensemble average the neighbor itself: R = [2, 3], mean 2.5,
+        std(ddof=0) = 0.5."""
+        rows = [
+            ("T0", 180.0, 16.1, 500.0, 0.4, 0.01, 1.7e9, 60000.0, "e1.fits"),
+            ("T0", 180.0, 16.1, 500.0, 0.6, 0.01, 1.7e9 + 3600, 60000.042, "e2.fits"),
+            ("GOOD", 180.1, 16.15, 200.0, 0.2, 0.02, 1.7e9, 60000.0, "e1.fits"),
+            ("GOOD", 180.1, 16.15, 200.0, 0.2, 0.02, 1.7e9 + 3600, 60000.042, "e2.fits"),
+        ]
+        stats = [("GOOD", 180.1, 16.15, 200.0, 0.5, 20)]
+        db = _make_products_db(tmp_path / "products.sqlite3", rows, stats)
+        src = Source("T0", products_db=db)
+
+        result = src.calculate_relative_lightcurve()
+
+        assert result["neighbor_ids"] == ["GOOD"]
+        assert result["n_neighbors"] == 1
+        assert_allclose(result["relative_flux"], [2.0, 3.0], rtol=1e-12)
+        assert_allclose(result["relative_flux_mean"], 2.5, rtol=1e-12)
+        assert_allclose(result["relative_flux_std"], 0.5, rtol=1e-12)
+        assert_allclose(result["mjds"], [60000.0, 60000.042], rtol=1e-12)
+
 
 class TestCalcVariabilityMetrics:
     """Criterion 4: metric wiring reproduces the Mooley et al. closed forms."""
@@ -352,8 +413,7 @@ class TestCalcVariabilityMetrics:
     def test_metrics_match_hand_derivation(self, make_source):
         """f = [1, 2, 3], e = 0.1 everywhere:
 
-        v  = std(f, ddof=0)/mean(f) = sqrt(2/3)/2 — pins the current inline
-             ddof=0 computation, which DIVERGES from the canonical ddof=1
+        v  = std(f, ddof=1)/mean(f) = 1/2 — the canonical VAST/ddof=1
              convention (see module docstring, criterion 4)
         eta = reduced chi-squared about the weighted mean (= 2):
               ((-1)^2 + 0 + 1^2)/0.01 / (N-1) = 200/2 = 100
@@ -365,7 +425,7 @@ class TestCalcVariabilityMetrics:
 
         metrics = src.calc_variability_metrics()
 
-        assert_allclose(metrics["v"], np.sqrt(2.0 / 3.0) / 2.0, rtol=1e-12)
+        assert_allclose(metrics["v"], 0.5, rtol=1e-12)
         assert_allclose(metrics["eta"], 100.0, rtol=1e-12)
         assert_allclose(metrics["vs_mean"], -1.0 / np.sqrt(0.02), rtol=1e-12)
         assert_allclose(metrics["m_mean"], -8.0 / 15.0, rtol=1e-12)
@@ -382,16 +442,40 @@ class TestCalcVariabilityMetrics:
             "n_epochs": 1,
         }
 
+    def test_eta_is_none_when_eta_calculation_fails(self, make_source, monkeypatch, caplog):
+        """The eta failure branch deliberately reports None (not 0.0) so an
+        uncomputable source is never labeled stable; the other metrics must
+        still come back. Pre-#118 this branch raised TypeError on float(None)."""
+        frames = {"T": _measurements_frame(EPOCHS, MJDS, [1.0, 2.0, 3.0], [0.1, 0.1, 0.1])}
+        src = make_source(frames)
 
-def _make_products_db(path, photometry_rows, stats_rows=()):
+        def boom(*args, **kwargs):
+            raise ValueError("synthetic eta failure")
+
+        monkeypatch.setattr("dsa110_continuum.photometry.source.calculate_eta_metric", boom)
+
+        with caplog.at_level(logging.WARNING):
+            metrics = src.calc_variability_metrics()
+
+        assert metrics["eta"] is None
+        assert_allclose(metrics["v"], 0.5, rtol=1e-12)
+        assert_allclose(metrics["vs_mean"], -1.0 / np.sqrt(0.02), rtol=1e-12)
+        assert "Failed to calculate" in caplog.text
+
+
+def _make_products_db(path, photometry_rows, stats_rows=(), with_normalized=False):
     conn = sqlite3.connect(str(path))
+    normalized_cols = (
+        ", normalized_flux_jy REAL, normalized_flux_err_jy REAL" if with_normalized else ""
+    )
     conn.execute(
-        """CREATE TABLE photometry (
+        f"""CREATE TABLE photometry (
             source_id TEXT, ra_deg REAL, dec_deg REAL, nvss_flux_mjy REAL,
             peak_jyb REAL, peak_err_jyb REAL, measured_at REAL, mjd REAL,
-            image_path TEXT)"""
+            image_path TEXT{normalized_cols})"""
     )
-    conn.executemany("INSERT INTO photometry VALUES (?,?,?,?,?,?,?,?,?)", photometry_rows)
+    placeholders = ",".join("?" * (11 if with_normalized else 9))
+    conn.executemany(f"INSERT INTO photometry VALUES ({placeholders})", photometry_rows)
     if stats_rows:
         conn.execute(
             """CREATE TABLE variability_stats (
@@ -424,9 +508,77 @@ class TestLoadMeasurements:
         assert src.dec_deg == 16.1
         assert list(src.measurements["image_path"]) == ["e1.fits", "e2.fits"]
         assert_allclose(src.measurements["peak_jyb"], [0.5, 0.6], rtol=1e-12)
-        # The loader does not populate normalized fluxes from the photometry
-        # table; the columns exist but are NaN until a caller normalizes.
+        # This table has no normalized columns, so the loader NaN-fills them;
+        # downstream column selection falls back to peak_jyb (criterion 5).
         assert src.measurements["normalized_flux_jy"].isna().all()
+
+    def test_loads_normalized_columns_when_present_in_db(self, tmp_path):
+        """A products DB whose photometry table carries normalized columns
+        must surface their values (pre-#118 the loader NaN-filled them
+        unconditionally, so no DB could ever feed the normalized path)."""
+        db = _make_products_db(
+            tmp_path / "products.sqlite3",
+            [
+                ("SRC1", 180.0, 16.1, 500.0, 0.5, 0.01, 1.7e9, 60000.0, "e1.fits", 0.45, 0.02),
+                (
+                    "SRC1",
+                    180.0,
+                    16.1,
+                    500.0,
+                    0.6,
+                    0.01,
+                    1.7e9 + 3600,
+                    60000.042,
+                    "e2.fits",
+                    0.55,
+                    0.03,
+                ),
+            ],
+            with_normalized=True,
+        )
+        src = Source("SRC1", products_db=db)
+
+        assert_allclose(src.measurements["normalized_flux_jy"], [0.45, 0.55], rtol=1e-12)
+        assert_allclose(src.measurements["normalized_flux_err_jy"], [0.02, 0.03], rtol=1e-12)
+
+    def test_mjd_recomputed_from_measured_at_when_all_null(self, tmp_path):
+        """mjd = 40587 + measured_at/86400 exactly (module docstring,
+        criterion 5: Unix epoch = MJD 40587.0, shared 86400 s civil days)."""
+        t0 = 1.7e9
+        db = _make_products_db(
+            tmp_path / "products.sqlite3",
+            [
+                ("SRC1", 180.0, 16.1, 500.0, 0.5, 0.01, t0, None, "e1.fits"),
+                ("SRC1", 180.0, 16.1, 500.0, 0.6, 0.01, t0 + 3600, None, "e2.fits"),
+            ],
+        )
+        src = Source("SRC1", products_db=db)
+
+        expected = [40587.0 + t0 / 86400.0, 40587.0 + (t0 + 3600.0) / 86400.0]
+        assert_allclose(src.measurements["mjd"].astype(float), expected, rtol=1e-12)
+
+    def test_photometry_table_without_source_id_yields_empty(self, tmp_path):
+        """A schema without source_id cannot be queried per-source; the loader
+        returns no measurements rather than guessing (coords supplied so the
+        constructor does not raise)."""
+        db = tmp_path / "products.sqlite3"
+        conn = sqlite3.connect(str(db))
+        conn.execute("CREATE TABLE photometry (ra_deg REAL, dec_deg REAL, peak_jyb REAL)")
+        conn.commit()
+        conn.close()
+
+        src = Source("SRC1", ra_deg=180.0, dec_deg=16.1, products_db=db)
+        assert src.measurements.empty
+
+    def test_missing_photometry_table_yields_empty(self, tmp_path):
+        db = tmp_path / "products.sqlite3"
+        conn = sqlite3.connect(str(db))
+        conn.execute("CREATE TABLE unrelated (x REAL)")
+        conn.commit()
+        conn.close()
+
+        src = Source("SRC1", ra_deg=180.0, dec_deg=16.1, products_db=db)
+        assert src.measurements.empty
 
     def test_missing_db_raises(self, tmp_path):
         with pytest.raises(SourceError, match="not found"):
@@ -466,20 +618,61 @@ class TestFindStableNeighbors:
 
     def test_selects_only_stable_similar_flux_neighbors_within_radius(self, tmp_path):
         src = self._target(tmp_path)
-        # The loader leaves normalized_flux_jy NaN; populate it the way the
-        # normalization step would before neighbor selection.
+        # Populate normalized flux the way the normalization step would;
+        # selection then prefers the normalized column (criterion 5).
         src.measurements["normalized_flux_jy"] = src.measurements["peak_jyb"]
         assert src.find_stable_neighbors() == ["GOOD"]
 
-    def test_returns_empty_when_target_flux_unknown(self, tmp_path):
-        """With normalized_flux_jy all-NaN the flux-ratio filter is undefined,
-        so neighbor selection refuses to guess and returns no neighbors.
-
-        Pins CURRENT behavior, not a requirement: the loader NaN-fills
-        normalized_flux_jy unconditionally (source.py, _load_measurements) and
-        find_stable_neighbors prefers that column over the populated peak_jyb,
-        so the DB path can never select neighbors without a caller-side
-        normalization step. A legitimate fall-back-to-peak fix may change this
-        expectation — see the latent-issue notes in PR #113."""
+    def test_falls_back_to_peak_flux_when_normalized_all_nan(self, tmp_path):
+        """A raw products DB has no normalized columns, so the loader NaN-fills
+        them; neighbor selection must fall back to the populated peak_jyb
+        (median 0.5 Jy -> 500 mJy target flux) instead of refusing with an
+        undefined flux-ratio filter. Pre-#118 this returned [] and made
+        relative photometry unreachable from a raw DB (issue #118 item 1)."""
         src = self._target(tmp_path)
-        assert src.find_stable_neighbors() == []
+        assert src.measurements["normalized_flux_jy"].isna().all()
+        assert src.find_stable_neighbors() == ["GOOD"]
+
+    def test_ra_wrap_neighbor_across_zero_meridian(self, tmp_path):
+        """Target at RA 0.2 deg: the RA box (half-width 0.5/cos(16.1) ~ 0.52)
+        wraps below 0, so the SQL clause becomes (ra >= 359.68 OR ra <= 0.72).
+        WRAP at RA 359.9 is dRA = 0.3 deg away — haversine separation
+        0.3*cos(16.1) ~ 0.288 deg < 0.5 — and must be selected. NOWRAP at
+        RA 5.0 (~4.6 deg away) stays excluded by the SQL box. Pre-#118 the
+        planar post-filter computed |359.9 - 0.2| = 359.7 deg and rejected
+        every wrapped candidate the SQL clause had correctly found
+        (criterion 6)."""
+        rows = [
+            ("T0", 0.2, 16.1, 500.0, 0.5, 0.01, 1.7e9, 60000.0, "e1.fits"),
+            ("T0", 0.2, 16.1, 500.0, 0.5, 0.01, 1.7e9 + 3600, 60000.042, "e2.fits"),
+        ]
+        stats = [
+            ("WRAP", 359.9, 16.1, 400.0, 0.5, 20),
+            ("NOWRAP", 5.0, 16.1, 400.0, 0.5, 20),
+        ]
+        db = _make_products_db(tmp_path / "products.sqlite3", rows, stats)
+        src = Source("T0", products_db=db)
+
+        assert src.find_stable_neighbors() == ["WRAP"]
+
+    def test_pole_search_finds_neighbor_across_ra(self, tmp_path):
+        """Target at dec 89.7 (colatitude 0.3 deg) triggers the all-RA pole
+        branch. POLE at the antipodal RA, dec 89.9 (colatitude 0.1) sits on
+        the same great circle through the pole: separation 0.3 + 0.1 = 0.4 deg
+        < 0.5, so it must be selected. POLEFAR at RA+90, dec 89.25 has
+        small-angle separation sqrt(0.3^2 + 0.75^2) ~ 0.808 deg > 0.5 and is
+        excluded by the post-filter even though it passes the all-RA box.
+        Pre-#118 the planar post-filter rejected POLE — its RA term alone,
+        (180*cos 89.7)^2, exceeds radius^2 (criterion 6)."""
+        rows = [
+            ("T0", 180.0, 89.7, 500.0, 0.5, 0.01, 1.7e9, 60000.0, "e1.fits"),
+            ("T0", 180.0, 89.7, 500.0, 0.5, 0.01, 1.7e9 + 3600, 60000.042, "e2.fits"),
+        ]
+        stats = [
+            ("POLE", 0.0, 89.9, 400.0, 0.5, 20),
+            ("POLEFAR", 270.0, 89.25, 400.0, 0.5, 20),
+        ]
+        db = _make_products_db(tmp_path / "products.sqlite3", rows, stats)
+        src = Source("T0", products_db=db)
+
+        assert src.find_stable_neighbors() == ["POLE"]
