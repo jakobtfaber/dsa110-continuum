@@ -35,6 +35,9 @@ CLOUD_SAFE_TESTS = (
     "tests/test_imaging_worker_no_fast_imaging.py",
     "tests/test_no_stale_contimg_api_refs.py",
     "tests/test_paths_resolver.py",
+    "tests/test_qa_server.py",
+    "tests/test_artifact_substrate.py",
+    "tests/test_caltable_pages.py",
 )
 
 

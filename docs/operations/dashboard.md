@@ -35,6 +35,25 @@ sudo systemctl enable --now dsa110-autopipeline.timer
 Health checks: `systemctl status dsa110-dashboard`, `systemctl list-timers 'dsa110-*'`,
 `curl -s http://127.0.0.1:8767/health`.
 
+## Worktree topology
+
+The dashboard service serves the `dashboard-production` branch from a dedicated worktree at
+`/data/dsa110-continuum-dashboard` (create once with
+`git -C /data/dsa110-continuum worktree add /data/dsa110-continuum-dashboard dashboard-production`).
+The unit's `DSA110_REPO_ROOT=/data/dsa110-continuum` keeps pipeline launches executing from the
+live checkout, which may sit on a different branch. Upgrade procedure:
+
+```bash
+git -C /data/dsa110-continuum-dashboard pull --ff-only
+sudo systemctl restart dsa110-dashboard
+```
+
+Per-artifact QA pages: `/artifacts/caltable/` (BP/G/K tables with acquisition provenance),
+`/artifacts/tile/` (single-tile FITS with the image QA gate), `/artifacts/ms/`
+(per-MS conversion/UVW/RFI diagnostics). Detail pages render plots lazily and cache them in
+`DSA110_QA_THUMBS` keyed on artifact mtime; a plot card returning HTTP 424 names the missing
+dependency or product rather than failing the page.
+
 The timer runs `scripts/auto_pipeline.py` daily at 02:00 UTC, which launches
 `batch_pipeline.py --date <yesterday UTC> --retry-failed --quarantine-after-failures 3
 --photometry-workers 4` through the same registry the dashboard uses. If a launcher-owned run
