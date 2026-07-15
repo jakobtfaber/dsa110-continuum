@@ -99,6 +99,23 @@ def cal_tables(config: DashboardConfig) -> set[str]:
     return {path.stem.split("_")[0] for path in directory.glob("*.b")}
 
 
+MOSAIC_NAME_RE = re.compile(r"(\d{4}-\d{2}-\d{2})(T\d{4})_mosaic\.fits")
+
+
+def discover_epochs(config: DashboardConfig, limit: int = 24) -> list[tuple[str, str]]:
+    """List (date, epoch) for every hourly-epoch mosaic on stage, newest first."""
+    root = config.stage / "images"
+    found = []
+    if root.is_dir():
+        for path in root.glob("mosaic_*/*_mosaic.fits"):
+            match = MOSAIC_NAME_RE.fullmatch(path.name)
+            if match:
+                found.append((path.stat().st_mtime, match.group(1), match.group(2)))
+    found.sort(reverse=True)
+    discovered = [(date, epoch) for _, date, epoch in found[:limit]]
+    return discovered or EPOCHS
+
+
 def get_metrics(config: DashboardConfig, date: str, epoch: str) -> dict:
     """Measure the legacy QA fields for one hourly-epoch mosaic."""
     fits_path = find_mosaic(config, date, epoch)
@@ -408,9 +425,118 @@ def _ratio_cell(ratio) -> str:
     return f'<span style="color:{color};font-weight:700">{ratio:.3f}</span>'
 
 
+_CONTROL_SCRIPT = """<script>
+function controlToken(){return document.getElementById("control-token").value.trim();}
+function showOutput(text){document.getElementById("run-output").textContent=text;}
+async function postRuns(dryRun){
+  const form=document.getElementById("run-form");
+  const body={date:form.date.value,dry_run:dryRun};
+  if(form.cal_date.value)body.cal_date=form.cal_date.value;
+  if(form.start_hour.value)body.start_hour=parseInt(form.start_hour.value,10);
+  if(form.end_hour.value)body.end_hour=parseInt(form.end_hour.value,10);
+  if(form.rfi_mode.value)body.rfi_mode=form.rfi_mode.value;
+  for(const name of["retry_failed","force_recal","skip_photometry","lenient_qa","clear_quarantine"]){
+    if(form[name].checked)body[name]=true;
+  }
+  showOutput("Submitting...");
+  try{
+    const response=await fetch("/api/runs",{method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+controlToken()},
+      body:JSON.stringify(body)});
+    const payload=await response.json();
+    if(!response.ok){showOutput("Error "+response.status+": "+JSON.stringify(payload.detail));return;}
+    showOutput(payload.plan?payload.plan:JSON.stringify(payload,null,2));
+    if(!dryRun)setTimeout(()=>location.reload(),1500);
+  }catch(error){showOutput("Request failed: "+error);}
+}
+async function terminateRun(runId){
+  if(!confirm("Terminate run "+runId+"?"))return;
+  try{
+    const response=await fetch("/api/runs/"+runId+"/terminate",{method:"POST",
+      headers:{"Authorization":"Bearer "+controlToken()}});
+    const payload=await response.json();
+    if(!response.ok){showOutput("Error "+response.status+": "+JSON.stringify(payload.detail));return;}
+    showOutput(JSON.stringify(payload,null,2));
+    setTimeout(()=>location.reload(),1500);
+  }catch(error){showOutput("Request failed: "+error);}
+}
+</script>"""
+
+
+def _render_control_section() -> str:
+    """Render the pipeline-control panel: recent runs table + launch form."""
+    try:
+        runs = pipeline_control.list_runs(pipeline_control.ControlConfig(), limit=10)
+    except Exception as exc:
+        logger.warning("Run registry unavailable: %s", exc)
+        runs = []
+    if runs:
+        run_rows = []
+        for run in runs:
+            state_key = {
+                "running": "active",
+                "succeeded": "pass",
+                "failed": "fail",
+                "terminated": "not_yet",
+                "orphaned": "missing",
+            }.get(run["status"], "missing")
+            exit_code = run["exit_code"] if run["exit_code"] is not None else "—"
+            action = (
+                f"<button onclick=\"terminateRun('{html.escape(run['run_id'])}')\">"
+                "Terminate</button>"
+                if run["status"] == "running"
+                else ""
+            )
+            run_rows.append(
+                f'<tr><td><a href="/control/runs/{html.escape(run["run_id"])}">'
+                f"{html.escape(run['run_id'])}</a></td>"
+                f"<td>{_badge(state_key, run['status'])}</td>"
+                f"<td>{html.escape(run['created_at'][:19])}</td>"
+                f"<td>{exit_code}</td><td>{action}</td></tr>"
+            )
+        runs_table = (
+            '<div class="table-wrap"><table><thead><tr><th>Run</th><th>Status</th>'
+            "<th>Started (UTC)</th><th>Exit</th><th></th></tr></thead>"
+            f"<tbody>{''.join(run_rows)}</tbody></table></div>"
+        )
+    else:
+        runs_table = '<p class="empty-row">No launcher-owned runs recorded yet.</p>'
+    form = """
+<form id="run-form" onsubmit="return false" style="margin-top:14px">
+<div class="info-grid">
+<div class="info-card"><span>Date</span><input name="date" required pattern="\\d{4}-\\d{2}-\\d{2}" placeholder="YYYY-MM-DD"></div>
+<div class="info-card"><span>Cal date</span><input name="cal_date" pattern="\\d{4}-\\d{2}-\\d{2}" placeholder="optional"></div>
+<div class="info-card"><span>Hours</span><input name="start_hour" type="number" min="0" max="23" placeholder="start" style="width:45%">
+<input name="end_hour" type="number" min="0" max="23" placeholder="end" style="width:45%"></div>
+<div class="info-card"><span>RFI mode</span><select name="rfi_mode"><option value="">default</option><option>full</option><option>conditional</option><option>off</option></select></div>
+</div>
+<div style="margin:10px 0;display:flex;gap:16px;flex-wrap:wrap;font-size:.8rem">
+<label><input type="checkbox" name="retry_failed"> retry failed</label>
+<label><input type="checkbox" name="force_recal"> force recal</label>
+<label><input type="checkbox" name="skip_photometry"> skip photometry</label>
+<label><input type="checkbox" name="lenient_qa"> lenient QA</label>
+<label><input type="checkbox" name="clear_quarantine"> clear quarantine</label>
+</div>
+<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+<input id="control-token" type="password" placeholder="control token" autocomplete="off">
+<button onclick="postRuns(true)">Dry-run preview</button>
+<button onclick="postRuns(false)" style="background:#274b63">Launch</button>
+</div>
+</form>
+<pre id="run-output" style="margin-top:12px;min-height:40px"></pre>"""
+    return (
+        '<section class="campaign"><div class="campaign-head"><div>'
+        "<h2>Pipeline control</h2>"
+        "<p>Launch or re-run batch_pipeline.py — token required for mutating actions; "
+        "dry-run preview shows the execution plan without writing anything</p></div></div>"
+        f"{runs_table}{form}{_CONTROL_SCRIPT}</section>"
+    )
+
+
 def render_dashboard(config: DashboardConfig) -> str:
     """Render the consolidated QA and operations dashboard."""
-    all_metrics = [get_metrics(config, date, epoch) for date, epoch in EPOCHS]
+    epochs = discover_epochs(config)
+    all_metrics = [get_metrics(config, date, epoch) for date, epoch in epochs]
     cals = cal_tables(config)
     campaign = campaign_status(config, config.campaign_date, config.campaign_hour)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -488,6 +614,7 @@ def render_dashboard(config: DashboardConfig) -> str:
     run_summary = campaign["run_products"]["summary"]
     run_summary_path = run_summary["path"] if run_summary else "Not yet produced"
     incoming = campaign["incoming"]
+    control_section = _render_control_section()
 
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -511,7 +638,7 @@ pre{{background:#090b0e;color:#b9c6d0;border-radius:6px;padding:12px;margin:0;ma
 .table-wrap{{overflow:auto;border:1px solid var(--line);border-radius:9px}} table{{width:100%;border-collapse:collapse;font-size:.82rem}} th,td{{padding:10px 12px;text-align:center;border-bottom:1px solid var(--line);white-space:nowrap}} th{{background:#171b20;color:#9da8b4;font-weight:600}} td:first-child{{text-align:left}} td small{{display:block;color:var(--muted);margin-top:2px}} tr:last-child td{{border:0}} tr:hover{{background:#14191f}}
 .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}} .mosaic-card{{background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:hidden}} .mosaic-card header,.mosaic-card footer{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px}} .mosaic-card img{{display:block;width:100%;min-height:140px;object-fit:cover;background:#090b0e}} .mosaic-card footer{{font-size:.75rem;color:#aeb7c0;flex-wrap:wrap}} .empty{{display:grid;place-items:center;min-height:140px;background:#101318;color:#5d6670}} .empty-row{{color:var(--muted)}}
 @media(max-width:850px){{.stage-grid,.info-grid{{grid-template-columns:repeat(2,1fr)}}.ops-grid{{grid-template-columns:1fr}}}} @media(max-width:560px){{.shell{{padding:16px}}.summary,.stage-grid,.info-grid{{grid-template-columns:1fr 1fr}}.grid{{grid-template-columns:1fr}}}}
-</style><script>setTimeout(()=>location.reload(),30000)</script></head>
+</style><script>setTimeout(()=>{{const token=document.getElementById("control-token");if(!token||!token.value)location.reload();}},30000)</script></head>
 <body><main class="shell"><h1>DSA-110 Continuum Observatory</h1><div class="subtitle">Updated {now} · auto-refresh 30s · read-only</div>
 <section class="campaign"><div class="campaign-head"><div><h2>Active campaign · {campaign["date"]} hour {campaign["hour"]:02d}</h2><p>Hourly-epoch mosaic progress from incoming HDF5 through science products</p></div>{_badge("active" if processes else "not_yet", "process visible" if processes else ("PID recorded" if campaign["pid_hints"] else "process not visible"))}</div>
 <div class="stage-grid">{"".join(stage_cards)}</div><div class="info-grid">{"".join(disk_cards)}
@@ -522,7 +649,8 @@ pre{{background:#090b0e;color:#b9c6d0;border-radius:6px;padding:12px;margin:0;ma
 <div class="info-card"><span>Run summary</span><strong>{"available" if run_summary else "not yet"}</strong><small class="path">{html.escape(run_summary_path)}</small></div></div>
 <div class="ops-grid"><div class="panel"><h3>Pipeline heartbeat</h3><ul class="process-list">{process_rows}</ul></div>
 <div class="panel"><h3>Latest batch log</h3><div class="log-path">{log_title}</div><pre>{log_tail}</pre></div></div></section>
-<section><h2>Historical hourly-epoch QA</h2><div class="summary"><div class="stat"><strong style="color:#41c97a">{n_pass}</strong><span>Pass</span></div><div class="stat"><strong style="color:#ff6470">{n_fail}</strong><span>Fail</span></div><div class="stat"><strong style="color:#d99b35">{n_missing}</strong><span>Missing / pending photometry</span></div><div class="stat"><strong>{len(EPOCHS)}</strong><span>Total</span></div></div>
+{control_section}
+<section><h2>Historical hourly-epoch QA</h2><div class="summary"><div class="stat"><strong style="color:#41c97a">{n_pass}</strong><span>Pass</span></div><div class="stat"><strong style="color:#ff6470">{n_fail}</strong><span>Fail</span></div><div class="stat"><strong style="color:#d99b35">{n_missing}</strong><span>Missing / pending photometry</span></div><div class="stat"><strong>{len(epochs)}</strong><span>Total</span></div></div>
 <div class="table-wrap"><table><thead><tr><th>Date</th><th>Status</th><th>Cal tables</th><th>Peak (Jy)</th><th>RMS (mJy)</th><th>Dyn range</th><th>DSA/NVSS</th><th>Bright sources</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div></section>
 <section><h2>Mosaic thumbnails</h2><div class="grid">{"".join(cards)}</div></section></main></body></html>"""
 
@@ -585,6 +713,8 @@ def control_list_runs():
 def control_get_run(run_id: str, tail: int = 40):
     """Return one run's registry record plus a bounded log tail (read-only)."""
     config = pipeline_control.ControlConfig()
+    if not config.db_path.is_file():
+        raise HTTPException(status_code=404, detail="unknown run")
     try:
         record = pipeline_control.get_run(run_id, config)
     except KeyError:
@@ -613,6 +743,54 @@ def control_launch(body: RunRequestBody, request: Request):
         return pipeline_control.launch_run(run_request, config)
     except pipeline_control.RunConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+control_page_router = APIRouter(include_in_schema=False)
+
+
+@control_page_router.get("/control/runs/{run_id}", response_class=HTMLResponse)
+def control_run_page(run_id: str):
+    """Render one launcher-owned run: registry record plus escaped log tail."""
+    config = pipeline_control.ControlConfig()
+    if not config.db_path.is_file():
+        raise HTTPException(status_code=404, detail="run registry unavailable")
+    try:
+        record = pipeline_control.get_run(run_id, config)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="unknown run") from None
+    state_key = {
+        "running": "active",
+        "succeeded": "pass",
+        "failed": "fail",
+        "terminated": "not_yet",
+        "orphaned": "missing",
+    }.get(record["status"], "missing")
+    log_tail = html.escape("".join(_tail(Path(record["log_path"]), 200)) or "No log output yet")
+    argv = html.escape(" ".join(json.loads(record["argv_json"])))
+    finished = record["finished_at"] or "—"
+    exit_code = record["exit_code"] if record["exit_code"] is not None else "—"
+    return HTMLResponse(
+        f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Run {html.escape(run_id)}</title>
+<style>body{{background:#0d1014;color:#e8edf2;font-family:Inter,-apple-system,sans-serif;margin:0}}
+.shell{{max-width:1100px;margin:auto;padding:22px}} a{{color:#4eb8ff}}
+table{{border-collapse:collapse;font-size:.85rem;margin:14px 0}} td,th{{padding:7px 14px;border-bottom:1px solid #2a3038;text-align:left}}
+.badge{{display:inline-block;background:var(--badge);color:#081014;padding:3px 8px;border-radius:999px;font-size:.68rem;font-weight:800}}
+pre{{background:#090b0e;color:#b9c6d0;border-radius:6px;padding:12px;max-height:560px;overflow:auto;font-size:.74rem;line-height:1.45;white-space:pre-wrap}}</style>
+<script>setTimeout(()=>location.reload(),15000)</script></head>
+<body><main class="shell"><p><a href="/">← Dashboard</a></p>
+<h1>Run {html.escape(run_id)}</h1>
+<table>
+<tr><th>Status</th><td>{_badge(state_key, record["status"])}</td></tr>
+<tr><th>Started (UTC)</th><td>{html.escape(record["created_at"])}</td></tr>
+<tr><th>Finished (UTC)</th><td>{html.escape(str(finished))}</td></tr>
+<tr><th>Exit code</th><td>{exit_code}</td></tr>
+<tr><th>Command</th><td><code>{argv}</code></td></tr>
+<tr><th>Log file</th><td><code>{html.escape(record["log_path"])}</code></td></tr>
+</table>
+<h2>Log tail</h2><pre>{log_tail}</pre></main></body></html>"""
+    )
 
 
 @control_router.post("/{run_id}/terminate")
@@ -676,6 +854,7 @@ def create_app(config: DashboardConfig | None = None) -> FastAPI:
     application.include_router(mosaic_router)
     application.include_router(ops_router)
     application.include_router(control_router)
+    application.include_router(control_page_router)
     application.include_router(legacy_router)
 
     @application.get("/", response_class=HTMLResponse)

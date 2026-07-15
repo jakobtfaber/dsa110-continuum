@@ -657,3 +657,82 @@ class TestControlAuth:
                 headers={"Authorization": "Bearer s3cret"},
             )
             assert client.get("/api/runs/nope").status_code == 404
+
+
+class TestEpochDiscovery:
+    """Criterion: the historical QA list derives from actual mosaics on stage
+    (newest mtime first, canonical names only), falling back to the static
+    EPOCHS list when stage is empty so the dashboard never renders blank.
+    Basis: filesystem-truth navigation replacing the hardcoded epoch list."""
+
+    def test_discovers_epochs_from_stage_newest_first(self, tmp_path: Path):
+        config = _make_config(tmp_path)
+        old = _write_mosaic(config, "2026-01-25", "T0200", np.ones((4, 4), np.float32))
+        _write_mosaic(config, "2026-07-13", "T1100", np.ones((4, 4), np.float32))
+        os.utime(old, (1, 1))
+        discovered = qa_server.discover_epochs(config)
+        assert discovered[0] == ("2026-07-13", "T1100")
+        assert ("2026-01-25", "T0200") in discovered
+
+    def test_falls_back_to_static_epochs_when_stage_empty(self, tmp_path: Path):
+        assert qa_server.discover_epochs(_make_config(tmp_path)) == qa_server.EPOCHS
+
+    def test_ignores_malformed_names_and_respects_limit(self, tmp_path: Path):
+        config = _make_config(tmp_path)
+        directory = config.stage / "images" / "mosaic_2026-01-25"
+        directory.mkdir(parents=True)
+        (directory / "junk_mosaic.fits").write_bytes(b"x")
+        assert qa_server.discover_epochs(config) == qa_server.EPOCHS
+        for hour in range(5):
+            _write_mosaic(config, "2026-01-25", f"T{hour:02d}00", np.ones((2, 2), np.float32))
+        assert len(qa_server.discover_epochs(config, limit=3)) == 3
+
+
+class TestControlUi:
+    """Criterion: the dashboard exposes the control surface (form posting to
+    /api/runs) and per-run detail pages render registry state plus an
+    HTML-escaped log tail. Basis: operator-facing contract of the control UI."""
+
+    def test_dashboard_shows_pipeline_control_panel(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(qa_server, "process_status", lambda: [])
+        monkeypatch.setenv("DSA110_CONTROL_DIR", str(tmp_path / "control"))
+        with TestClient(create_app(_make_config(tmp_path))) as client:
+            page = client.get("/").text
+        assert "Pipeline control" in page
+        assert 'id="run-form"' in page and "/api/runs" in page
+        assert 'id="control-token"' in page
+
+    def test_run_detail_page_renders_log_tail_escaped(self, tmp_path: Path, monkeypatch):
+        import sys as _sys
+        import time as _time
+
+        monkeypatch.setenv("DSA110_CONTROL_DIR", str(tmp_path / "control"))
+        monkeypatch.setenv("DSA110_PIPELINE_PYTHON", _sys.executable)
+        monkeypatch.setenv("DSA110_REPO_ROOT", str(tmp_path))
+        (tmp_path / "scripts").mkdir()
+        (tmp_path / "scripts" / "batch_pipeline.py").write_text(
+            "print('hello from run <script>bad</script>')\n"
+        )
+        from dsa110_continuum.observability.control import (
+            ControlConfig,
+            RunRequest,
+            launch_run,
+        )
+
+        record = launch_run(
+            RunRequest(date="2026-01-25"),
+            ControlConfig(
+                repo_root=tmp_path, python=_sys.executable, control_dir=tmp_path / "control"
+            ),
+        )
+        _time.sleep(1.0)
+        with TestClient(create_app(_make_config(tmp_path))) as client:
+            page = client.get(f"/control/runs/{record['run_id']}")
+        assert page.status_code == 200
+        assert "hello from run" in page.text
+        assert "<script>bad</script>" not in page.text
+
+    def test_unknown_run_page_is_404(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("DSA110_CONTROL_DIR", str(tmp_path / "control"))
+        with TestClient(create_app(_make_config(tmp_path))) as client:
+            assert client.get("/control/runs/nope").status_code == 404
