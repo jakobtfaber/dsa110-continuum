@@ -6,7 +6,7 @@ import html
 import json
 from pathlib import Path
 
-from dsa110_continuum.observability import artifacts, caltable_qa
+from dsa110_continuum.observability import artifacts, caltable_qa, tile_qa
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 
@@ -45,7 +45,8 @@ def _page(title: str, body: str) -> HTMLResponse:
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)}</title>{_STYLE}</head>
 <body><main class="shell"><p><a href="/">← Dashboard</a> ·
-<a href="/artifacts/caltable/">caltables</a></p>{body}</main></body></html>"""
+<a href="/artifacts/caltable/">caltables</a> ·
+<a href="/artifacts/tile/">tiles</a></p>{body}</main></body></html>"""
     )
 
 
@@ -222,4 +223,134 @@ modified {html.escape(record["modified"][:19])} ·
 <table><thead><tr><th>SPW</th><th>Flagged</th><th></th></tr></thead>
 <tbody>{spw_rows}</tbody></table>
 <h2>Diagnostics</h2>{_plot_grid(f"/artifacts/caltable/{html.escape(name)}", caltable_qa.plot_kinds(name))}""",
+    )
+
+
+# ---------------------------------------------------------------- tile (#55)
+
+tile_router = APIRouter(prefix="/artifacts/tile", tags=["tile artifacts"])
+
+
+def _resolve_tile_or_404(config, ts: str) -> dict:
+    try:
+        return artifacts.tile_products(Path(config.stage) / "images", ts)
+    except artifacts.ArtifactNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+
+
+def _tile_ms_path(config, ts: str) -> Path | None:
+    related = artifacts.related_artifacts(Path(config.stage), ts)
+    name = related.get("ms_meridian") or related.get("ms")
+    return (Path(config.stage) / "ms" / name) if name else None
+
+
+@tile_router.get("/", response_class=HTMLResponse)
+def tile_index(request: Request):
+    """List the newest single-tile FITS products on stage."""
+    config = _config(request)
+    records = artifacts.list_tiles(Path(config.stage) / "images")
+    rows = (
+        "".join(
+            f'<tr><td><a href="/artifacts/tile/{record["name"]}">{record["name"]}</a></td>'
+            f"<td>{html.escape(record['modified'][:19])}</td></tr>"
+            for record in records
+        )
+        or '<tr><td colspan="2" class="muted">No tiles on stage</td></tr>'
+    )
+    return _page(
+        "Tiles",
+        f"""<h1>Single-tile FITS</h1>
+<table><thead><tr><th>Tile</th><th>Modified (UTC)</th></tr></thead>
+<tbody>{rows}</tbody></table>""",
+    )
+
+
+@tile_router.get("/{name}/status")
+def tile_status(name: str, request: Request):
+    """Machine-readable summary for one tile."""
+    config = _config(request)
+    products = _resolve_tile_or_404(config, name)
+    source = next(path for path in products.values() if path is not None)
+    ms_path = _tile_ms_path(config, name)
+    try:
+        summary = _cached_summary(
+            config, "tile", name, source, lambda: tile_qa.summary(products, ms_path)
+        )
+    except (artifacts.ArtifactRenderError, RuntimeError, ImportError) as exc:
+        raise HTTPException(status_code=424, detail=str(exc)) from None
+    return {
+        "products": {key: artifacts.file_record(path) for key, path in products.items()},
+        "summary": summary,
+        "related": artifacts.related_artifacts(Path(config.stage), name),
+        "plot_kinds": list(tile_qa.plot_kinds(products, ms_path is not None)),
+    }
+
+
+@tile_router.get("/{name}/plot/{kind}.png")
+def tile_plot(name: str, kind: str, request: Request):
+    """Lazily render (and cache) one tile diagnostic plot."""
+    config = _config(request)
+    products = _resolve_tile_or_404(config, name)
+    ms_path = _tile_ms_path(config, name)
+    if kind not in tile_qa.plot_kinds(products, ms_path is not None):
+        raise HTTPException(status_code=404, detail=f"unknown plot kind {kind!r}")
+    source = next(path for path in products.values() if path is not None)
+    try:
+        png = artifacts.cached_artifact_file(
+            Path(config.thumb_dir),
+            "tile",
+            name,
+            kind,
+            source.stat().st_mtime,
+            ".png",
+            lambda tmp: tile_qa.render_plot(products, kind, tmp, ms_path=ms_path),
+        )
+    except (artifacts.ArtifactRenderError, RuntimeError, ImportError) as exc:
+        raise HTTPException(status_code=424, detail=str(exc)) from None
+    return Response(
+        content=png.read_bytes(),
+        media_type="image/png",
+        headers={"Cache-Control": "max-age=300"},
+    )
+
+
+@tile_router.get("/{name}", response_class=HTMLResponse)
+def tile_page(name: str, request: Request):
+    """Human-readable per-tile QA page."""
+    config = _config(request)
+    products = _resolve_tile_or_404(config, name)
+    source = next(path for path in products.values() if path is not None)
+    ms_path = _tile_ms_path(config, name)
+    try:
+        summary = _cached_summary(
+            config, "tile", name, source, lambda: tile_qa.summary(products, ms_path)
+        )
+        note = ""
+    except (artifacts.ArtifactRenderError, RuntimeError, ImportError) as exc:
+        summary = {"gate": None, "residual": None, "psf_correlation": None}
+        note = f'<p class="muted">metrics unavailable: {html.escape(str(exc))}</p>'
+    gate = summary.get("gate") or {}
+    overall = str(gate.get("overall", "—"))
+    gate_badge = _badge({"PASS": "pass", "WARN": "warn"}.get(overall, "fail"), overall)
+    gate_rows = (
+        "".join(
+            f"<tr><th>{html.escape(str(key))}</th><td>{html.escape(str(value))}</td></tr>"
+            for key, value in gate.items()
+        )
+        or '<tr><td colspan="2" class="muted">—</td></tr>'
+    )
+    product_rows = "".join(
+        f"<tr><th>{key}</th><td>{html.escape(path.name) if path else '—'}</td></tr>"
+        for key, path in products.items()
+    )
+    related = artifacts.related_artifacts(Path(config.stage), name)
+    return _page(
+        f"Tile {name}",
+        f"""
+<h1>Single-tile FITS · {name} {gate_badge}</h1>
+<p class="muted"><a href="/artifacts/tile/{name}/status">JSON</a></p>
+<p>{_related_row(related)}</p>{note}
+<h2>QA gate</h2><table><tbody>{gate_rows}</tbody></table>
+<h2>Products</h2><table><tbody>{product_rows}</tbody></table>
+<h2>Diagnostics</h2>{_plot_grid(f"/artifacts/tile/{name}", tile_qa.plot_kinds(products, ms_path is not None))}""",
     )

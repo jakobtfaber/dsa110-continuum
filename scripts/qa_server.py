@@ -715,7 +715,7 @@ pre{{background:#090b0e;color:#b9c6d0;border-radius:6px;padding:12px;margin:0;ma
 @media(max-width:850px){{.stage-grid,.info-grid{{grid-template-columns:repeat(2,1fr)}}.ops-grid{{grid-template-columns:1fr}}}} @media(max-width:560px){{.shell{{padding:16px}}.summary,.stage-grid,.info-grid{{grid-template-columns:1fr 1fr}}.grid{{grid-template-columns:1fr}}}}
 </style><script>setTimeout(()=>{{const token=document.getElementById("control-token");if(!token||!token.value)location.reload();}},30000)</script></head>
 <body><main class="shell"><h1>DSA-110 Continuum Observatory</h1><div class="subtitle">Updated {now} · auto-refresh 30s · read-only ·
-<a href="/artifacts/caltable/">caltables</a></div>
+<a href="/artifacts/caltable/">caltables</a> · <a href="/artifacts/tile/">tiles</a></div>
 <section class="campaign"><div class="campaign-head"><div><h2>Active campaign · {campaign["date"]} hour {campaign["hour"]:02d}</h2><p>Hourly-epoch mosaic progress from incoming HDF5 through science products</p></div>{_badge("active" if processes else "not_yet", "process visible" if processes else ("PID recorded" if campaign["pid_hints"] else "process not visible"))}</div>
 <div class="stage-grid">{"".join(stage_cards)}</div><div class="info-grid">{"".join(disk_cards)}
 <div class="info-card"><span>Incoming slow-vis</span><strong>{incoming["hdf5_count"]} HDF5</strong><small class="path">{html.escape(incoming["directory"])}</small></div></div>
@@ -1103,7 +1103,7 @@ def operations_status(request: Request, date: str | None = None, hour: int | Non
 
 def create_app(config: DashboardConfig | None = None) -> FastAPI:
     """Create a routed dashboard application."""
-    from scripts.artifact_pages import caltable_router
+    from scripts.artifact_pages import caltable_router, tile_router
 
     dashboard_config = config or DashboardConfig()
     dashboard_config.thumb_dir.mkdir(parents=True, exist_ok=True)
@@ -1111,6 +1111,7 @@ def create_app(config: DashboardConfig | None = None) -> FastAPI:
     application.state.dashboard_config = dashboard_config
     application.include_router(mosaic_router)
     application.include_router(caltable_router)
+    application.include_router(tile_router)
     application.include_router(ops_router)
     application.include_router(control_router)
     application.include_router(control_page_router)
