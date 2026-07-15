@@ -163,7 +163,7 @@ def cached_artifact_file(
     cache_dir.mkdir(parents=True, exist_ok=True)
     for stale in cache_dir.glob(f"{safe}_*{suffix}"):
         stale.unlink(missing_ok=True)
-    tmp = target.with_name(target.name + ".tmp")
+    tmp = target.with_name(f"{target.stem}.tmp{target.suffix}")
     builder(tmp)
     if not tmp.exists():
         raise ArtifactRenderError(f"renderer produced no output for {kind!r}")
