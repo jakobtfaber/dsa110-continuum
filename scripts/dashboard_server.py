@@ -83,6 +83,20 @@ N_SUBBANDS = 16
 _metrics_cache: dict[str, tuple[float, dict]] = {}
 _cache_lock = threading.Lock()
 
+# Load casatools before any request thread can import pandas/matplotlib:
+# they resolve the system libstdc++, whose CXXABI is too old for casatools'
+# libsakura, so a later casatools import fails (CXXABI_1.3.15 not found)
+# and antenna health silently degrades to "none". Best-effort by design:
+# hosts without the repo package or casatools just skip it.
+try:  # pragma: no cover - environment-dependent
+    import sys as _sys
+
+    if str(REPO_DIR) not in _sys.path:
+        _sys.path.insert(0, str(REPO_DIR))
+    from dsa110_continuum.adapters import casa_tables as _casa_tables  # noqa: F401
+except Exception:  # pragma: no cover
+    pass
+
 # --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
@@ -147,8 +161,11 @@ def _fits_stats(path: Path) -> dict:
         with afits.open(path, memmap=True) as hdul:
             d = np.asarray(hdul[0].data).squeeze().astype(np.float32)
         peak = float(np.nanmax(d))
-        quiet = d[np.abs(d) < 0.05]
-        rms = float(np.nanstd(quiet)) if quiet.size else float(np.nanstd(d))
+        # RMS on a stride-4 subsample: indistinguishable for noise stats on
+        # 4800-px mosaics, ~10x faster on the fuseblk mount. Peak stays full-res.
+        sub = d[::4, ::4] if d.ndim == 2 and min(d.shape) >= 512 else d
+        quiet = sub[np.abs(sub) < 0.05]
+        rms = float(np.nanstd(quiet)) if quiet.size else float(np.nanstd(sub))
         out = {
             "peak": round(peak, 3),
             "rms_mjy": round(rms * 1000, 2) if np.isfinite(rms) else None,
@@ -194,7 +211,9 @@ def scan_ms() -> dict[str, list[str]]:
     if not MS_DIR.exists():
         return out
     for f in sorted(MS_DIR.glob("*.ms")):
-        out.setdefault(f.name[:10], []).append(f.name)
+        date = f.name[:10]
+        if DATE_RE.match(date):
+            out.setdefault(date, []).append(f.name)
     return out
 
 
@@ -206,6 +225,8 @@ def scan_cal() -> dict[str, dict]:
     for ext in ("b", "g"):
         for p in MS_DIR.glob(f"*.{ext}"):
             date = p.name[:10]
+            if not DATE_RE.match(date):
+                continue
             rec = out.setdefault(date, {"bandpass": [], "gain": []})
             rec["bandpass" if ext == "b" else "gain"].append(p.name)
     return out
@@ -445,6 +466,11 @@ def thumb(date: str, name: str):
         try:
             with afits.open(fits_path, memmap=True) as hdul:
                 d = np.asarray(hdul[0].data).squeeze().astype(np.float32)
+            # Render at most ~2400 px on the long side; full-res imshow of a
+            # 4800-px mosaic costs ~9 s of pure matplotlib resampling.
+            if d.ndim == 2:
+                step = max(1, max(d.shape) // 2400)
+                d = d[::step, ::step]
             fig, ax = plt.subplots(figsize=(10, 4), dpi=80)
             finite = d[np.isfinite(d)]
             vmax = float(np.nanpercentile(finite, 99.5)) if finite.size else 1.0
@@ -751,8 +777,13 @@ def _catalog_sources(min_flux_jy: float = 2.0, limit: int = 400) -> list[dict]:
             continue
         try:
             conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5.0)
+            # Views included: the VLA calibrator DB exposes its per-band
+            # flux join as the vla_20cm VIEW, not a table.
             tables = [
-                r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type IN ('table','view')"
+                )
             ]
             for t in tables:
                 cols = {r[1].lower() for r in conn.execute(f"PRAGMA table_info({t})")}
@@ -969,11 +1000,34 @@ def _ant_key(name) -> str:
     return str(int(digits)) if digits else str(name).strip()
 
 
+def _antpos_cols(columns) -> dict | None:
+    """Pick antenna-position columns from a header; None if unusable."""
+    cols = {str(c).lower().strip(): c for c in columns}
+
+    def pick(*names):
+        return next((cols[n] for n in names if n in cols), None)
+
+    sel = {
+        "name": pick(
+            "ant", "antenna", "ant_id", "ant_ids", "pad", "station", "station number", "name"
+        ),
+        "x": pick("x_m", "x", "east", "east_m", "easting"),
+        "y": pick("y_m", "y", "north", "north_m", "northing"),
+        "lat": pick("lat", "latitude", "lat_deg"),
+        "lon": pick("lon", "longitude", "lon_deg", "long"),
+    }
+    if (sel["x"] and sel["y"]) or (sel["lat"] and sel["lon"]):
+        return sel
+    return None
+
+
 def _ant_positions() -> dict[str, dict]:
     """Antenna positions keyed by normalized name, from a best-effort CSV read.
 
     Accepts x/y (m), east/north, or lat/lon columns; lat/lon are projected to
-    local east-north metres about the array centroid.
+    local east-north metres about the array centroid. Excel-export CSVs that
+    bury the header under title rows (e.g. DSA110_Station_Coordinates.csv)
+    are handled by sniffing the first usable header line.
     """
     path = ANTPOS_CSV
     if not path:
@@ -985,30 +1039,32 @@ def _ant_positions() -> dict[str, dict]:
         import pandas as pd
 
         df = pd.read_csv(path)
-        cols = {c.lower().strip(): c for c in df.columns}
-
-        def pick(*names):
-            for n in names:
-                if n in cols:
-                    return cols[n]
-            return None
-
-        name_c = pick("ant", "antenna", "ant_id", "ant_ids", "pad", "station", "name")
-        x_c = pick("x_m", "x", "east", "east_m", "easting")
-        y_c = pick("y_m", "y", "north", "north_m", "northing")
-        lat_c = pick("lat", "latitude", "lat_deg")
-        lon_c = pick("lon", "longitude", "lon_deg", "long")
+        sel = _antpos_cols(df.columns)
+        if sel is None:
+            with open(path, errors="replace") as fh:
+                head = [fh.readline() for _ in range(40)]
+            for i, line in enumerate(head):
+                if _antpos_cols(line.split(",")) is not None:
+                    df = pd.read_csv(path, header=i)
+                    sel = _antpos_cols(df.columns)
+                    break
+        if sel is None:
+            return {}
+        name_c = sel["name"]
         out: dict[str, dict] = {}
-        if x_c and y_c:
-            for _, row in df.iterrows():
-                nm = _ant_key(row[name_c] if name_c else _ant_key(str(_ + 1)))
-                out[nm] = {"x_m": float(row[x_c]), "y_m": float(row[y_c])}
-        elif lat_c and lon_c:
+        if sel["x"] and sel["y"]:
+            df = df.dropna(subset=[sel["x"], sel["y"]])
+            for i, (_, row) in enumerate(df.iterrows()):
+                nm = _ant_key(row[name_c]) if name_c else str(i + 1)
+                out[nm] = {"x_m": float(row[sel["x"]]), "y_m": float(row[sel["y"]])}
+        else:
+            lat_c, lon_c = sel["lat"], sel["lon"]
+            df = df.dropna(subset=[lat_c, lon_c])
             lat0 = float(df[lat_c].mean())
             lon0 = float(df[lon_c].mean())
             kx = 111320.0 * np.cos(np.radians(lat0))
-            for _, row in df.iterrows():
-                nm = _ant_key(row[name_c] if name_c else _ant_key(str(_ + 1)))
+            for i, (_, row) in enumerate(df.iterrows()):
+                nm = _ant_key(row[name_c]) if name_c else str(i + 1)
                 out[nm] = {
                     "x_m": (float(row[lon_c]) - lon0) * kx,
                     "y_m": (float(row[lat_c]) - lat0) * 110540.0,
@@ -1046,12 +1102,20 @@ def _variability_table(max_dates: int = 30, top: int = 40) -> dict:
             df = pd.read_csv(csv_path)
         except Exception:
             continue
-        if "flux_jy" not in df.columns or "source_id" not in df.columns:
+        fx_c = next(
+            (c for c in ("flux_jy", "dsa_peak_jyb", "measured_flux_jy") if c in df.columns), None
+        )
+        id_c = next((c for c in ("source_id", "source_name") if c in df.columns), None)
+        if fx_c is None or id_c is None:
             continue
-        err = df["flux_err_jy"] if "flux_err_jy" in df.columns else df["flux_jy"] * 0.1
-        for sid, f, e in zip(df["source_id"], df["flux_jy"], err):
+        er_c = next((c for c in ("flux_err_jy", "dsa_peak_err_jyb") if c in df.columns), None)
+        err = df[er_c] if er_c else df[fx_c] * 0.1
+        for sid, f, e in zip(df[id_c], df[fx_c], err):
             if np.isfinite(f):
-                flux.setdefault(str(sid), {})[label] = (float(f), float(e) if e else 0.1)
+                flux.setdefault(str(sid), {})[label] = (
+                    float(f),
+                    float(e) if np.isfinite(e) and e > 0 else 0.1,
+                )
 
     try:
         import sys as _sys

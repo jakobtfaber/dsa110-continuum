@@ -32,6 +32,8 @@ fi
 export PYTHONPATH="${PYTHONPATH:-$REPO_DIR}"
 export CASA_LOG_DIR="${CASA_LOG_DIR:-$STATE_DIR/casa-logs}"
 export DSA110_REPO_DIR="$REPO_DIR"
+# H17 station coordinates (Excel export; header sniffed). Harmless if absent.
+export DSA110_ANTPOS_CSV="${DSA110_ANTPOS_CSV:-/data/dsa110-antpos/antpos/data/DSA110_Station_Coordinates.csv}"
 
 LOG="$STATE_DIR/dashboard_$(date -u +%Y%m%dT%H%M%S).log"
 CMD=("$PY" "$REPO_DIR/scripts/dashboard_server.py")

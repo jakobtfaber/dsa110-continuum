@@ -52,6 +52,9 @@ def console(tmp_path, monkeypatch):
         (d / "table.dat").write_bytes(b"t")
     (ms_dir / f"{DATE}T22:26:05_0~23.b").mkdir()
     (ms_dir / f"{DATE}T22:26:05_0~23.g").mkdir()
+    # non-date-prefixed entries must not become phantom dates
+    (ms_dir / "verify_meridian.ms").mkdir()
+    (ms_dir / f"verify_{DATE}T22:26:05.g").mkdir()
 
     # tiles + mosaic + weights + checkpoint
     sd = image_base / f"mosaic_{DATE}"
@@ -339,6 +342,82 @@ def test_antenna_positions_latlon_projection(console, tmp_path, monkeypatch):
     pos = mod._ant_positions()
     assert abs(pos["3"]["y_m"] - pos["1"]["y_m"] - 1105.4) < 15  # ~0.01 deg north
     assert pos["2"]["x_m"] > pos["1"]["x_m"]  # east positive
+
+
+def test_dates_ignore_non_date_names(console):
+    _, client = console
+    d = client.get("/api/dates").json()
+    assert [r["date"] for r in d["dates"]] == [DATE]
+
+
+def test_catalog_sources_reads_views(console, tmp_path, monkeypatch):
+    import sqlite3
+
+    mod, _ = console
+    db = tmp_path / "cal.sqlite3"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE calibrators (name TEXT, ra_deg REAL, dec_deg REAL)")
+    conn.execute("CREATE TABLE fluxes (name TEXT, band TEXT, flux_jy REAL)")
+    conn.execute("INSERT INTO calibrators VALUES ('3C273', 187.28, 2.05)")
+    conn.execute("INSERT INTO fluxes VALUES ('3C273', '20cm', 32.0)")
+    conn.execute(
+        "CREATE VIEW vla_20cm AS SELECT c.name, c.ra_deg, c.dec_deg, f.flux_jy "
+        "FROM calibrators c JOIN fluxes f ON f.name = c.name"
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(mod, "VLA_CAL_DB", str(db))
+    srcs = mod._catalog_sources()
+    assert any(s["name"] == "3C273" and s["flux_jy"] == 32.0 for s in srcs)
+
+
+def test_antenna_positions_station_coordinates_export(console, tmp_path, monkeypatch):
+    mod, _ = console
+    csv = tmp_path / "station.csv"
+    csv.write_text(
+        ",,,,\n,,,,\n,DSA-110 Station Coordinates,,,\n,Last updated:,,2/15/2022,\n,,,,\n"
+        ",Station Number,Latitude,Longitude,Elevation (meters)\n"
+        ",DSA-001,37.2333752,-118.2856408,1182.6\n"
+        ",DSA-002,37.2333752,-118.2855760,1182.6\n"
+        ",DSA-003,37.2343752,-118.2855112,1182.6\n"
+    )
+    monkeypatch.setattr(mod, "ANTPOS_CSV", str(csv))
+    pos = mod._ant_positions()
+    assert set(pos) == {"1", "2", "3"}
+    assert pos["2"]["x_m"] > pos["1"]["x_m"]  # east positive
+    assert pos["3"]["y_m"] > pos["1"]["y_m"]  # north positive
+
+
+def test_variability_accepts_forced_phot_schema(console):
+    mod, client = console
+    pd_dir = mod.PRODUCTS_BASE / DATE
+    for hr, boost in (("2200", 1.0), ("2300", 2.0)):
+        (pd_dir / f"{DATE}T{hr}_forced_phot.csv").write_text(
+            "ra_deg,dec_deg,nvss_flux_jy,dsa_peak_jyb,dsa_peak_err_jyb,dsa_nvss_ratio,source_id\n"
+            "31.21,15.24,4.07,nan,nan,nan,1\n"
+            f"36.05,27.84,3.02,{0.5 * boost},0.01,1.0,2\n"
+            "40.00,20.00,2.50,0.8,0.01,1.0,3\n"
+        )
+    d = client.get("/api/variability").json()
+    assert d["n_epochs"] == 2
+    assert {s["source_id"] for s in d["sources"]} == {"2", "3"}  # nan-flux row excluded
+    assert d["sources"][0]["source_id"] == "2"  # the boosted source ranks first
+
+
+def test_variability_accepts_source_name_schema(console):
+    mod, client = console
+    pd_dir = mod.PRODUCTS_BASE / DATE
+    for hr, boost in (("2200", 1.0), ("2300", 2.0)):
+        (pd_dir / f"{DATE}T{hr}_forced_phot.csv").write_text(
+            "source_name,ra_deg,dec_deg,catalog_flux_jy,measured_flux_jy,flux_err_jy,"
+            "flux_ratio,snr\n"
+            f"NVSS J1,36.05,27.84,3.02,{0.5 * boost},0.01,1.0,50\n"
+            "NVSS J2,40.00,20.00,2.50,0.8,0.01,1.0,80\n"
+        )
+    d = client.get("/api/variability").json()
+    assert d["n_epochs"] == 2
+    assert {s["source_id"] for s in d["sources"]} == {"NVSS J1", "NVSS J2"}
+    assert d["sources"][0]["source_id"] == "NVSS J1"
 
 
 def test_variability_stacks_epochs(console):
