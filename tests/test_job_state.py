@@ -83,6 +83,24 @@ class TestJobsForTimestamp:
         assert len(lines) == 2
         assert all(TS in line for line in lines)
 
+    def test_date_in_unrelated_process_argv_not_matched(self, monkeypatch):
+        """A shell/session process that merely mentions the date is not a batch hit."""
+        monkeypatch.setattr(
+            job_state,
+            "active_processes",
+            lambda: [
+                {
+                    "pid": 444,
+                    "elapsed_seconds": 3,
+                    "command": "/bin/bash -c echo 2026-01-25",
+                }
+            ],
+        )
+        monkeypatch.setattr(job_state, "_running_runs", lambda config: [])
+        job = job_state.jobs_for_timestamp(TS)
+        assert job["batch"] == []
+        assert job["active"] is False
+
     def test_inactive_when_nothing_matches(self, monkeypatch):
         monkeypatch.setattr(job_state, "active_processes", lambda: [])
         monkeypatch.setattr(job_state, "_running_runs", lambda config: [])

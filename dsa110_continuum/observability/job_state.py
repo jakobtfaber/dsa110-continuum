@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 PROCESS_KEYWORDS = ("wsclean", "aoflagger", "batch_pipeline.py", "dsa110", "casa")
+BATCH_MARKERS = ("batch_pipeline.py", "auto_pipeline.py", "mosaic_day.py", "dsa110 convert")
 EXCLUDE_MARKERS = ("uvicorn", "pytest", "ps -eo", "job_state")
 TAIL_WINDOW = 4000
 
@@ -70,7 +71,13 @@ def jobs_for_timestamp(ts: str, control_config=None, max_lines: int = 40) -> dic
     date = ts[:10]
     processes = active_processes()
     direct = [proc for proc in processes if ts in proc["command"]]
-    batch = [proc for proc in processes if proc not in direct and date in proc["command"]]
+    batch = [
+        proc
+        for proc in processes
+        if proc not in direct
+        and date in proc["command"]
+        and any(marker in proc["command"] for marker in BATCH_MARKERS)
+    ]
     runs: list[dict] = []
     try:
         for run in _running_runs(control_config):
