@@ -613,7 +613,7 @@ def _collect_dry_run_plan(
     skip_photometry: bool,
     skip_rfi_flagging: bool,
     lenient_qa: bool,
-    rfi_mode: str = "full",
+    rfi_mode: str = "conditional",
 ) -> dict:
     """Build a structured plan dict describing what a normal run would do.
 
@@ -654,6 +654,8 @@ def _collect_dry_run_plan(
         "phase1_rfi_flagging": (
             "off (DEGRADED; no RFI chain)"
             if skip_rfi_flagging or rfi_mode == "off"
+            else "cflag (Stage 0 + dynamic-amp Pass2 + Stage 2/3)"
+            if rfi_mode == "cflag"
             else "conditional (Stage 0; Stage 1/2/3 on hard trigger)"
             if rfi_mode == "conditional"
             else "full (Stage 0 + mandatory Stage 1/2/3)"
@@ -839,7 +841,7 @@ def _dry_run_main(args, date: str, cal_date: str, obs_dec_deg: float | None) -> 
         skip_photometry=args.skip_photometry,
         skip_rfi_flagging=False,
         lenient_qa=args.lenient_qa,
-        rfi_mode=getattr(args, "rfi_mode", "off" if args.no_rfi_flagging else "full"),
+        rfi_mode=getattr(args, "rfi_mode", "off" if args.no_rfi_flagging else "conditional"),
     )
     for line in _format_dry_run_plan(plan):
         log.info("%s", line)
@@ -1276,11 +1278,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--rfi-mode",
-        choices=("full", "conditional", "off"),
+        choices=("full", "conditional", "off", "cflag"),
         default=None,
         help=(
-            "RFI policy: full runs Stage 0+1/2/3 (default), conditional runs "
-            "Stage 0 and triggers Stage 1/2/3 from preflight, off bypasses the chain."
+            "RFI policy: conditional (default) runs Stage 0 and triggers AOFlagger "
+            "Stage 1/2/3 from preflight; cflag runs Stage 0 + Python dynamic-amp "
+            "Pass2 + Stage 2/3; full always runs AOFlagger Stage 0+1/2/3 "
+            "(expensive opt-in, ~3–4 min/tile); off bypasses the chain."
         ),
     )
     parser.add_argument(
@@ -1624,6 +1628,12 @@ def main() -> None:
         include_qa_failed_tiles=args.include_qa_failed_tiles,
     )
     log.info("Per-tile RFI mode: %s", args.rfi_mode)
+    if args.rfi_mode == "full":
+        log.warning(
+            "RFI mode 'full' runs AOFlagger Stage 1/2/3 on every tile "
+            "(~3–4 min/tile). Production default is --rfi-mode conditional; "
+            "use full only for contaminated data or diagnostics."
+        )
     if args.rfi_mode == "off":
         log.error("DEGRADED: RFI chain disabled; outputs have no science-promotion semantics")
         manifest.add_gate(
@@ -1731,6 +1741,7 @@ def main() -> None:
                     bp_table=_bp,
                     work_dir=epoch_gaincal_dir,
                     refant="103",
+                    rfi_mode=args.rfi_mode,
                 )
                 _epoch_g_table = _eg_result.g_table
                 _epoch_gaincal_reason = _eg_result.reason

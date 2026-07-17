@@ -28,12 +28,68 @@ def _config(rfi_mode="full") -> TileConfig:
 def test_tile_config_accepts_explicit_modes(mode):
     cfg = _config(mode)
     assert cfg.rfi_mode == mode
-    assert cfg.rfi_flagging is (mode != "off")
 
 
-def test_full_is_default_and_conditional_is_opt_in():
-    assert resolve_rfi_mode(None, False) == "full"
+def test_conditional_is_default_and_full_is_opt_in():
+    assert resolve_rfi_mode(None, False) == "conditional"
+    assert resolve_rfi_mode("full", False) == "full"
     assert resolve_rfi_mode("conditional", False) == "conditional"
+    assert resolve_rfi_mode("cflag", False) == "cflag"
+
+
+def test_execute_rfi_policy_cflag_skips_aoflagger(tmp_path, monkeypatch):
+    import mosaic_day
+    from dsa110_continuum.calibration import flagging
+
+    calls: list[str] = []
+
+    monkeypatch.setattr(flagging, "flag_zeros", lambda *args, **kwargs: calls.append("zeros"))
+    monkeypatch.setattr(
+        flagging,
+        "flag_autocorrelations",
+        lambda *args, **kwargs: calls.append("autocorr"),
+    )
+    monkeypatch.setattr(
+        flagging,
+        "flag_clip_amplitude",
+        lambda *args, **kwargs: calls.append("clip"),
+    )
+    monkeypatch.setattr(
+        flagging,
+        "detect_and_flag_dead_antennas",
+        lambda *args, **kwargs: calls.append("dead"),
+    )
+
+    def fake_cflag(ms, **kwargs):
+        assert kwargs == {}
+        calls.append("cflag")
+        return {"timings": {}}
+
+    def fake_aoflagger(*args, **kwargs):
+        calls.append("aoflagger")
+        raise AssertionError("AOFlagger must not run for rfi-mode cflag")
+
+    monkeypatch.setattr(
+        "dsa110_continuum.calibration.flagging_cflag.flag_rfi_cflag",
+        fake_cflag,
+    )
+    monkeypatch.setattr(
+        "dsa110_continuum.calibration.flagging_rfi.flag_rfi",
+        fake_aoflagger,
+    )
+    mosaic_day._execute_rfi_policy(str(tmp_path / "fake.ms"), "cflag", tag="test")
+    assert calls == ["zeros", "autocorr", "clip", "dead", "cflag"]
+
+
+def test_execute_rfi_policy_off_does_no_work(monkeypatch):
+    from dsa110_continuum.calibration import flagging
+
+    monkeypatch.setattr(
+        flagging,
+        "flag_zeros",
+        lambda *args, **kwargs: pytest.fail("Stage 0 must not run in off mode"),
+    )
+    flagging.execute_rfi_policy("fake.ms", "off", tag="test")
 
 
 def test_deprecated_no_rfi_alias_means_off_only():

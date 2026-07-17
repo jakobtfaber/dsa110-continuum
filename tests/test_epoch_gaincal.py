@@ -473,20 +473,16 @@ def test_preconditioner_failure_does_not_abort_epoch_gaincal():
     assert precond_table not in ap_call.kwargs["gaintable"]
 
 
-def test_rfi_flagging_falls_back_to_casa_when_aoflagger_unavailable():
-    """When AOFlagger is not importable, CASA tfcrop+rflag must be called instead."""
+def test_epoch_gaincal_forwards_selected_rfi_mode():
+    """Epoch gaincal must use the same selected RFI policy as tile processing."""
     import tempfile
+
     from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
 
     fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(6)]
     mock_sky = MagicMock()
     mock_sky.Ncomponents = 0  # empty sky model → returns None early after flagging
     mock_service = MagicMock()
-
-    # Stub out flag_rfi import to raise ImportError, leaving CASA path active
-    import sys as _sys
-    fake_flagging_module = MagicMock()
-    fake_flagging_module.flag_rfi = MagicMock(side_effect=ImportError("no aoflagger"))
 
     with tempfile.TemporaryDirectory() as work_dir:
         meridian_ms = str(Path(work_dir) / "tile_03_meridian.ms")
@@ -507,21 +503,18 @@ def test_rfi_flagging_falls_back_to_casa_when_aoflagger_unavailable():
         ), patch(
             "dsa110_continuum.calibration.casa_service.CASAService",
             return_value=mock_service,
-        ), patch.dict(
-            _sys.modules,
-            {"dsa110_contimg.core.calibration.flagging": fake_flagging_module},
         ), patch(
+            "dsa110_continuum.calibration.flagging.execute_rfi_policy",
+        ) as execute_policy, patch(
             "os.path.exists", side_effect=_make_exists_fn(meridian_ms, ap_table=ap_table),
         ):
-            calibrate_epoch(fake_paths, "/fake/bp.b", work_dir)
+            calibrate_epoch(fake_paths, "/fake/bp.b", work_dir, rfi_mode="cflag")
 
-    flagdata_calls = mock_service.flagdata.call_args_list
-    assert any(c.kwargs.get("autocorr") for c in flagdata_calls), \
-        "autocorrelation flagging must be called"
-    assert any(c.kwargs.get("mode") == "tfcrop" for c in flagdata_calls), \
-        "tfcrop must be called as AOFlagger fallback"
-    assert any(c.kwargs.get("mode") == "rflag" for c in flagdata_calls), \
-        "rflag must be called as AOFlagger fallback"
+    execute_policy.assert_called_once_with(
+        meridian_ms,
+        "cflag",
+        "epoch gaincal tile_03",
+    )
 
 
 def test_gaincal_returns_low_snr_when_p_table_heavily_flagged():

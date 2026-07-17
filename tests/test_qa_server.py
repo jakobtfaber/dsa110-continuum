@@ -830,6 +830,7 @@ class TestControlUi:
         assert "Pipeline control" in page
         assert 'id="run-form"' in page and "/api/runs" in page
         assert 'id="control-token"' in page
+        assert "<option>cflag</option>" in page
 
     def test_run_detail_page_renders_log_tail_escaped(self, tmp_path: Path, monkeypatch):
         import sys as _sys
