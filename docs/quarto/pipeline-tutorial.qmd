@@ -12,6 +12,19 @@ This tutorial takes one observing date from slow-vis UVH5 files to hourly-epoch
 mosaics and forced-photometry products. Use the dashboard to understand state;
 use the commands when you need a reproducible or scripted run.
 
+<video controls preload="metadata" width="100%">
+  <source src="images/pipeline-tutorial/pipeline-dashboard-tutorial.mp4" type="video/mp4">
+  Your browser does not support embedded MP4 video.
+</video>
+
+The recording shows a real dashboard-launched raw-to-products run completing
+successfully, followed by the RFI-mode selector. `conditional` is the production
+default: it always runs conservative Stage 0 and invokes the AOFlagger Stage
+1/2/3 chain only on a hard preflight trigger. Choose `cflag` explicitly to run
+Stage 0, dynamic-amplitude Pass 2, and the mandatory Stage 2/3 cleanup without
+AOFlagger. `full` is the expensive always-AOFlagger diagnostic mode; `off`
+produces diagnostic-only outputs.
+
 ::: {.callout-important}
 Run pipeline commands on H17 from `/data/dsa110-continuum` with the CASA 6
 Python environment. Do not use system `python3`.
