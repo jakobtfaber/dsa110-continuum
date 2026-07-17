@@ -181,10 +181,20 @@ def flag_residual_rfi_clip(
     MAD_TO_SIGMA = 1.4826  # MAD → Gaussian-σ conversion factor
 
     with ct.table(str(ms), readonly=False) as t:
-        data = t.getcol(datacolumn.upper())     # (nrow, nchan, npol)
-        flags = t.getcol("FLAG")                # (nrow, nchan, npol)
+        data = t.getcol(datacolumn.upper())
+        flags = t.getcol("FLAG")
         ant1 = t.getcol("ANTENNA1")
         ant2 = t.getcol("ANTENNA2")
+
+        # casatools cell shape is (npol, nchan) → (nrow, npol, nchan) after
+        # casa_tables row-first; normalize to (nrow, nchan, npol) for clipping.
+        layout = "nchan_npol"
+        if data.ndim == 3:
+            _nr, a, b = data.shape
+            if a in (1, 2, 4) and b not in (1, 2, 4):
+                data = np.swapaxes(data, 1, 2)
+                flags = np.swapaxes(flags, 1, 2)
+                layout = "npol_nchan"
 
         cross = ant1 != ant2
         _nrow, nchan, npol = data.shape
@@ -245,7 +255,8 @@ def flag_residual_rfi_clip(
         # Write back only the cross-correlation flag rows
         full_flags = flags.copy()
         full_flags[cross] = cross_flags
-        t.putcol("FLAG", full_flags)
+        to_write = np.swapaxes(full_flags, 1, 2) if layout == "npol_nchan" else full_flags
+        t.putcol("FLAG", to_write)
 
     pre_pct = 100.0 * flags[cross].sum() / flags[cross].size
     post_pct = 100.0 * full_flags[cross].sum() / full_flags[cross].size

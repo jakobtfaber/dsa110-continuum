@@ -39,13 +39,8 @@ class MSWriter(abc.ABC):
         ...
 
     def get_files_to_process(self) -> list[str] | None:
-        """ """
+        """Return explicit input files when the writer provides them."""
         return None
-
-
-# Import the full implementation from direct_subband
-# This avoids code duplication and circular imports
-from .direct_subband import DirectSubbandWriter
 
 
 def get_writer(writer_type: str) -> type:
@@ -58,10 +53,6 @@ def get_writer(writer_type: str) -> type:
         For testing writers, import from backend/tests/fixtures/writers.py.
 
     """
-    writers = {
-        "direct-subband": DirectSubbandWriter,
-    }
-
     if writer_type == "pyuvdata":
         raise ValueError(
             "PyuvdataWriter is for testing only. "
@@ -75,6 +66,12 @@ def get_writer(writer_type: str) -> type:
         raise ValueError(
             "'auto' writer selection has been removed; use 'direct-subband' explicitly."
         )
+
+    from .direct_subband import DirectSubbandWriter
+
+    writers = {
+        "direct-subband": DirectSubbandWriter,
+    }
 
     if writer_type not in writers:
         raise ValueError(f"Unknown writer type: {writer_type}. Available: {list(writers.keys())}")

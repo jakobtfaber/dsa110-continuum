@@ -6,6 +6,7 @@ TestClient drives the app in-process.
 
 import importlib.util
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -37,6 +38,7 @@ def console(tmp_path, monkeypatch):
     image_base = tmp_path / "images"
     products = tmp_path / "products"
     job_dir = tmp_path / "jobs"
+    pipeline_db = tmp_path / "pipeline.sqlite3"
 
     # incoming: one complete 16-subband group + one partial
     incoming.mkdir()
@@ -44,6 +46,17 @@ def console(tmp_path, monkeypatch):
         (incoming / f"{DATE}T22:00:05_sb{sb:02d}.hdf5").write_bytes(b"x")
     for sb in range(4):
         (incoming / f"{DATE}T22:05:05_sb{sb:02d}.hdf5").write_bytes(b"x")
+
+    conn = sqlite3.connect(pipeline_db)
+    conn.execute(
+        "CREATE TABLE hdf5_files (group_id TEXT, subband_num INTEGER, obs_date TEXT, stored INTEGER)"
+    )
+    conn.executemany(
+        "INSERT INTO hdf5_files VALUES (?, ?, ?, 1)",
+        [("22:00", sb, DATE) for sb in range(16)] + [("22:05", sb, DATE) for sb in range(4)],
+    )
+    conn.commit()
+    conn.close()
 
     # MS + cal tables
     for m in ("00", "05"):
@@ -97,6 +110,7 @@ def console(tmp_path, monkeypatch):
         "DSA110_MS_DIR": str(ms_dir),
         "DSA110_IMAGE_BASE": str(image_base),
         "DSA110_PRODUCTS_BASE": str(products),
+        "PIPELINE_DB": str(pipeline_db),
         "DSA110_JOB_DIR": str(job_dir),
         "DSA110_THUMB_DIR": str(tmp_path / "thumbs"),
         "DSA110_DASH_TOKEN": "sekrit",
@@ -111,6 +125,7 @@ def console(tmp_path, monkeypatch):
     stub = tmp_path / "repo" / "scripts"
     stub.mkdir(parents=True)
     (stub / "batch_pipeline.py").write_text("import sys; print('stub ok', sys.argv[1:])")
+    (stub / "auto_pipeline.py").write_text("import sys; print('auto stub ok', sys.argv[1:])")
 
     spec = importlib.util.spec_from_file_location(
         "dashboard_server_test", REPO / "scripts" / "dashboard_server.py"
@@ -135,14 +150,28 @@ def test_dates_matrix_aggregates_all_stages(console):
     assert DATE in rows
     r = rows[DATE]
     assert r["incoming"] == {"timestamps": 2, "files": 20, "complete_groups": 1}
+    assert r["indexed"] == {"files": 20, "groups": 2, "complete_groups": 1}
     assert r["n_ms"] == 2
     assert r["cal"] == {"bandpass": 1, "gain": 1}
     assert r["n_tiles"] == 1  # mosaic + weights excluded
+    assert r["n_tile_artifacts"] == 1
     assert r["n_failures"] == 2
     assert r["n_quarantine_risk"] == 1
     assert r["n_mosaics"] == 1
     assert r["verdict"] == "CLEAN"
     assert r["n_phot"] == 2
+    assert [s["key"] for s in r["stages"]] == [
+        "ingest",
+        "index",
+        "conversion",
+        "flagging",
+        "calibration",
+        "imaging",
+        "mosaic",
+        "qa",
+        "photometry",
+        "archive",
+    ]
 
 
 def test_date_detail_includes_metrics_and_products(console):
@@ -204,13 +233,20 @@ def test_control_run_spawns_job_and_logs(console):
     _, client = console
     r = client.post(
         "/api/control/run",
-        json={"date": DATE, "dry_run": True, "start_hour": 22, "end_hour": 23},
+        json={
+            "date": DATE,
+            "dry_run": True,
+            "start_hour": 22,
+            "end_hour": 23,
+            "rfi_mode": "cflag",
+        },
         headers={"X-DSA110-Token": "sekrit"},
     )
     assert r.status_code == 200
     job = r.json()
     assert job["status"] == "running"
     assert "--dry-run" in job["argv"] and "--start-hour" in job["argv"]
+    assert job["argv"][job["argv"].index("--rfi-mode") + 1] == "cflag"
     # wait for the stub to finish, then check job bookkeeping + log capture
     import time
 
@@ -221,6 +257,50 @@ def test_control_run_spawns_job_and_logs(console):
         time.sleep(0.1)
     assert d["status"] == "completed"
     assert any("stub ok" in line for line in d.get("log_tail", []))
+
+
+def test_control_run_spawns_end_to_end_flow(console):
+    _, client = console
+    r = client.post(
+        "/api/control/run",
+        json={
+            "date": DATE,
+            "flow": "end_to_end",
+            "dry_run": False,
+            "rfi_mode": "cflag",
+        },
+        headers={"X-DSA110-Token": "sekrit"},
+    )
+    assert r.status_code == 200
+    job = r.json()
+    assert job["kind"] == "end-to-end"
+    assert job["argv"][-4:] == ["--date", DATE, "--rfi-mode", "cflag"]
+
+
+def test_end_to_end_rejects_dry_run_and_hour_bounds(console):
+    _, client = console
+    headers = {"X-DSA110-Token": "sekrit"}
+    assert (
+        client.post(
+            "/api/control/run",
+            json={"date": DATE, "flow": "end_to_end", "dry_run": True},
+            headers=headers,
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            "/api/control/run",
+            json={
+                "date": DATE,
+                "flow": "end_to_end",
+                "dry_run": False,
+                "start_hour": 22,
+            },
+            headers=headers,
+        ).status_code
+        == 400
+    )
 
 
 def test_control_run_validates_date(console):

@@ -40,7 +40,7 @@ _LAZY_EXPORTS = {
     "normalize_subband_path": ".normalize",
     # Writers
     "MSWriter": ".writers",
-    "DirectSubbandWriter": ".writers",
+    "DirectSubbandWriter": ".direct_subband",
     "get_writer": ".writers",
     # Downsampling
     "downsample_uvh5": ".downsample_uvh5",

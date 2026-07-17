@@ -2,6 +2,7 @@
 # CASA import moved to function level to prevent logs in workspace root
 # See: docs/dev-notes/analysis/casa_log_handling_investigation.md
 import logging
+from typing import Literal
 
 from dsa110_continuum.calibration.casa_service import CASAService, suppress_subprocess_stderr
 from dsa110_continuum.calibration.flagging_amplitude import (
@@ -43,6 +44,7 @@ __all__ = [
     "analyze_channel_flagging_stats",
     "detect_and_flag_bad_polarizations",
     "detect_and_flag_dead_antennas",
+    "execute_rfi_policy",
     "flag_antenna",
     "flag_autocorrelations",
     "flag_baselines",
@@ -73,6 +75,9 @@ __all__ = [
     "suppress_subprocess_stderr",
 ]
 
+RfiMode = Literal["full", "conditional", "off", "cflag"]
+RFI_MODES = ("full", "conditional", "off", "cflag")
+
 try:
     from dsa110_continuum.utils.error_context import format_ms_error_with_suggestions
 except ImportError:
@@ -90,6 +95,63 @@ def reset_flags(ms: str) -> None:
 def flag_zeros(ms: str, datacolumn: str = "data") -> None:
     service = CASAService()
     service.flagdata(vis=ms, mode="clip", datacolumn=datacolumn, clipzeros=True)
+
+
+def execute_rfi_policy(ms: str, mode: RfiMode, tag: str = "RFI") -> None:
+    """Apply the selected Stage 0 plus cflag/AOFlagger policy to an MS."""
+    if mode not in RFI_MODES:
+        raise ValueError(f"Invalid RFI mode {mode!r}; choose from {RFI_MODES}")
+    if mode == "off":
+        logging.getLogger(__name__).info("[%s] RFI flagging disabled", tag)
+        return
+
+    from dsa110_continuum.calibration.flagging_cflag import flag_rfi_cflag
+    from dsa110_continuum.calibration.rfi_preflight import measure_rfi_preflight
+
+    logger = logging.getLogger(__name__)
+    logger.info("[%s] Running conservative RFI Stage 0", tag)
+    flag_zeros(ms, datacolumn="data")
+    flag_autocorrelations(ms, datacolumn="data")
+    flag_clip_amplitude(ms, threshold_max=0.5, datacolumn="data")
+    detect_and_flag_dead_antennas(ms, threshold=0.95, dry_run=False)
+
+    if mode == "cflag":
+        logger.info("[%s] Applying cflag-style Pass2 + Stage 2/3", tag)
+        flag_rfi_cflag(ms)
+        return
+
+    run_full_chain = mode == "full"
+    if mode == "conditional":
+        try:
+            preflight = measure_rfi_preflight(ms, datacolumn="DATA")
+            run_full_chain = preflight.decision.triggered
+            logger.info(
+                "[%s] Conditional RFI preflight: trigger=%s; %s",
+                tag,
+                run_full_chain,
+                "; ".join(preflight.decision.reasons),
+            )
+        except Exception as error:
+            run_full_chain = True
+            logger.error(
+                "[%s] Conditional RFI preflight unavailable; failing closed to full chain: %s",
+                tag,
+                error,
+            )
+
+    if run_full_chain:
+        logger.info("[%s] Applying mandatory RFI Stage 1/2/3 chain", tag)
+        flag_rfi(
+            ms,
+            datacolumn="data",
+            backend="aoflagger",
+            clip_residual=True,
+            clip_sigma=7.0,
+            extend_flags=True,
+            fail_closed=True,
+        )
+    else:
+        logger.info("[%s] Preflight quiet: Stage 0 only", tag)
 
 
 def flag_autocorrelations(ms: str, datacolumn: str = "data") -> None:

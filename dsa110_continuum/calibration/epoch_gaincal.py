@@ -22,16 +22,17 @@ import subprocess
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from dsa110_continuum.calibration.applycal import apply_to_target
+from dsa110_continuum.calibration.field_directions import (
+    extract_field_ra_dec as _extract_field_ra_dec,
+)
 from dsa110_continuum.calibration.model import count_bright_sources_in_tile
 from dsa110_continuum.calibration.mosaic_constants import (
     SKYMODEL_MIN_FLUX_MJY,
     SOURCE_QUERY_RADIUS_DEG,
-)
-from dsa110_continuum.calibration.field_directions import (
-    extract_field_ra_dec as _extract_field_ra_dec,
 )
 from dsa110_continuum.calibration.runner import phaseshift_ms
 from dsa110_continuum.calibration.skymodels import (
@@ -40,6 +41,9 @@ from dsa110_continuum.calibration.skymodels import (
 )
 
 log = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from dsa110_continuum.calibration.flagging import RfiMode
 
 
 class EpochGaincalStatus(str, Enum):
@@ -202,6 +206,7 @@ def calibrate_epoch(
     source_radius_deg: float = SOURCE_QUERY_RADIUS_DEG,
     wsclean_niter: int = 1000,
     wsclean_threshold_sigma: float = 3.0,
+    rfi_mode: RfiMode = "conditional",
 ) -> EpochGaincalResult:
     """Derive per-epoch gain solutions using catalog bootstrap + one self-cal round.
 
@@ -244,6 +249,8 @@ def calibrate_epoch(
         CLEAN iterations for the self-cal imaging pass (default: 1000).
     wsclean_threshold_sigma:
         Auto-threshold sigma for WSClean (default: 3.0).
+    rfi_mode:
+        Shared pre-calibration RFI policy (default: ``conditional``).
 
     Returns
     -------
@@ -296,31 +303,9 @@ def calibrate_epoch(
         # dsa110-contimg pipeline validated this as critical for drift-scan data
         # where the time axis has only ~24 samples.
         try:
-            _svc = CASAService()
-            log.info("Epoch gaincal [%s]: flagging autocorrelations", stem)
-            _svc.flagdata(vis=meridian_ms, autocorr=True, flagbackup=False)
-            try:
-                from dsa110_continuum.calibration.flagging import flag_rfi as _flag_rfi
-                log.info("Epoch gaincal [%s]: AOFlagger RFI flagging", stem)
-                _flag_rfi(meridian_ms, backend="aoflagger")
-                log.info("Epoch gaincal [%s]: AOFlagger complete", stem)
-            except Exception as _aof_err:
-                log.warning(
-                    "Epoch gaincal [%s]: AOFlagger unavailable (%s) — "
-                    "falling back to CASA tfcrop+rflag",
-                    stem, _aof_err,
-                )
-                _svc.flagdata(
-                    vis=meridian_ms, mode="tfcrop", datacolumn="data",
-                    timecutoff=4.0, freqcutoff=4.0,
-                    extendflags=False, flagbackup=False,
-                )
-                _svc.flagdata(
-                    vis=meridian_ms, mode="rflag", datacolumn="data",
-                    timedevscale=4.0, freqdevscale=4.0,
-                    extendflags=False, flagbackup=False,
-                )
-                log.info("Epoch gaincal [%s]: CASA tfcrop+rflag complete", stem)
+            from dsa110_continuum.calibration.flagging import execute_rfi_policy
+
+            execute_rfi_policy(meridian_ms, rfi_mode, f"epoch gaincal {stem}")
         except Exception as _flag_err:
             log.warning(
                 "Epoch gaincal [%s]: pre-calibration flagging failed (%s) — continuing",

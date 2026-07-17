@@ -50,8 +50,8 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-RfiMode = Literal["full", "conditional", "off"]
-RFI_MODES = ("full", "conditional", "off")
+RfiMode = Literal["full", "conditional", "off", "cflag"]
+RFI_MODES = ("full", "conditional", "off", "cflag")
 TILE_MAD_MAX_MJY = 50.0
 
 
@@ -90,17 +90,12 @@ class TileConfig:
     products_dir: str
     bp_table: str
     g_table: str
-    rfi_mode: RfiMode = "full"
+    rfi_mode: RfiMode = "conditional"
     include_qa_failed_tiles: bool = False
 
     def __post_init__(self) -> None:
         if self.rfi_mode not in RFI_MODES:
             raise ValueError(f"Invalid RFI mode {self.rfi_mode!r}; choose from {RFI_MODES}")
-
-    @property
-    def rfi_flagging(self) -> bool:
-        """Compatibility view: any mode except ``off`` performs RFI work."""
-        return self.rfi_mode != "off"
 
     @staticmethod
     def build(
@@ -289,7 +284,13 @@ def _fits_is_valid(fits_path: str) -> bool:
 
 
 def resolve_rfi_mode(rfi_mode: str | None, no_rfi_flagging: bool) -> RfiMode:
-    """Resolve the explicit mode and deprecated bypass alias without ambiguity."""
+    """Resolve the explicit mode and deprecated bypass alias without ambiguity.
+
+    Production default is ``conditional`` (Stage 0 always; full AOFlagger only
+    on hard preflight triggers). ``full`` remains available as an explicit
+    opt-in for diagnostic / contaminated data — it must not be the silent
+    default, because it costs ~3–4 min/tile of AOFlagger on every tile.
+    """
     if no_rfi_flagging and rfi_mode not in (None, "off"):
         raise ValueError(
             "--no-rfi-flagging is a deprecated alias for --rfi-mode off and "
@@ -297,7 +298,7 @@ def resolve_rfi_mode(rfi_mode: str | None, no_rfi_flagging: bool) -> RfiMode:
         )
     if no_rfi_flagging:
         return "off"
-    return rfi_mode or "full"
+    return rfi_mode or "conditional"
 
 
 def tile_mad_rms_mjy(data: np.ndarray) -> float | None:
@@ -359,21 +360,6 @@ def validate_tile_for_coadd(fits_path: str, cfg: TileConfig, tag: str) -> tuple[
     return True, "; ".join(tile_errors)
 
 
-def _run_stage0(ms_path: str) -> None:
-    """Run the conservative pre-calibration Stage-0 flagging sequence."""
-    from dsa110_continuum.calibration.flagging import (
-        detect_and_flag_dead_antennas,
-        flag_autocorrelations,
-        flag_clip_amplitude,
-        flag_zeros,
-    )
-
-    flag_zeros(ms_path, datacolumn="data")
-    flag_autocorrelations(ms_path, datacolumn="data")
-    flag_clip_amplitude(ms_path, threshold_max=0.5, datacolumn="data")
-    detect_and_flag_dead_antennas(ms_path, threshold=0.95, dry_run=False)
-
-
 def _rfi_sentinel_path(meridian_ms: str, mode: RfiMode) -> str:
     """Return a policy-versioned completion sentinel for RFI processing."""
     from dsa110_continuum.calibration.rfi_preflight import PREFLIGHT_POLICY_VERSION
@@ -382,44 +368,10 @@ def _rfi_sentinel_path(meridian_ms: str, mode: RfiMode) -> str:
 
 
 def _execute_rfi_policy(meridian_ms: str, mode: RfiMode, tag: str) -> None:
-    """Execute Stage 0 and, when selected, the mandatory full RFI chain."""
-    from dsa110_continuum.calibration.flagging_rfi import flag_rfi
-    from dsa110_continuum.calibration.rfi_preflight import measure_rfi_preflight
+    """Execute the shared calibration RFI policy."""
+    from dsa110_continuum.calibration.flagging import execute_rfi_policy
 
-    run_full_chain = mode == "full"
-    if mode == "conditional":
-        try:
-            preflight = measure_rfi_preflight(meridian_ms, datacolumn="DATA")
-            run_full_chain = preflight.decision.triggered
-            log.info(
-                "[%s] Conditional RFI preflight: trigger=%s; %s",
-                tag,
-                run_full_chain,
-                "; ".join(preflight.decision.reasons),
-            )
-        except Exception as preflight_error:
-            run_full_chain = True
-            log.error(
-                "[%s] Conditional RFI preflight unavailable; failing closed to full chain: %s",
-                tag,
-                preflight_error,
-            )
-
-    log.info("[%s] Running conservative RFI Stage 0", tag)
-    _run_stage0(meridian_ms)
-    if run_full_chain:
-        log.info("[%s] Applying mandatory RFI Stage 1/2/3 chain", tag)
-        flag_rfi(
-            meridian_ms,
-            datacolumn="data",
-            backend="aoflagger",
-            clip_residual=True,
-            clip_sigma=7.0,
-            extend_flags=True,
-            fail_closed=True,
-        )
-    else:
-        log.info("[%s] Preflight quiet: Stage 0 only", tag)
+    execute_rfi_policy(meridian_ms, mode, tag)
 
 
 def generate_windows(
@@ -954,8 +906,10 @@ def main():
         choices=RFI_MODES,
         default=None,
         help=(
-            "RFI policy: full runs Stage 0+1/2/3 (default), conditional runs "
-            "Stage 0 and triggers Stage 1/2/3 from preflight, off bypasses all RFI flagging."
+            "RFI policy: conditional (default) runs Stage 0 and triggers AOFlagger "
+            "Stage 1/2/3 from preflight; cflag runs Stage 0 + Python dynamic-amp "
+            "Pass2 + Stage 2/3; full always runs AOFlagger Stage 0+1/2/3 "
+            "(expensive opt-in); off bypasses all RFI flagging."
         ),
     )
     parser.add_argument(
@@ -1020,6 +974,12 @@ def main():
         rfi_mode=rfi_mode,
         include_qa_failed_tiles=args.include_qa_failed_tiles,
     )
+    if rfi_mode == "full":
+        log.warning(
+            "RFI mode 'full' runs AOFlagger Stage 1/2/3 on every tile "
+            "(~3–4 min/tile). Production default is --rfi-mode conditional; "
+            "use full only for contaminated data or diagnostics."
+        )
     if rfi_mode == "off":
         log.error("DEGRADED: --rfi-mode off selected; outputs are diagnostic only")
 

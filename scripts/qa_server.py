@@ -637,7 +637,7 @@ def _render_control_section() -> str:
 <div class="info-card"><span>Cal date</span><input name="cal_date" pattern="\\d{4}-\\d{2}-\\d{2}" placeholder="optional"></div>
 <div class="info-card"><span>Hours</span><input name="start_hour" type="number" min="0" max="23" placeholder="start" style="width:45%">
 <input name="end_hour" type="number" min="0" max="23" placeholder="end" style="width:45%"></div>
-<div class="info-card"><span>RFI mode</span><select name="rfi_mode"><option value="">default</option><option>full</option><option>conditional</option><option>off</option></select></div>
+<div class="info-card"><span>RFI mode</span><select name="rfi_mode"><option value="">default (conditional)</option><option>cflag</option><option>conditional</option><option>full</option><option>off</option></select></div>
 </div>
 <div style="margin:10px 0;display:flex;gap:16px;flex-wrap:wrap;font-size:.8rem">
 <label><input type="checkbox" name="retry_failed"> retry failed</label>

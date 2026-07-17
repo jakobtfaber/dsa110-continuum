@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
-RFI_MODES = ("full", "conditional", "off")
+RFI_MODES = ("full", "conditional", "off", "cflag")
 CONTROL_TOKEN_ENV = "DSA110_CONTROL_TOKEN"
 
 

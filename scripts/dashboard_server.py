@@ -36,6 +36,7 @@ import logging
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import threading
 import uuid
@@ -64,6 +65,7 @@ INCOMING_DIR = _env_path("DSA110_INCOMING_DIR", "/data/incoming")
 MS_DIR = _env_path("DSA110_MS_DIR", "/stage/dsa110-contimg/ms")
 IMAGE_BASE = _env_path("DSA110_IMAGE_BASE", "/stage/dsa110-contimg/images")
 PRODUCTS_BASE = _env_path("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics")
+PIPELINE_DB = _env_path("PIPELINE_DB", "/data/dsa110-contimg/state/db/pipeline.sqlite3")
 REPO_DIR = _env_path("DSA110_REPO_DIR", str(Path(__file__).resolve().parent.parent))
 PIPELINE_PYTHON = os.environ.get("DSA110_PYTHON", "/opt/miniforge/envs/casa6/bin/python")
 DASH_TOKEN = os.environ.get("DSA110_DASH_TOKEN", "")
@@ -205,6 +207,36 @@ def scan_incoming() -> dict[str, dict]:
     return out
 
 
+def scan_indexed(date: str) -> dict | None:
+    """Summarize indexed HDF5 groups for one date from the pipeline database."""
+    if not PIPELINE_DB.is_file():
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{PIPELINE_DB}?mode=ro", uri=True, timeout=1)
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(n_subbands), 0), COUNT(*),
+                   COALESCE(SUM(CASE WHEN n_subbands >= ? THEN 1 ELSE 0 END), 0)
+            FROM (
+                SELECT group_id, COUNT(DISTINCT subband_num) AS n_subbands
+                FROM hdf5_files
+                WHERE obs_date = ? AND stored = 1
+                GROUP BY group_id
+            )
+            """,
+            (N_SUBBANDS, date),
+        ).fetchone()
+        conn.close()
+    except (OSError, sqlite3.Error) as exc:
+        logger.warning("could not read pipeline index for %s: %s", date, exc)
+        return None
+    return {
+        "files": int(row[0]),
+        "groups": int(row[1]),
+        "complete_groups": int(row[2]),
+    }
+
+
 def scan_ms() -> dict[str, list[str]]:
     """Group Measurement Set names by observation date."""
     out: dict[str, list[str]] = {}
@@ -240,8 +272,14 @@ def scan_tiles(date: str) -> dict:
     """Report per-tile FITS images and the tile checkpoint for a date."""
     sd = _stage_dir(date)
     if not sd.exists():
-        return {"n_tiles": 0, "checkpoint": None}
-    tiles = [f.name for f in sorted(sd.glob("*.fits")) if "_mosaic" not in f.name]
+        return {
+            "n_tiles": 0,
+            "tiles": [],
+            "n_artifacts": 0,
+            "artifacts": [],
+            "checkpoint": None,
+        }
+    artifacts = [f.name for f in sorted(sd.glob("*.fits")) if "_mosaic" not in f.name]
     ck = None
     ck_path = sd / ".tile_checkpoint.json"
     if ck_path.exists():
@@ -249,7 +287,22 @@ def scan_tiles(date: str) -> dict:
             ck = json.loads(ck_path.read_text())
         except Exception as e:
             ck = {"error": f"unreadable checkpoint: {e}"}
-    return {"n_tiles": len(tiles), "tiles": tiles, "checkpoint": ck}
+    completed = ck.get("completed", []) if isinstance(ck, dict) else []
+    if completed:
+        tiles = [Path(item).name for item in completed]
+    else:
+        tiles = [
+            name
+            for name in artifacts
+            if name.endswith("-image-pb.fits") or name.endswith("_image.fits")
+        ]
+    return {
+        "n_tiles": len(tiles),
+        "tiles": tiles,
+        "n_artifacts": len(artifacts),
+        "artifacts": artifacts,
+        "checkpoint": ck,
+    }
 
 
 def scan_mosaics(date: str) -> list[dict]:
@@ -281,6 +334,7 @@ def scan_products(date: str) -> dict:
         "run_summary": None,
         "run_report": None,
         "phot_csvs": [],
+        "archived_mosaics": [],
         "logs": [],
     }
     if not pd_dir.exists():
@@ -316,8 +370,174 @@ def scan_products(date: str) -> dict:
         except Exception as e:
             rec["error"] = str(e)
         out["phot_csvs"].append(rec)
+    out["archived_mosaics"] = [p.name for p in sorted(pd_dir.glob("*_mosaic.fits"))]
     out["logs"] = [str(p) for p in sorted(pd_dir.glob("run_*.log"))]
     return out
+
+
+def stage_states(
+    incoming: dict | None,
+    indexed: dict | None,
+    n_ms: int,
+    cal: dict,
+    tiles: dict,
+    n_mosaics: int,
+    manifest: dict,
+    n_phot: int,
+    n_archived: int,
+) -> list[dict]:
+    """Return operator-facing state for every intake-to-science stage."""
+    raw_files = int((incoming or {}).get("files", 0))
+    indexed_files = int((indexed or {}).get("files", 0))
+    indexed_groups = int((indexed or {}).get("groups", 0))
+    indexed_complete = int((indexed or {}).get("complete_groups", 0))
+    expected_ms = indexed_complete
+    conversion_backlog = max(expected_ms - n_ms, 0)
+    n_tiles = int(tiles.get("n_tiles", 0))
+    failures = (tiles.get("checkpoint") or {}).get("failed", [])
+    archive_blocked = any(
+        gate.get("gate") == "archive" and gate.get("verdict") == "BLOCKED"
+        for gate in manifest.get("gates", [])
+    )
+    verdict = manifest.get("pipeline_verdict")
+
+    if raw_files == 0:
+        ingest_state, ingest_detail = "waiting", "no raw HDF5 files visible"
+    elif indexed is None or indexed_files < raw_files:
+        ingest_state = "partial"
+        ingest_detail = f"{raw_files} raw files; group completeness pending index"
+    elif indexed_complete < indexed_groups:
+        ingest_state = "partial"
+        ingest_detail = f"{indexed_complete}/{indexed_groups} complete 16-subband groups"
+    else:
+        ingest_state = "complete"
+        ingest_detail = f"{indexed_complete}/{indexed_groups} complete 16-subband groups"
+
+    if indexed is None:
+        index_state, index_detail = "unknown", "pipeline index unavailable"
+    elif indexed_files == 0 and raw_files:
+        index_state, index_detail = "waiting", f"0/{raw_files} raw files indexed"
+    elif indexed_files < raw_files:
+        index_state, index_detail = (
+            "partial",
+            f"{indexed_files}/{raw_files} files indexed; {indexed_complete} complete groups",
+        )
+    else:
+        index_state, index_detail = (
+            "complete",
+            f"{indexed_files} files / {indexed_groups} groups indexed",
+        )
+
+    if n_ms and conversion_backlog == 0:
+        conversion_state = "complete"
+    elif n_ms:
+        conversion_state = "partial"
+    elif expected_ms:
+        conversion_state = "waiting"
+    else:
+        conversion_state = "waiting"
+
+    if n_tiles and n_tiles >= n_ms and not failures:
+        imaging_state = "complete"
+    elif n_tiles:
+        imaging_state = "partial"
+    elif failures:
+        imaging_state = "failed"
+    else:
+        imaging_state = "waiting"
+
+    if n_tiles:
+        flag_state = "complete" if imaging_state == "complete" else "partial"
+        flag_detail = f"inferred from {n_tiles} tiles reaching imaging"
+    elif failures:
+        flag_state, flag_detail = "failed", f"{len(failures)} recorded tile failures"
+    else:
+        flag_state, flag_detail = "waiting", "no standalone flagging artifact recorded"
+
+    if cal.get("bandpass") and cal.get("gain"):
+        cal_state = "complete"
+    elif cal.get("bandpass") or cal.get("gain"):
+        cal_state = "partial"
+    else:
+        cal_state = "waiting"
+
+    qa_state = (
+        "complete"
+        if verdict == "CLEAN"
+        else "blocked"
+        if verdict == "DEGRADED"
+        else "failed"
+        if verdict == "FAILED"
+        else "waiting"
+    )
+    phot_state = "complete" if n_phot else "blocked" if qa_state == "blocked" else "waiting"
+    archive_state = "complete" if n_archived else "blocked" if archive_blocked else "waiting"
+    return [
+        {
+            "key": "ingest",
+            "label": "Raw intake",
+            "state": ingest_state,
+            "detail": ingest_detail,
+        },
+        {"key": "index", "label": "Index", "state": index_state, "detail": index_detail},
+        {
+            "key": "conversion",
+            "label": "Conversion",
+            "state": conversion_state,
+            "detail": f"{n_ms}/{expected_ms} MS ready; {conversion_backlog} group backlog",
+        },
+        {
+            "key": "flagging",
+            "label": "Flagging",
+            "state": flag_state,
+            "detail": flag_detail,
+            "inferred": True,
+        },
+        {
+            "key": "calibration",
+            "label": "Calibration",
+            "state": cal_state,
+            "detail": f"{cal.get('bandpass', 0)} bandpass / {cal.get('gain', 0)} gain tables",
+        },
+        {
+            "key": "imaging",
+            "label": "Imaging",
+            "state": imaging_state,
+            "detail": f"{n_tiles}/{n_ms} science tiles; {tiles.get('n_artifacts', 0)} FITS artifacts",
+        },
+        {
+            "key": "mosaic",
+            "label": "Mosaicking",
+            "state": "complete" if n_mosaics else "waiting",
+            "detail": f"{n_mosaics} hourly-epoch mosaics",
+        },
+        {
+            "key": "qa",
+            "label": "QA gate",
+            "state": qa_state,
+            "detail": verdict or "no manifest verdict",
+        },
+        {
+            "key": "photometry",
+            "label": "Photometry",
+            "state": phot_state,
+            "detail": f"{n_phot} forced-photometry products"
+            if n_phot
+            else "withheld by strict QA"
+            if qa_state == "blocked"
+            else "not run",
+        },
+        {
+            "key": "archive",
+            "label": "Archive",
+            "state": archive_state,
+            "detail": f"{n_archived} archived mosaics"
+            if n_archived
+            else "blocked by QA"
+            if archive_blocked
+            else "not archived",
+        },
+    ]
 
 
 # --------------------------------------------------------------------------
@@ -337,6 +557,8 @@ def health() -> dict:
             "ms": str(MS_DIR),
             "images": str(IMAGE_BASE),
             "products": str(PRODUCTS_BASE),
+            "pipeline_db": str(PIPELINE_DB),
+            "pipeline_repo": str(REPO_DIR),
         },
     }
 
@@ -389,22 +611,37 @@ def dates() -> dict:
 
     rows = []
     for date in sorted(all_dates, reverse=True):
+        indexed = scan_indexed(date)
         tiles = scan_tiles(date)
         mosaics = scan_mosaics(date)
         prod = scan_products(date)
         ck = tiles.get("checkpoint") or {}
         failures = ck.get("failed", []) if isinstance(ck, dict) else []
         manifest = prod.get("manifest") or {}
+        cal_counts = {
+            "bandpass": len(cal.get(date, {}).get("bandpass", [])),
+            "gain": len(cal.get(date, {}).get("gain", [])),
+        }
+        stages = stage_states(
+            incoming.get(date),
+            indexed,
+            len(ms.get(date, [])),
+            cal_counts,
+            tiles,
+            len(mosaics),
+            manifest,
+            len(prod["phot_csvs"]),
+            len(prod["archived_mosaics"]),
+        )
         rows.append(
             {
                 "date": date,
                 "incoming": incoming.get(date),
+                "indexed": indexed,
                 "n_ms": len(ms.get(date, [])),
-                "cal": {
-                    "bandpass": len(cal.get(date, {}).get("bandpass", [])),
-                    "gain": len(cal.get(date, {}).get("gain", [])),
-                },
+                "cal": cal_counts,
                 "n_tiles": tiles["n_tiles"],
+                "n_tile_artifacts": tiles["n_artifacts"],
                 "n_failures": len(failures),
                 "n_quarantine_risk": sum(
                     1 for f in failures if int(f.get("failure_count", 0)) >= 3
@@ -412,6 +649,8 @@ def dates() -> dict:
                 "n_mosaics": len(mosaics),
                 "verdict": manifest.get("pipeline_verdict") or None,
                 "n_phot": len(prod["phot_csvs"]),
+                "n_archived": len(prod["archived_mosaics"]),
+                "stages": stages,
             }
         )
     return {"time": _utcnow(), "dates": rows}
@@ -423,6 +662,7 @@ def date_detail(date: str) -> dict:
     if not DATE_RE.match(date):
         raise HTTPException(status_code=400, detail="Bad date format")
     incoming = scan_incoming().get(date)
+    indexed = scan_indexed(date)
     ms = scan_ms().get(date, [])
     cal = scan_cal().get(date, {"bandpass": [], "gain": []})
     tiles = scan_tiles(date)
@@ -430,15 +670,29 @@ def date_detail(date: str) -> dict:
     for m in mosaics:
         m.update(_fits_stats(Path(m["path"])))
     prod = scan_products(date)
+    cal_counts = {"bandpass": len(cal["bandpass"]), "gain": len(cal["gain"])}
+    stages = stage_states(
+        incoming,
+        indexed,
+        len(ms),
+        cal_counts,
+        tiles,
+        len(mosaics),
+        prod.get("manifest") or {},
+        len(prod["phot_csvs"]),
+        len(prod["archived_mosaics"]),
+    )
     return {
         "date": date,
         "time": _utcnow(),
         "incoming": incoming,
+        "indexed": indexed,
         "ms": ms,
         "cal": cal,
         "tiles": tiles,
         "mosaics": mosaics,
         "products": prod,
+        "stages": stages,
     }
 
 
@@ -548,12 +802,15 @@ def logs(lines: int = Query(80, le=2000)) -> dict:
 
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
+RFI_MODES = {"conditional", "cflag", "full", "off"}
 
 
 class RunRequest(BaseModel):
-    """Validated parameters for launching scripts/batch_pipeline.py."""
+    """Validated parameters for launching the full flow or science batch."""
 
     date: str
+    flow: str = "batch"
+    rfi_mode: str = "conditional"
     start_hour: int | None = Field(default=None, ge=0, le=23)
     end_hour: int | None = Field(default=None, ge=0, le=23)
     dry_run: bool = True
@@ -563,9 +820,30 @@ class RunRequest(BaseModel):
     photometry_workers: int | None = Field(default=None, ge=1, le=32)
 
 
-def _batch_pipeline_argv(req: RunRequest) -> list[str]:
+def _pipeline_argv(req: RunRequest) -> list[str]:
+    if req.flow not in {"batch", "end_to_end"}:
+        raise HTTPException(status_code=400, detail="flow must be batch or end_to_end")
+    if req.rfi_mode not in RFI_MODES:
+        raise HTTPException(status_code=400, detail=f"rfi_mode must be one of {sorted(RFI_MODES)}")
+    if req.flow == "end_to_end":
+        if req.dry_run:
+            raise HTTPException(status_code=400, detail="end-to-end flow has no dry-run mode")
+        if req.start_hour is not None or req.end_hour is not None:
+            raise HTTPException(
+                status_code=400, detail="hour bounds apply only to science-batch mode"
+            )
+        script = str(REPO_DIR / "scripts" / "auto_pipeline.py")
+        return [
+            PIPELINE_PYTHON,
+            script,
+            "--date",
+            req.date,
+            "--rfi-mode",
+            req.rfi_mode,
+        ]
     script = str(REPO_DIR / "scripts" / "batch_pipeline.py")
     argv = [PIPELINE_PYTHON, script, "--date", req.date]
+    argv += ["--rfi-mode", req.rfi_mode]
     if req.start_hour is not None:
         argv += ["--start-hour", str(req.start_hour)]
     if req.end_hour is not None:
@@ -595,11 +873,13 @@ def _reap(job: dict) -> None:
 
 @app.post("/api/control/run")
 def control_run(req: RunRequest, x_dsa110_token: str | None = Header(default=None)) -> dict:
-    """Launch batch_pipeline.py as a tracked background job (token-gated)."""
+    """Launch a validated pipeline flow as a tracked background job."""
     _require_token(x_dsa110_token)
     if not DATE_RE.match(req.date):
         raise HTTPException(status_code=400, detail="Bad date format")
-    argv = _batch_pipeline_argv(req)
+    argv = _pipeline_argv(req)
+    if not Path(argv[1]).is_file():
+        raise HTTPException(status_code=503, detail=f"pipeline entrypoint missing: {argv[1]}")
     JOB_DIR.mkdir(parents=True, exist_ok=True)
     job_id = uuid.uuid4().hex[:12]
     log_path = JOB_DIR / f"{job_id}.log"
@@ -609,7 +889,9 @@ def control_run(req: RunRequest, x_dsa110_token: str | None = Header(default=Non
         proc = subprocess.Popen(argv, stdout=log_f, stderr=subprocess.STDOUT, env=env)
     job = {
         "id": job_id,
-        "kind": "dry-run" if req.dry_run else "batch-run",
+        "kind": (
+            "end-to-end" if req.flow == "end_to_end" else "dry-run" if req.dry_run else "batch-run"
+        ),
         "argv": argv,
         "date": req.date,
         "log": str(log_path),
@@ -1291,6 +1573,13 @@ table{width:100%;border-collapse:collapse}
 .gate{padding:7px 0;border-bottom:1px solid var(--line);font-size:12.5px}
 .gate b{font-weight:600}
 .gate .why{color:var(--mut)}
+.stage-row{display:grid;grid-template-columns:110px 70px 1fr;gap:12px;padding:6px 0;
+  border-bottom:1px solid var(--line);font-size:12px}
+.stage-row .state{font:10.5px var(--mono);letter-spacing:.05em;text-transform:uppercase}
+.stage-row .complete{color:var(--ok)}.stage-row .partial{color:var(--warn)}
+.stage-row .blocked,.stage-row .failed{color:var(--bad)}
+.stage-row .waiting,.stage-row .unknown{color:var(--dim2)}
+.stage-row .detail{color:var(--mut);font:11.5px var(--mono)}
 
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{font:11.5px var(--mono);color:var(--tx);background:var(--card);border:1px solid var(--line2);
@@ -1322,11 +1611,12 @@ pre{background:var(--surface);border:1px solid var(--line);border-radius:10px;pa
 .ctl{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
 .f label{display:block;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--dim2);margin-bottom:5px}
-input[type=text],input[type=number]{background:var(--surface);border:1px solid var(--line2);
+input[type=text],input[type=number],select{background:var(--surface);border:1px solid var(--line2);
   color:var(--tx);border-radius:7px;padding:7px 10px;font:12.5px var(--mono);width:130px;outline:none;
   transition:border-color .12s}
 input:focus{border-color:var(--acc)}
 input.hr{width:64px}
+select{width:260px}
 .toggle{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--mut);
   cursor:pointer;padding:8px 0;user-select:none}
 .toggle input{accent-color:var(--acc)}
@@ -1364,7 +1654,7 @@ button:disabled{opacity:.35;cursor:not-allowed}
   <section>
     <p class="microlabel">Pipeline coverage</p>
     <table class="matrix"><thead><tr>
-      <th>Date</th><th class="l">Stages</th><th>HDF5</th><th>MS</th><th>Cal</th>
+      <th>Date</th><th class="l">Stages</th><th>Raw</th><th>MS ready</th><th>Cal</th>
       <th>Tiles</th><th>Fail</th><th>Mosaics</th><th>Phot</th><th>Verdict</th>
     </tr></thead><tbody id="matrix-body"><tr><td colspan="10" class="z">Loading…</td></tr></tbody></table>
   </section>
@@ -1373,6 +1663,7 @@ button:disabled{opacity:.35;cursor:not-allowed}
     <p class="microlabel" id="detail-title">Detail</p>
     <div class="grid2">
       <div>
+        <div class="subsec" style="margin-top:0"><p class="microlabel">Stage walkthrough</p><div id="detail-stages"></div></div>
         <dl class="kv" id="detail-kv"></dl>
         <div class="subsec"><p class="microlabel">Failures · quarantine</p><div id="detail-failures"></div></div>
         <div class="subsec"><p class="microlabel">QA gates</p><div id="detail-gates"></div></div>
@@ -1390,11 +1681,21 @@ button:disabled{opacity:.35;cursor:not-allowed}
   <div class="rule"></div>
   <section class="grid2">
     <div>
-      <p class="microlabel">Control · batch_pipeline.py</p>
+      <p class="microlabel">Control · validated pipeline entrypoints</p>
       <div class="ctl">
+        <div class="f"><label>Flow</label><select id="c-flow">
+          <option value="batch">Science batch · MS → products</option>
+          <option value="end_to_end">Full flow · raw → science products</option>
+        </select></div>
         <div class="f"><label>Date</label><input type="text" id="c-date" placeholder="YYYY-MM-DD"></div>
         <div class="f"><label>Start</label><input type="number" id="c-sh" min="0" max="23" class="hr"></div>
         <div class="f"><label>End</label><input type="number" id="c-eh" min="0" max="23" class="hr"></div>
+        <div class="f"><label>RFI</label><select id="c-rfi">
+          <option value="conditional">Conditional · production default</option>
+          <option value="cflag">cflag · dynamic amplitude</option>
+          <option value="full">AOFlagger · full chain</option>
+          <option value="off">Off · diagnostic only</option>
+        </select></div>
         <label class="toggle"><input type="checkbox" id="c-dry" checked>dry-run</label>
         <label class="toggle"><input type="checkbox" id="c-retry">retry-failed</label>
         <label class="toggle"><input type="checkbox" id="c-lenient">lenient-QA</label>
@@ -1424,27 +1725,23 @@ function toast(msg,ok=true){const t=$('toast');t.textContent=msg;
   clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',4200)}
 const fmt=(v,alt='—')=>v==null?alt:v;
 const dim=v=>v?`${v}`:`<span class="z">0</span>`;
+const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 function verdictCell(v){if(!v)return '<span class="verdict v-none">—</span>';
   return `<span class="verdict v-${v.toLowerCase()}"><span class="dot ${
     v==='CLEAN'?'ok':(v==='DEGRADED'?'warn':'bad')}"></span>${v}</span>`}
 
 function stageGlyph(r){
-  const seg=(state,name)=>`<i class="seg ${state}" title="${name}"></i>`;
-  const inc=r.incoming? (r.incoming.complete_groups>0?'ok':'warn'):'';
-  const cal=(r.cal.bandpass&&r.cal.gain)?'ok':((r.cal.bandpass||r.cal.gain)?'warn':'');
-  const tiles=r.n_tiles? (r.n_quarantine_risk?'bad':(r.n_failures?'warn':'ok')):'';
-  const qa=r.verdict? (r.verdict==='CLEAN'?'good':(r.verdict==='DEGRADED'?'warn':'bad')):'';
-  return `<span class="stages">${seg(inc,'ingest')}${seg(r.n_ms?'ok':'','conversion')}${
-    seg(cal,'calibration')}${seg(tiles,'imaging')}${seg(r.n_mosaics?'ok':'','mosaic')}${
-    seg(qa,'QA')}${seg(r.n_phot?'ok':'','photometry')}</span>`}
+  const cls={complete:'good',partial:'warn',blocked:'bad',failed:'bad',waiting:'',unknown:''};
+  return `<span class="stages">${r.stages.map(s=>
+    `<i class="seg ${cls[s.state]||''}" title="${esc(s.label+': '+s.detail)}"></i>`).join('')}</span>`}
 
 async function loadHealth(){const h=await j('/api/health');controlEnabled=h.control_enabled;
   $('hd-time').textContent=h.time;
   $('hd-ctl').innerHTML=`<span class="dot ${controlEnabled?'ok':'bad'}"></span>control ${
     controlEnabled?'enabled':'disabled'}`;
   $('c-note').textContent=controlEnabled
-    ?'Mutating actions require the control token.'
+    ?'Full flow indexes raw HDF5, converts complete groups, then runs strict-QA science processing. Mutating actions require the control token.'
     :'DSA110_DASH_TOKEN is unset on the server — control actions are disabled (fail closed).';
   $('c-go').disabled=$('c-cq').disabled=!controlEnabled}
 
@@ -1458,14 +1755,18 @@ async function loadSystem(){const s=await j('/api/system');
 
 async function loadMatrix(){const d=await j('/api/dates');
   $('matrix-body').innerHTML=d.dates.length?d.dates.map(r=>{
-    const inc=r.incoming?`<span class="frac"><b>${r.incoming.complete_groups}</b>/${r.incoming.timestamps}</span>`:'<span class="z">—</span>';
+    const indexedComplete=r.incoming&&r.indexed&&r.indexed.files>=r.incoming.files;
+    const inc=indexedComplete?`<span class="frac"><b>${r.indexed.complete_groups}</b>/${r.indexed.groups}</span>`:
+      (r.incoming?`<span class="frac"><b>${r.incoming.files}</b> files</span>`:'<span class="z">—</span>');
     const cal=(r.cal.bandpass&&r.cal.gain)?`${r.cal.bandpass}B ${r.cal.gain}G`
       :((r.cal.bandpass||r.cal.gain)?`<span class="att">${r.cal.bandpass}B ${r.cal.gain}G</span>`:'<span class="neg">none</span>');
     const fail=r.n_failures?`<span class="${r.n_quarantine_risk?'neg':'att'}">${r.n_failures}${
       r.n_quarantine_risk?'·'+r.n_quarantine_risk+'q':''}</span>`:'<span class="z">0</span>';
+    const expected=(r.indexed&&r.indexed.complete_groups)||(r.incoming&&r.incoming.complete_groups)||0;
+    const ms=expected?`<span class="frac"><b>${r.n_ms}</b>/${expected}</span>`:dim(r.n_ms);
     return `<tr data-d="${r.date}" class="${r.date===selDate?'sel':''}">
       <td>${r.date}</td><td class="l">${stageGlyph(r)}</td><td>${inc}</td>
-      <td>${dim(r.n_ms)}</td><td>${cal}</td><td>${dim(r.n_tiles)}</td><td>${fail}</td>
+      <td>${ms}</td><td>${cal}</td><td>${dim(r.n_tiles)}</td><td>${fail}</td>
       <td>${dim(r.n_mosaics)}</td><td>${dim(r.n_phot)}</td><td>${verdictCell(r.verdict)}</td></tr>`
   }).join('')
   :'<tr><td colspan="10" class="z">No dates found under configured roots.</td></tr>';
@@ -1476,14 +1777,19 @@ async function openDate(date){selDate=date;$('c-date').value=date;
   const d=await j('/api/date/'+date);
   $('detail').style.display='block';
   $('detail-title').textContent='Detail · '+date;
-  const inc=d.incoming?`${d.incoming.files} files · ${d.incoming.complete_groups}/${d.incoming.timestamps} complete groups`:'none visible';
+  const indexCoversRaw=d.incoming&&d.indexed&&d.indexed.files>=d.incoming.files;
+  const inc=d.incoming?`${d.incoming.files} files${indexCoversRaw?` · ${d.indexed.complete_groups}/${d.indexed.groups} complete groups`:''}`:'none visible';
   const man=d.products.manifest||{};
+  $('detail-stages').innerHTML=d.stages.map(s=>`<div class="stage-row">
+    <b>${esc(s.label)}</b><span class="state ${s.state}">${esc(s.state)}</span>
+    <span class="detail">${esc(s.detail)}${s.inferred?' · inferred':''}</span></div>`).join('');
   $('detail-kv').innerHTML=`
     <dt>Incoming HDF5</dt><dd>${inc}</dd>
+    <dt>Pipeline index</dt><dd>${d.indexed?`${d.indexed.files} files · ${d.indexed.complete_groups}/${d.indexed.groups} complete groups`:'unavailable'}</dd>
     <dt>Measurement sets</dt><dd>${d.ms.length}${d.ms.length?' · latest '+d.ms[d.ms.length-1]:''}</dd>
     <dt>Bandpass</dt><dd>${d.cal.bandpass.join(', ')||'—'}</dd>
     <dt>Gain</dt><dd>${d.cal.gain.join(', ')||'—'}</dd>
-    <dt>Tiles imaged</dt><dd>${d.tiles.n_tiles}</dd>
+    <dt>Tiles imaged</dt><dd>${d.tiles.n_tiles} science tiles · ${d.tiles.n_artifacts} FITS artifacts</dd>
     <dt>Run verdict</dt><dd>${man.pipeline_verdict||'—'}${man.gaincal_status?' · gaincal '+man.gaincal_status:''}</dd>`;
   const ck=d.tiles.checkpoint;
   $('detail-failures').innerHTML=(ck&&ck.failed&&ck.failed.length)?
@@ -1533,12 +1839,23 @@ async function viewArtifact(path){const v=$('viewer');v.textContent='Loading '+p
   }catch(e){v.textContent='Error: '+e.message}}
 
 function token(){return $('c-token').value.trim()}
+$('c-flow').onchange=()=>{
+  const full=$('c-flow').value==='end_to_end';
+  $('c-sh').disabled=$('c-eh').disabled=$('c-dry').disabled=
+    $('c-retry').disabled=$('c-lenient').disabled=full;
+  if(full){$('c-sh').value=$('c-eh').value='';$('c-dry').checked=false;
+    $('c-retry').checked=true;$('c-lenient').checked=false}
+  else{$('c-dry').checked=true;$('c-retry').checked=false}
+};
 $('c-go').onclick=async()=>{
-  const body={date:$('c-date').value.trim(),dry_run:$('c-dry').checked,
-    retry_failed:$('c-retry').checked,lenient_qa:$('c-lenient').checked};
+  const body={date:$('c-date').value.trim(),flow:$('c-flow').value,dry_run:$('c-dry').checked,
+    rfi_mode:$('c-rfi').value,retry_failed:$('c-retry').checked,
+    lenient_qa:$('c-lenient').checked};
   if($('c-sh').value!=='')body.start_hour=+$('c-sh').value;
   if($('c-eh').value!=='')body.end_hour=+$('c-eh').value;
-  if(!body.dry_run&&!confirm('Launch a REAL batch run for '+body.date+'?'))return;
+  const label=body.flow==='end_to_end'?'FULL raw-to-products flow':'REAL science batch';
+  if(!body.dry_run&&!confirm('Launch '+label+' for '+body.date+' with strict QA'+
+    (body.lenient_qa?' overridden':'')+'?'))return;
   try{const d=await j('/api/control/run',{method:'POST',
     headers:{'Content-Type':'application/json','X-DSA110-Token':token()},
     body:JSON.stringify(body)});
