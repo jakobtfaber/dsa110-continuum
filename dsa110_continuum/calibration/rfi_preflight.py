@@ -169,6 +169,7 @@ def measure_rfi_preflight(
     *,
     datacolumn: str = "DATA",
     chunk_rows: int = 65_536,
+    spw_ids: tuple[int, ...] | None = None,
 ) -> PreflightResult:
     """Measure chunked per-SPW and per-integration raw-amplitude statistics."""
     from dsa110_continuum.adapters.casa_tables import table
@@ -176,6 +177,8 @@ def measure_rfi_preflight(
     ms_path = str(ms_path)
     with table(f"{ms_path}/DATA_DESCRIPTION", readonly=True, ack=False) as dd_table:
         dd_to_spw = np.asarray(dd_table.getcol("SPECTRAL_WINDOW_ID"), dtype=int)
+    required_spws = required_spws_for_time_metrics()
+    measured_spws = tuple(np.unique(dd_to_spw)) if spw_ids is None else spw_ids
 
     histograms: dict[int, np.ndarray] = {}
     counts: dict[int, int] = {}
@@ -187,14 +190,17 @@ def measure_rfi_preflight(
         nrows_total = int(main.nrows())
         for start in range(0, nrows_total, chunk_rows):
             nrows = min(chunk_rows, nrows_total - start)
+            ddids = np.asarray(main.getcol("DATA_DESC_ID", startrow=start, nrow=nrows), dtype=int)
+            spws = dd_to_spw[ddids]
+            measured_rows = np.isin(spws, measured_spws)
+            if not np.any(measured_rows):
+                continue
             data = _rows_first(main.getcol(datacolumn, startrow=start, nrow=nrows), nrows)
             flags = _rows_first(main.getcol("FLAG", startrow=start, nrow=nrows), nrows)
             ant1 = np.asarray(main.getcol("ANTENNA1", startrow=start, nrow=nrows))
             ant2 = np.asarray(main.getcol("ANTENNA2", startrow=start, nrow=nrows))
-            ddids = np.asarray(main.getcol("DATA_DESC_ID", startrow=start, nrow=nrows), dtype=int)
             times = np.asarray(main.getcol("TIME", startrow=start, nrow=nrows), dtype=float)
-            spws = dd_to_spw[ddids]
-            cross = ant1 != ant2
+            cross = (ant1 != ant2) & measured_rows
 
             for spw in np.unique(spws[cross]):
                 spw = int(spw)
@@ -211,7 +217,7 @@ def measure_rfi_preflight(
                         np.count_nonzero(amplitudes > 1.0)
                     )
 
-                if spw in required_spws_for_time_metrics():
+                if spw in required_spws:
                     for timestamp in np.unique(times[spw_rows]):
                         rows = spw_rows & (times == timestamp)
                         time_amplitudes = _selected_amplitudes(data, flags, rows)
@@ -232,13 +238,16 @@ def measure_rfi_preflight(
         nrows_total = int(main.nrows())
         for start in range(0, nrows_total, chunk_rows):
             nrows = min(chunk_rows, nrows_total - start)
+            ddids = np.asarray(main.getcol("DATA_DESC_ID", startrow=start, nrow=nrows), dtype=int)
+            spws = dd_to_spw[ddids]
+            measured_rows = np.isin(spws, measured_spws)
+            if not np.any(measured_rows):
+                continue
             data = _rows_first(main.getcol(datacolumn, startrow=start, nrow=nrows), nrows)
             flags = _rows_first(main.getcol("FLAG", startrow=start, nrow=nrows), nrows)
             ant1 = np.asarray(main.getcol("ANTENNA1", startrow=start, nrow=nrows))
             ant2 = np.asarray(main.getcol("ANTENNA2", startrow=start, nrow=nrows))
-            ddids = np.asarray(main.getcol("DATA_DESC_ID", startrow=start, nrow=nrows), dtype=int)
-            spws = dd_to_spw[ddids]
-            cross = ant1 != ant2
+            cross = (ant1 != ant2) & measured_rows
             for spw in np.unique(spws[cross]):
                 spw = int(spw)
                 amplitudes = _selected_amplitudes(data, flags, cross & (spws == spw))
