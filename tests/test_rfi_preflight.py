@@ -97,7 +97,17 @@ def test_measurement_skips_visibility_reads_for_irrelevant_spws(monkeypatch):
 
     monkeypatch.setattr(casa_tables, "table", FakeTable)
 
-    result = rfi_preflight.measure_rfi_preflight("fake.ms", chunk_rows=1)
+    result = rfi_preflight.measure_rfi_preflight(
+        "fake.ms",
+        chunk_rows=1,
+        spw_ids=(6, 7, 8, 9, 14, 15),
+    )
 
     assert sorted(result.spw_stats) == [6, 7, 8, 9, 14, 15]
     assert data_reads == [6, 7, 8, 9, 14, 15] * 2
+
+    data_reads.clear()
+    result = rfi_preflight.measure_rfi_preflight("fake.ms", chunk_rows=1)
+
+    assert sorted(result.spw_stats) == list(range(16))
+    assert data_reads == list(range(16)) * 2

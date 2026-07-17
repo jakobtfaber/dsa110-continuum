@@ -106,7 +106,10 @@ def execute_rfi_policy(ms: str, mode: RfiMode, tag: str = "RFI") -> None:
         return
 
     from dsa110_continuum.calibration.flagging_cflag import flag_rfi_cflag
-    from dsa110_continuum.calibration.rfi_preflight import measure_rfi_preflight
+    from dsa110_continuum.calibration.rfi_preflight import (
+        measure_rfi_preflight,
+        required_spws_for_time_metrics,
+    )
 
     logger = logging.getLogger(__name__)
     logger.info("[%s] Running conservative RFI Stage 0", tag)
@@ -123,7 +126,11 @@ def execute_rfi_policy(ms: str, mode: RfiMode, tag: str = "RFI") -> None:
     run_full_chain = mode == "full"
     if mode == "conditional":
         try:
-            preflight = measure_rfi_preflight(ms, datacolumn="DATA")
+            preflight = measure_rfi_preflight(
+                ms,
+                datacolumn="DATA",
+                spw_ids=required_spws_for_time_metrics(),
+            )
             run_full_chain = preflight.decision.triggered
             logger.info(
                 "[%s] Conditional RFI preflight: trigger=%s; %s",
