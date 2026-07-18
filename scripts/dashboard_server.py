@@ -2023,7 +2023,6 @@ svg .lbl.big{fill:#dfe6f2;font-size:10.5px}
         <span id="sky-note">—</span><span class="spacer"></span>
         <span class="legend">
           <span><i style="background:var(--sun)"></i>Sun</span>
-          <span><i style="background:var(--bad)"></i>very bright source</span>
           <span><i style="background:var(--acc)"></i>calibrator</span>
           <span><i style="background:#aab6c9"></i>source</span>
           <span><i style="background:#b98760;box-shadow:0 0 6px #b98760"></i>Galactic plane</span>
