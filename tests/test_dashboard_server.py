@@ -346,6 +346,17 @@ def test_sky_state_and_sources(console):
     assert "ateam" in kinds and "cal" in kinds
 
 
+def test_sky_map_has_simulated_context_and_hover_tooltips(console):
+    _, client = console
+    page = client.get("/").text
+
+    assert "galacticPlanePaths" in page
+    assert "simulated-sources" in page
+    assert 'id="sky-tip" role="tooltip"' in page
+    assert 'class="sky-source' in page
+    assert "pointerover" in page and "focusin" in page
+
+
 def test_antennas_json_source_preferred(console, tmp_path, monkeypatch):
     mod, client = console
     status = tmp_path / "ant_status.json"
