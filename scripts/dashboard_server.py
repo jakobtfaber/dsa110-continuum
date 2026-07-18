@@ -1943,16 +1943,35 @@ section{margin-top:26px}
 .tile .age{font:10.5px var(--mono);color:var(--dim2)}
 
 /* sky map */
-.skywrap{background:var(--surface);border:1px solid var(--line);border-radius:12px;
-  padding:14px 16px 8px}
-.skyhead{display:flex;gap:18px;align-items:baseline;font:11px var(--mono);color:var(--mut);
+.skywrap{background:linear-gradient(180deg,#10151d,#0c1016);border:1px solid var(--line);
+  border-radius:12px;padding:14px 16px 8px;box-shadow:inset 0 1px 0 rgba(255,255,255,.025)}
+.skyhead{display:flex;gap:8px 18px;align-items:baseline;flex-wrap:wrap;font:11px var(--mono);color:var(--mut);
   padding:0 2px 8px}
 .skyhead .spacer{flex:1}
-.legend{display:flex;gap:14px;align-items:center}
+.legend{display:flex;gap:6px 14px;align-items:center;flex-wrap:wrap}
 .legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.skycanvas{position:relative;overflow:hidden;border-radius:8px;background:#07101a}
+#skymap svg{width:100%;display:block}
+.sky-source{cursor:crosshair;outline:none}
+.sky-source .source-halo{fill:var(--source-color);filter:url(#sourceGlow);opacity:.38;
+  pointer-events:none}
+.sky-source .source-core{fill:var(--source-color);stroke:rgba(255,255,255,.14);stroke-width:.7;
+  transition:stroke .12s,stroke-width .12s,opacity .12s}
+.sky-source .source-hit{fill:transparent;pointer-events:all}
+.sky-source:hover .source-core,.sky-source:focus .source-core{stroke:#fff;stroke-width:1.8;opacity:1}
+.sky-source:focus-visible .source-hit{stroke:var(--acc);stroke-width:1;stroke-dasharray:2 2}
+.sky-tip{position:absolute;z-index:4;min-width:178px;max-width:260px;padding:9px 11px;
+  border:1px solid #425269;border-radius:7px;background:rgba(8,12,18,.96);color:var(--tx);
+  box-shadow:0 12px 34px rgba(0,0,0,.42);font:11px/1.45 var(--mono);pointer-events:none;
+  opacity:0;transform:translateY(3px);transition:opacity .1s,transform .1s}
+.sky-tip.show{opacity:1;transform:translateY(0)}
+.sky-tip strong{display:block;font-size:12px;color:#f4f7fb;margin-bottom:2px}
+.sky-tip .source-kind{text-transform:uppercase;letter-spacing:.11em;font-size:9px;color:var(--acc)}
+.sky-tip .source-coords{display:block;color:var(--dim2);margin-top:3px}
 svg text{font:9.5px var(--mono);fill:var(--dim2)}
 svg .lbl{fill:#aab6c9;font-size:10px}
 svg .lbl.big{fill:#dfe6f2;font-size:10.5px}
+@media(prefers-reduced-motion:reduce){.sky-source .source-core,.sky-tip{transition:none}}
 
 /* antennas */
 .antwrap{display:flex;gap:36px;align-items:flex-start;flex-wrap:wrap}
@@ -1998,7 +2017,7 @@ svg .lbl.big{fill:#dfe6f2;font-size:10.5px}
   </div>
 
   <section>
-    <p class="microlabel">Sky over OVRO — meridian is live, sources from master catalogs</p>
+    <p class="microlabel">Simulated 1.4 GHz sky over OVRO — live meridian + catalog overlay</p>
     <div class="skywrap">
       <div class="skyhead">
         <span id="sky-note">—</span><span class="spacer"></span>
@@ -2007,10 +2026,14 @@ svg .lbl.big{fill:#dfe6f2;font-size:10.5px}
           <span><i style="background:var(--bad)"></i>A-team</span>
           <span><i style="background:var(--acc)"></i>calibrator</span>
           <span><i style="background:#aab6c9"></i>source</span>
+          <span><i style="background:#b98760;box-shadow:0 0 6px #b98760"></i>Galactic plane</span>
           <span><i style="background:none;border:1px solid var(--acc);border-radius:2px;width:10px;height:6px"></i>Dec strip</span>
         </span>
       </div>
-      <div id="skymap"></div>
+      <div class="skycanvas">
+        <div id="skymap"></div>
+        <div class="sky-tip" id="sky-tip" role="tooltip" aria-hidden="true"></div>
+      </div>
     </div>
   </section>
 
@@ -2050,17 +2073,94 @@ const hfmt=h=>{const H=Math.floor(h),M=Math.floor((h-H)*60),S=Math.floor(((h-H)*
 const W=1240,H=330,DECMIN=-45,DECMAX=90;
 const X=ra=>(360-ra)/360*W;
 const Y=dec=>(DECMAX-dec)/(DECMAX-DECMIN)*H;
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fluxLabel=f=>f==null?'flux unavailable':(f>=1000?`${(f/1000).toFixed(2)} kJy`:
+  f>=10?`${f.toFixed(1)} Jy`:`${f.toFixed(2)} Jy`);
+
+function galToEq(l,b=0){
+  const lr=l*Math.PI/180,br=b*Math.PI/180,cb=Math.cos(br);
+  const xg=cb*Math.cos(lr),yg=cb*Math.sin(lr),zg=Math.sin(br);
+  const xe=-.0548755604*xg+.4941094279*yg-.8676661490*zg;
+  const ye=-.8734370902*xg-.4448296300*yg-.1980763734*zg;
+  const ze=-.4838350155*xg+.7469822445*yg+.4559837762*zg;
+  return {ra:(Math.atan2(ye,xe)*180/Math.PI+360)%360,
+    dec:Math.asin(Math.max(-1,Math.min(1,ze)))*180/Math.PI}}
+
+function galacticPlanePaths(b=0){
+  const paths=[];let d='',prev=null;
+  for(let l=0;l<=360;l+=2){
+    const q=galToEq(l,b),x=X(q.ra),y=Y(q.dec);
+    if(prev!=null&&Math.abs(x-prev)>W/2){if(d)paths.push(d);d=`M${x.toFixed(1)},${y.toFixed(1)}`}
+    else d+=`${d?' L':'M'}${x.toFixed(1)},${y.toFixed(1)}`;
+    prev=x}
+  if(d)paths.push(d);return paths}
+
+function seededRandom(seed){return function(){seed|=0;seed=seed+0x6D2B79F5|0;
+  let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;
+  return ((t^t>>>14)>>>0)/4294967296}}
+
+let SIM_SKY='';
+function simulatedSky(){
+  const rand=seededRandom(110),dots=[];
+  for(let i=0;i<280;i++){
+    let q,plane=i<165;
+    if(plane){const b=(rand()+rand()+rand()-1.5)*9;q=galToEq(rand()*360,b)}
+    else{const lo=Math.sin(DECMIN*Math.PI/180),hi=Math.sin(DECMAX*Math.PI/180);
+      q={ra:rand()*360,dec:Math.asin(lo+rand()*(hi-lo))*180/Math.PI}}
+    if(q.dec<DECMIN||q.dec>DECMAX)continue;
+    const bright=Math.pow(rand(),5),r=.22+bright*(plane?1.05:.65),op=.12+bright*.38;
+    dots.push(`<circle cx="${X(q.ra).toFixed(1)}" cy="${Y(q.dec).toFixed(1)}" r="${r.toFixed(2)}"
+      fill="${plane?'#d7b08a':'#8fb2cf'}" opacity="${op.toFixed(2)}"/>`)}
+  return `<g class="simulated-sources" pointer-events="none">${dots.join('')}</g>`}
+
+const pathMarkup=(paths,attrs)=>paths.map(d=>`<path d="${d}" ${attrs}/>`).join('');
+function diffuseSky(){
+  const core=galacticPlanePaths(0),north=galacticPlanePaths(9),south=galacticPlanePaths(-9);
+  return pathMarkup(north.concat(south),'fill="none" stroke="#557c99" stroke-width="34" opacity=".08" filter="url(#planeBlur)"')+
+    pathMarkup(core,'fill="none" stroke="#c38d61" stroke-width="46" opacity=".14" filter="url(#planeBlur)"')+
+    pathMarkup(core,'fill="none" stroke="#e0b488" stroke-width="13" opacity=".18" filter="url(#planeSoft)"')+
+    pathMarkup(core,'fill="none" stroke="#e8c39e" stroke-width="1.2" opacity=".28"')}
+
+function sourceMarkup(src){
+  if(src.dec_deg<DECMIN||src.dec_deg>DECMAX)return '';
+  const col={sun:'var(--sun)',ateam:'var(--bad)',cal:'var(--acc)',src:'#b8c6d8',catalog:'#74859b'};
+  const x=X(src.ra_deg),y=Y(src.dec_deg),f=src.flux_jy;
+  const r=src.kind==='sun'?7:Math.max(1.6,Math.min(6.5,1.2+Math.log10(Math.max(f||1,1))*1.9));
+  const name=src.name||'Catalog source',kind=src.kind||'source';
+  const aria=`${name}, ${fluxLabel(f)}, right ascension ${src.ra_deg.toFixed(2)} degrees, declination ${src.dec_deg.toFixed(2)} degrees`;
+  const halo=kind==='catalog'?'':`<circle class="source-halo" cx="${x}" cy="${y}" r="${r*2.1}"/>`;
+  return `<g class="sky-source kind-${esc(kind)}" tabindex="0" role="img" aria-label="${esc(aria)}"
+    data-name="${esc(name)}" data-kind="${esc(kind)}" data-flux="${esc(fluxLabel(f))}"
+    data-ra="${src.ra_deg.toFixed(2)}" data-dec="${src.dec_deg.toFixed(2)}"
+    style="--source-color:${col[kind]||col.src}">${halo}
+    <circle class="source-core" cx="${x}" cy="${y}" r="${r}" opacity="${kind==='catalog'?.62:.94}"/>
+    <circle class="source-hit" cx="${x}" cy="${y}" r="${Math.max(8,r+4)}"/></g>`}
+
+function updateSkyReadout(){if(!SKY)return;const lst=lstHours(),mer=lst*15;
+  $('t-lst').textContent=hfmt(lst);$('t-mer').innerHTML=`${mer.toFixed(1)}<small>°</small>`}
 
 function drawSky(){
   if(!SKY)return;
   const lst=lstHours(), mer=lst*15, strip=SKY.dec_strip_deg;
-  let s=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">`;
+  if(!SIM_SKY)SIM_SKY=simulatedSky();
+  let s=`<svg viewBox="0 0 ${W} ${H}" aria-label="Simulated 1.4 gigahertz sky in equatorial coordinates">
+    <defs>
+      <linearGradient id="skyBg" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#0b1826"/>
+        <stop offset=".56" stop-color="#08121d"/><stop offset="1" stop-color="#050a11"/></linearGradient>
+      <radialGradient id="gcGlow"><stop stop-color="#d69b68" stop-opacity=".26"/><stop offset="1" stop-color="#d69b68" stop-opacity="0"/></radialGradient>
+      <filter id="planeBlur" x="-25%" y="-60%" width="150%" height="220%"><feGaussianBlur stdDeviation="12"/></filter>
+      <filter id="planeSoft" x="-15%" y="-40%" width="130%" height="180%"><feGaussianBlur stdDeviation="4"/></filter>
+      <filter id="sourceGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="3"/></filter>
+    </defs>
+    <rect width="${W}" height="${H}" fill="url(#skyBg)"/>
+    <ellipse cx="${X(266.4)}" cy="${Y(-29)}" rx="88" ry="54" fill="url(#gcGlow)" filter="url(#planeSoft)"/>
+    ${diffuseSky()}${SIM_SKY}`;
   // graticule
   for(let ra=0;ra<=360;ra+=30){
-    s+=`<line x1="${X(ra)}" y1="0" x2="${X(ra)}" y2="${H}" stroke="#161b22" stroke-width="1"/>`;
+    s+=`<line x1="${X(ra)}" y1="0" x2="${X(ra)}" y2="${H}" stroke="#26364a" stroke-opacity=".38" stroke-width="1"/>`;
     if(ra<360)s+=`<text x="${X(ra)-3}" y="${H-5}" text-anchor="end">${ra/15}h</text>`}
   for(let dec=-30;dec<=60;dec+=30){
-    s+=`<line x1="0" y1="${Y(dec)}" x2="${W}" y2="${Y(dec)}" stroke="#161b22"/>`;
+    s+=`<line x1="0" y1="${Y(dec)}" x2="${W}" y2="${Y(dec)}" stroke="#26364a" stroke-opacity=".38"/>`;
     s+=`<text x="5" y="${Y(dec)-4}">${dec>0?'+':''}${dec}°</text>`}
   // horizon limit (dec < lat-90 never rises)
   const horizon=SKY.site.lat_deg-90;
@@ -2078,21 +2178,9 @@ function drawSky(){
   // meridian
   s+=`<line x1="${X(mer)}" y1="0" x2="${X(mer)}" y2="${H}" stroke="#e7ebf3" opacity=".55" stroke-width="1.2"/>
      <text x="${X(mer)+5}" y="12" class="lbl">meridian ${hfmt(lst)} LST</text>`;
-  // sources
-  const col={sun:'var(--sun)',ateam:'var(--bad)',cal:'var(--acc)',src:'#aab6c9',catalog:'#5a6474'};
-  for(const src of SKY.sources){
-    if(src.dec_deg<DECMIN||src.dec_deg>DECMAX)continue;
-    const x=X(src.ra_deg),y=Y(src.dec_deg);
-    const f=src.flux_jy, r=src.kind==='sun'?7:Math.max(1.6,Math.min(6.5,1.2+Math.log10(Math.max(f,1))*1.9));
-    s+=`<circle cx="${x}" cy="${y}" r="${r}" fill="${col[src.kind]||col.src}"
-        opacity="${src.kind==='catalog'?.55:.92}"><title>${src.name} · ${
-        f!=null?f+' Jy':'—'} · RA ${src.ra_deg.toFixed(2)} Dec ${src.dec_deg.toFixed(2)}</title></circle>`;
-    const label=src.kind==='sun'||src.kind==='ateam'||src.kind==='cal'||f>=40;
-    if(label&&src.name)s+=`<text x="${x+r+3}" y="${y+3}" class="lbl ${f>=200||src.kind==='sun'?'big':''}">${src.name}</text>`}
-  s+='</svg>';
+  s+=SKY.sources.map(sourceMarkup).join('')+'</svg>';
   $('skymap').innerHTML=s;
-  $('t-lst').textContent=hfmt(lst);
-  $('t-mer').innerHTML=`${mer.toFixed(1)}<small>°</small>`;
+  updateSkyReadout();
   // overhead / next-hour chips
   const soon=[],now=[];
   for(const src of SKY.sources){
@@ -2102,9 +2190,34 @@ function drawSky(){
       if(Math.abs(hrs)<=0.25)now.push(src);
       else if(hrs>0&&hrs<=2.0)soon.push([hrs,src])}}
   soon.sort((a,b)=>a[0]-b[0]);
-  $('overhead').innerHTML=(now.map(s2=>`<span class="chip"><b>${s2.name||'src'}</b> <span class="in">on meridian</span></span>`)
-    .concat(soon.slice(0,10).map(([hq,s2])=>`<span class="chip">${s2.name||'src'} <span class="in">in ${Math.round(hq*60)}m</span></span>`)))
+  $('overhead').innerHTML=(now.map(s2=>`<span class="chip"><b>${esc(s2.name||'src')}</b> <span class="in">on meridian</span></span>`)
+    .concat(soon.slice(0,10).map(([hq,s2])=>`<span class="chip">${esc(s2.name||'src')} <span class="in">in ${Math.round(hq*60)}m</span></span>`)))
     .join('')||'<span class="quiet">Nothing notable in the strip this hour.</span>'}
+
+const skyTip=$('sky-tip'),skyCanvas=document.querySelector('.skycanvas');
+const kindLabel={sun:'solar system',ateam:'A-team source',cal:'calibrator',src:'bright source',catalog:'catalog source'};
+const skySource=e=>e.target.closest?e.target.closest('.sky-source'):null;
+function placeSkyTip(source,event){
+  const canvas=skyCanvas.getBoundingClientRect(),box=source.getBoundingClientRect();
+  const x=event?.clientX!=null?event.clientX-canvas.left:box.left+box.width/2-canvas.left;
+  const y=event?.clientY!=null?event.clientY-canvas.top:box.top-canvas.top;
+  const left=Math.max(8,Math.min(canvas.width-skyTip.offsetWidth-8,x+13));
+  const top=Math.max(8,Math.min(canvas.height-skyTip.offsetHeight-8,y-skyTip.offsetHeight-12));
+  skyTip.style.left=`${left}px`;skyTip.style.top=`${top}px`}
+function showSkyTip(source,event){
+  skyTip.innerHTML=`<strong>${esc(source.dataset.name)}</strong>
+    <span class="source-kind">${esc(kindLabel[source.dataset.kind]||source.dataset.kind)}</span>
+    <span> · ${esc(source.dataset.flux)}</span>
+    <span class="source-coords">RA ${esc(source.dataset.ra)}° · Dec ${esc(source.dataset.dec)}°</span>`;
+  skyTip.classList.add('show');skyTip.setAttribute('aria-hidden','false');placeSkyTip(source,event)}
+function hideSkyTip(){skyTip.classList.remove('show');skyTip.setAttribute('aria-hidden','true')}
+$('skymap').addEventListener('pointerover',e=>{const source=skySource(e);if(source)showSkyTip(source,e)});
+$('skymap').addEventListener('pointermove',e=>{const source=skySource(e);if(source)placeSkyTip(source,e)});
+$('skymap').addEventListener('pointerout',e=>{const source=skySource(e);
+  if(source&&!source.contains(e.relatedTarget))hideSkyTip()});
+$('skymap').addEventListener('focusin',e=>{const source=skySource(e);if(source)showSkyTip(source)});
+$('skymap').addEventListener('focusout',hideSkyTip);
+skyCanvas.addEventListener('pointerleave',hideSkyTip);
 
 async function loadSky(){SKY=await j('/api/sky');
   $('t-dec').innerHTML=`${SKY.dec_strip_deg}<small>°</small>`;
@@ -2157,9 +2270,10 @@ async function loadAnts(){const a=await j('/api/antennas');
 async function loadHealth(){try{const h=await j('/api/health');
   $('hd-ctl').innerHTML=`<span class="dot ${h.control_enabled?'ok':'bad'}"></span>control ${h.control_enabled?'enabled':'disabled'}`}catch(e){}}
 
-function tick(){$('hd-utc').textContent=new Date().toISOString().slice(0,19)+'Z';if(SKY)drawSky()}
+function tick(){$('hd-utc').textContent=new Date().toISOString().slice(0,19)+'Z';updateSkyReadout()}
 loadSky();loadAnts();loadHealth();
 setInterval(tick,1000);
+setInterval(drawSky,60000);
 setInterval(loadSky,300000);setInterval(loadAnts,120000);
 </script></body></html>"""
 
