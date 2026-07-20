@@ -147,6 +147,14 @@ qa = [
     "appdirs",
     "torch",
 ]
+# Optional science-page interactive lightcurves (Pipeline Console /science iframe).
+# Enable with DSA110_DASH_PANEL=1 after installing this extra.
+panel = [
+    "panel>=1.5",
+    "holoviews>=1.18",
+    "hvplot>=0.10",
+    "bokeh-fastapi>=0.1.5",
+]
 
 [project.scripts]
 dsa110-health = "dsa110_continuum.validation.package_health:main"

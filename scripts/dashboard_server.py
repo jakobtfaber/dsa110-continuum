@@ -36,6 +36,7 @@ import logging
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import threading
 import uuid
@@ -63,10 +64,19 @@ def _env_path(name: str, default: str) -> Path:
 INCOMING_DIR = _env_path("DSA110_INCOMING_DIR", "/data/incoming")
 MS_DIR = _env_path("DSA110_MS_DIR", "/stage/dsa110-contimg/ms")
 IMAGE_BASE = _env_path("DSA110_IMAGE_BASE", "/stage/dsa110-contimg/images")
-PRODUCTS_BASE = _env_path("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics")
+PRODUCTS_BASE = _env_path("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/science_mosaics")
+PIPELINE_DB = _env_path("PIPELINE_DB", "/data/dsa110-contimg/state/db/pipeline.sqlite3")
 REPO_DIR = _env_path("DSA110_REPO_DIR", str(Path(__file__).resolve().parent.parent))
 PIPELINE_PYTHON = os.environ.get("DSA110_PYTHON", "/opt/miniforge/envs/casa6/bin/python")
 DASH_TOKEN = os.environ.get("DSA110_DASH_TOKEN", "")
+ACCESS_EMAILS = {
+    e.strip().lower()
+    for e in os.environ.get(
+        "DSA110_ACCESS_EMAILS",
+        "jfaber@caltech.edu,jakobtfaber@gmail.com",
+    ).split(",")
+    if e.strip()
+}
 JOB_DIR = _env_path("DSA110_JOB_DIR", "/tmp/dsa110_dash_jobs")
 THUMB_DIR = _env_path("DSA110_THUMB_DIR", "/tmp/dsa110_dash_thumbs")
 LOG_GLOBS = os.environ.get(
@@ -76,12 +86,30 @@ LOG_GLOBS = os.environ.get(
 ).split(":")
 DISK_PATHS = os.environ.get("DSA110_DISK_PATHS", "/:/data:/stage").split(":")
 
+DASH_PANEL = os.environ.get("DSA110_DASH_PANEL", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+PANEL_ENABLED = False  # set True below if mount succeeds
+
+
 HDF5_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})_sb(\d+)\.hdf5$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 N_SUBBANDS = 16
 
 _metrics_cache: dict[str, tuple[float, dict]] = {}
 _cache_lock = threading.Lock()
+_thumb_lock = threading.Lock()
+_THUMB_CACHE_VERSION = 2
+
+
+def _thumb_cache_key(path: Path) -> str:
+    return hashlib.md5(
+        f"{_THUMB_CACHE_VERSION}:{path}:{path.stat().st_mtime}".encode()
+    ).hexdigest()[:8]
+
 
 # Load casatools before any request thread can import pandas/matplotlib:
 # they resolve the system libstdc++, whose CXXABI is too old for casatools'
@@ -136,14 +164,32 @@ def _resolve_safe(raw: str) -> Path:
     raise HTTPException(status_code=403, detail="Path outside allowed roots")
 
 
-def _require_token(x_dsa110_token: str | None) -> None:
-    if not DASH_TOKEN:
+def _control_enabled() -> bool:
+    """True when Access allow-list and/or shared token can authorize control."""
+    return bool(ACCESS_EMAILS) or bool(DASH_TOKEN)
+
+
+def _require_control_auth(
+    x_dsa110_token: str | None = None,
+    cf_access_email: str | None = None,
+) -> str:
+    """Authorize mutating control via Access email or shared token."""
+    if not _control_enabled():
         raise HTTPException(
             status_code=403,
-            detail="Control disabled: DSA110_DASH_TOKEN is not set on the server",
+            detail="Control disabled: set DSA110_ACCESS_EMAILS or DSA110_DASH_TOKEN",
         )
-    if x_dsa110_token != DASH_TOKEN:
-        raise HTTPException(status_code=403, detail="Bad or missing X-DSA110-Token")
+    email = (cf_access_email or "").strip().lower()
+    if email and email in ACCESS_EMAILS:
+        return email
+    if DASH_TOKEN and x_dsa110_token == DASH_TOKEN:
+        return "token"
+    if ACCESS_EMAILS and not email:
+        raise HTTPException(
+            status_code=403,
+            detail="Sign in via Cloudflare Access to run control actions",
+        )
+    raise HTTPException(status_code=403, detail="Bad or missing control credentials")
 
 
 def _fits_stats(path: Path) -> dict:
@@ -205,6 +251,36 @@ def scan_incoming() -> dict[str, dict]:
     return out
 
 
+def scan_indexed(date: str) -> dict | None:
+    """Summarize indexed HDF5 groups for one date from the pipeline database."""
+    if not PIPELINE_DB.is_file():
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{PIPELINE_DB}?mode=ro", uri=True, timeout=1)
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(n_subbands), 0), COUNT(*),
+                   COALESCE(SUM(CASE WHEN n_subbands >= ? THEN 1 ELSE 0 END), 0)
+            FROM (
+                SELECT group_id, COUNT(DISTINCT subband_num) AS n_subbands
+                FROM hdf5_files
+                WHERE obs_date = ? AND stored = 1
+                GROUP BY group_id
+            )
+            """,
+            (N_SUBBANDS, date),
+        ).fetchone()
+        conn.close()
+    except (OSError, sqlite3.Error) as exc:
+        logger.warning("could not read pipeline index for %s: %s", date, exc)
+        return None
+    return {
+        "files": int(row[0]),
+        "groups": int(row[1]),
+        "complete_groups": int(row[2]),
+    }
+
+
 def scan_ms() -> dict[str, list[str]]:
     """Group Measurement Set names by observation date."""
     out: dict[str, list[str]] = {}
@@ -240,8 +316,14 @@ def scan_tiles(date: str) -> dict:
     """Report per-tile FITS images and the tile checkpoint for a date."""
     sd = _stage_dir(date)
     if not sd.exists():
-        return {"n_tiles": 0, "checkpoint": None}
-    tiles = [f.name for f in sorted(sd.glob("*.fits")) if "_mosaic" not in f.name]
+        return {
+            "n_tiles": 0,
+            "tiles": [],
+            "n_artifacts": 0,
+            "artifacts": [],
+            "checkpoint": None,
+        }
+    artifacts = [f.name for f in sorted(sd.glob("*.fits")) if "_mosaic" not in f.name]
     ck = None
     ck_path = sd / ".tile_checkpoint.json"
     if ck_path.exists():
@@ -249,7 +331,22 @@ def scan_tiles(date: str) -> dict:
             ck = json.loads(ck_path.read_text())
         except Exception as e:
             ck = {"error": f"unreadable checkpoint: {e}"}
-    return {"n_tiles": len(tiles), "tiles": tiles, "checkpoint": ck}
+    completed = ck.get("completed", []) if isinstance(ck, dict) else []
+    if completed:
+        tiles = [Path(item).name for item in completed]
+    else:
+        tiles = [
+            name
+            for name in artifacts
+            if name.endswith("-image-pb.fits") or name.endswith("_image.fits")
+        ]
+    return {
+        "n_tiles": len(tiles),
+        "tiles": tiles,
+        "n_artifacts": len(artifacts),
+        "artifacts": artifacts,
+        "checkpoint": ck,
+    }
 
 
 def scan_mosaics(date: str) -> list[dict]:
@@ -267,6 +364,7 @@ def scan_mosaics(date: str) -> list[dict]:
                 "size": bytes_to_human(p.stat().st_size),
                 "weights": w.exists(),
                 "mtime": datetime.utcfromtimestamp(p.stat().st_mtime).isoformat() + "Z",
+                "thumb_version": _thumb_cache_key(p),
             }
         )
     return out
@@ -281,6 +379,7 @@ def scan_products(date: str) -> dict:
         "run_summary": None,
         "run_report": None,
         "phot_csvs": [],
+        "archived_mosaics": [],
         "logs": [],
     }
     if not pd_dir.exists():
@@ -316,8 +415,174 @@ def scan_products(date: str) -> dict:
         except Exception as e:
             rec["error"] = str(e)
         out["phot_csvs"].append(rec)
+    out["archived_mosaics"] = [p.name for p in sorted(pd_dir.glob("*_mosaic.fits"))]
     out["logs"] = [str(p) for p in sorted(pd_dir.glob("run_*.log"))]
     return out
+
+
+def stage_states(
+    incoming: dict | None,
+    indexed: dict | None,
+    n_ms: int,
+    cal: dict,
+    tiles: dict,
+    n_mosaics: int,
+    manifest: dict,
+    n_phot: int,
+    n_archived: int,
+) -> list[dict]:
+    """Return operator-facing state for every intake-to-science stage."""
+    raw_files = int((incoming or {}).get("files", 0))
+    indexed_files = int((indexed or {}).get("files", 0))
+    indexed_groups = int((indexed or {}).get("groups", 0))
+    indexed_complete = int((indexed or {}).get("complete_groups", 0))
+    expected_ms = indexed_complete
+    conversion_backlog = max(expected_ms - n_ms, 0)
+    n_tiles = int(tiles.get("n_tiles", 0))
+    failures = (tiles.get("checkpoint") or {}).get("failed", [])
+    archive_blocked = any(
+        gate.get("gate") == "archive" and gate.get("verdict") == "BLOCKED"
+        for gate in manifest.get("gates", [])
+    )
+    verdict = manifest.get("pipeline_verdict")
+
+    if raw_files == 0:
+        ingest_state, ingest_detail = "waiting", "no raw HDF5 files visible"
+    elif indexed is None or indexed_files < raw_files:
+        ingest_state = "partial"
+        ingest_detail = f"{raw_files} raw files; group completeness pending index"
+    elif indexed_complete < indexed_groups:
+        ingest_state = "partial"
+        ingest_detail = f"{indexed_complete}/{indexed_groups} complete 16-subband groups"
+    else:
+        ingest_state = "complete"
+        ingest_detail = f"{indexed_complete}/{indexed_groups} complete 16-subband groups"
+
+    if indexed is None:
+        index_state, index_detail = "unknown", "pipeline index unavailable"
+    elif indexed_files == 0 and raw_files:
+        index_state, index_detail = "waiting", f"0/{raw_files} raw files indexed"
+    elif indexed_files < raw_files:
+        index_state, index_detail = (
+            "partial",
+            f"{indexed_files}/{raw_files} files indexed; {indexed_complete} complete groups",
+        )
+    else:
+        index_state, index_detail = (
+            "complete",
+            f"{indexed_files} files / {indexed_groups} groups indexed",
+        )
+
+    if n_ms and conversion_backlog == 0:
+        conversion_state = "complete"
+    elif n_ms:
+        conversion_state = "partial"
+    elif expected_ms:
+        conversion_state = "waiting"
+    else:
+        conversion_state = "waiting"
+
+    if n_tiles and n_tiles >= n_ms and not failures:
+        imaging_state = "complete"
+    elif n_tiles:
+        imaging_state = "partial"
+    elif failures:
+        imaging_state = "failed"
+    else:
+        imaging_state = "waiting"
+
+    if n_tiles:
+        flag_state = "complete" if imaging_state == "complete" else "partial"
+        flag_detail = f"inferred from {n_tiles} tiles reaching imaging"
+    elif failures:
+        flag_state, flag_detail = "failed", f"{len(failures)} recorded tile failures"
+    else:
+        flag_state, flag_detail = "waiting", "no standalone flagging artifact recorded"
+
+    if cal.get("bandpass") and cal.get("gain"):
+        cal_state = "complete"
+    elif cal.get("bandpass") or cal.get("gain"):
+        cal_state = "partial"
+    else:
+        cal_state = "waiting"
+
+    qa_state = (
+        "complete"
+        if verdict == "CLEAN"
+        else "blocked"
+        if verdict == "DEGRADED"
+        else "failed"
+        if verdict == "FAILED"
+        else "waiting"
+    )
+    phot_state = "complete" if n_phot else "blocked" if qa_state == "blocked" else "waiting"
+    archive_state = "complete" if n_archived else "blocked" if archive_blocked else "waiting"
+    return [
+        {
+            "key": "ingest",
+            "label": "Raw intake",
+            "state": ingest_state,
+            "detail": ingest_detail,
+        },
+        {"key": "index", "label": "Index", "state": index_state, "detail": index_detail},
+        {
+            "key": "conversion",
+            "label": "Conversion",
+            "state": conversion_state,
+            "detail": f"{n_ms}/{expected_ms} MS ready; {conversion_backlog} group backlog",
+        },
+        {
+            "key": "flagging",
+            "label": "Flagging",
+            "state": flag_state,
+            "detail": flag_detail,
+            "inferred": True,
+        },
+        {
+            "key": "calibration",
+            "label": "Calibration",
+            "state": cal_state,
+            "detail": f"{cal.get('bandpass', 0)} bandpass / {cal.get('gain', 0)} gain tables",
+        },
+        {
+            "key": "imaging",
+            "label": "Imaging",
+            "state": imaging_state,
+            "detail": f"{n_tiles}/{n_ms} science tiles; {tiles.get('n_artifacts', 0)} FITS artifacts",
+        },
+        {
+            "key": "mosaic",
+            "label": "Mosaicking",
+            "state": "complete" if n_mosaics else "waiting",
+            "detail": f"{n_mosaics} hourly-epoch mosaics",
+        },
+        {
+            "key": "qa",
+            "label": "QA gate",
+            "state": qa_state,
+            "detail": verdict or "no manifest verdict",
+        },
+        {
+            "key": "photometry",
+            "label": "Photometry",
+            "state": phot_state,
+            "detail": f"{n_phot} forced-photometry products"
+            if n_phot
+            else "withheld by strict QA"
+            if qa_state == "blocked"
+            else "not run",
+        },
+        {
+            "key": "archive",
+            "label": "Archive",
+            "state": archive_state,
+            "detail": f"{n_archived} archived mosaics"
+            if n_archived
+            else "blocked by QA"
+            if archive_blocked
+            else "not archived",
+        },
+    ]
 
 
 # --------------------------------------------------------------------------
@@ -325,18 +590,39 @@ def scan_products(date: str) -> dict:
 # --------------------------------------------------------------------------
 
 
+# Optional Panel/HoloViews lightcurve app (science page iframe).
+if DASH_PANEL:
+    try:
+        from dsa110_continuum.dashboard.lightcurve_panel import try_mount_panel
+
+        PANEL_ENABLED = try_mount_panel(app, lambda: _variability_table(top=200))
+        if PANEL_ENABLED:
+            logger.info("Mounted Panel lightcurves at /panel/lightcurves")
+        else:
+            logger.warning(
+                "DSA110_DASH_PANEL set but Panel/bokeh-fastapi unavailable; "
+                "install dsa110-continuum[panel]"
+            )
+    except Exception as exc:  # pragma: no cover - optional path
+        logger.warning("Panel lightcurve mount failed: %s", exc)
+        PANEL_ENABLED = False
+
 @app.get("/api/health")
 def health() -> dict:
     """Liveness probe with configured roots and control state."""
     return {
         "status": "ok",
         "time": _utcnow(),
-        "control_enabled": bool(DASH_TOKEN),
+        "control_enabled": _control_enabled(),
+        "panel_enabled": PANEL_ENABLED,
+        "panel_path": "/panel/lightcurves" if PANEL_ENABLED else None,
         "roots": {
             "incoming": str(INCOMING_DIR),
             "ms": str(MS_DIR),
             "images": str(IMAGE_BASE),
             "products": str(PRODUCTS_BASE),
+            "pipeline_db": str(PIPELINE_DB),
+            "pipeline_repo": str(REPO_DIR),
         },
     }
 
@@ -389,22 +675,37 @@ def dates() -> dict:
 
     rows = []
     for date in sorted(all_dates, reverse=True):
+        indexed = scan_indexed(date)
         tiles = scan_tiles(date)
         mosaics = scan_mosaics(date)
         prod = scan_products(date)
         ck = tiles.get("checkpoint") or {}
         failures = ck.get("failed", []) if isinstance(ck, dict) else []
         manifest = prod.get("manifest") or {}
+        cal_counts = {
+            "bandpass": len(cal.get(date, {}).get("bandpass", [])),
+            "gain": len(cal.get(date, {}).get("gain", [])),
+        }
+        stages = stage_states(
+            incoming.get(date),
+            indexed,
+            len(ms.get(date, [])),
+            cal_counts,
+            tiles,
+            len(mosaics),
+            manifest,
+            len(prod["phot_csvs"]),
+            len(prod["archived_mosaics"]),
+        )
         rows.append(
             {
                 "date": date,
                 "incoming": incoming.get(date),
+                "indexed": indexed,
                 "n_ms": len(ms.get(date, [])),
-                "cal": {
-                    "bandpass": len(cal.get(date, {}).get("bandpass", [])),
-                    "gain": len(cal.get(date, {}).get("gain", [])),
-                },
+                "cal": cal_counts,
                 "n_tiles": tiles["n_tiles"],
+                "n_tile_artifacts": tiles["n_artifacts"],
                 "n_failures": len(failures),
                 "n_quarantine_risk": sum(
                     1 for f in failures if int(f.get("failure_count", 0)) >= 3
@@ -412,6 +713,8 @@ def dates() -> dict:
                 "n_mosaics": len(mosaics),
                 "verdict": manifest.get("pipeline_verdict") or None,
                 "n_phot": len(prod["phot_csvs"]),
+                "n_archived": len(prod["archived_mosaics"]),
+                "stages": stages,
             }
         )
     return {"time": _utcnow(), "dates": rows}
@@ -423,6 +726,7 @@ def date_detail(date: str) -> dict:
     if not DATE_RE.match(date):
         raise HTTPException(status_code=400, detail="Bad date format")
     incoming = scan_incoming().get(date)
+    indexed = scan_indexed(date)
     ms = scan_ms().get(date, [])
     cal = scan_cal().get(date, {"bandpass": [], "gain": []})
     tiles = scan_tiles(date)
@@ -430,15 +734,29 @@ def date_detail(date: str) -> dict:
     for m in mosaics:
         m.update(_fits_stats(Path(m["path"])))
     prod = scan_products(date)
+    cal_counts = {"bandpass": len(cal["bandpass"]), "gain": len(cal["gain"])}
+    stages = stage_states(
+        incoming,
+        indexed,
+        len(ms),
+        cal_counts,
+        tiles,
+        len(mosaics),
+        prod.get("manifest") or {},
+        len(prod["phot_csvs"]),
+        len(prod["archived_mosaics"]),
+    )
     return {
         "date": date,
         "time": _utcnow(),
         "incoming": incoming,
+        "indexed": indexed,
         "ms": ms,
         "cal": cal,
         "tiles": tiles,
         "mosaics": mosaics,
         "products": prod,
+        "stages": stages,
     }
 
 
@@ -451,44 +769,45 @@ def thumb(date: str, name: str):
     if not fits_path.exists() or fits_path.suffix != ".fits":
         raise HTTPException(status_code=404, detail="No such FITS")
     THUMB_DIR.mkdir(parents=True, exist_ok=True)
-    key = hashlib.md5(f"{fits_path}{fits_path.stat().st_mtime}".encode()).hexdigest()[:8]
+    key = _thumb_cache_key(fits_path)
     out = THUMB_DIR / f"{date}_{fits_path.stem}_{key}.png"
-    if not out.exists():
-        for old in THUMB_DIR.glob(f"{date}_{fits_path.stem}_*.png"):
-            old.unlink(missing_ok=True)
-        import matplotlib
+    with _thumb_lock:
+        if not out.exists():
+            for old in THUMB_DIR.glob(f"{date}_{fits_path.stem}_*.png"):
+                old.unlink(missing_ok=True)
+            import matplotlib
 
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        from astropy.io import fits as afits
-        from matplotlib.colors import PowerNorm
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            from astropy.io import fits as afits
+            from matplotlib.colors import PowerNorm
 
-        try:
-            with afits.open(fits_path, memmap=True) as hdul:
-                d = np.asarray(hdul[0].data).squeeze().astype(np.float32)
-            # Render at most ~2400 px on the long side; full-res imshow of a
-            # 4800-px mosaic costs ~9 s of pure matplotlib resampling.
-            if d.ndim == 2:
-                step = max(1, max(d.shape) // 2400)
-                d = d[::step, ::step]
-            fig, ax = plt.subplots(figsize=(10, 4), dpi=80)
-            finite = d[np.isfinite(d)]
-            vmax = float(np.nanpercentile(finite, 99.5)) if finite.size else 1.0
-            ax.imshow(
-                d,
-                origin="lower",
-                cmap="inferno",
-                norm=PowerNorm(gamma=0.35, vmin=0, vmax=max(vmax, 1e-6)),
-                aspect="auto",
-            )
-            ax.axis("off")
-            fig.patch.set_facecolor("#0d1017")
-            plt.tight_layout(pad=0.1)
-            plt.savefig(out, dpi=80, bbox_inches="tight", facecolor="#0d1017")
-            plt.close(fig)
-        except Exception as e:
-            logger.error("thumb failed for %s: %s", fits_path, e)
-            raise HTTPException(status_code=500, detail=f"Thumbnail failed: {e}")
+            try:
+                with afits.open(fits_path, memmap=True) as hdul:
+                    d = np.asarray(hdul[0].data).squeeze().astype(np.float32)
+                # Render at most ~2400 px on the long side; full-res imshow of a
+                # 4800-px mosaic costs ~9 s of pure matplotlib resampling.
+                if d.ndim == 2:
+                    step = max(1, max(d.shape) // 2400)
+                    d = d[::step, ::step]
+                fig, ax = plt.subplots(figsize=(10, 4), dpi=80)
+                finite = d[np.isfinite(d)]
+                vmax = float(np.nanpercentile(finite, 99.5)) if finite.size else 1.0
+                ax.imshow(
+                    d,
+                    origin="lower",
+                    cmap="inferno",
+                    norm=PowerNorm(gamma=0.35, vmin=0, vmax=max(vmax, 1e-6)),
+                    aspect="auto",
+                )
+                ax.axis("off")
+                fig.patch.set_facecolor("#0d1017")
+                fig.tight_layout(pad=0.1)
+                fig.savefig(out, dpi=80, bbox_inches="tight", facecolor="#0d1017")
+                plt.close(fig)
+            except Exception as e:
+                logger.error("thumb failed for %s: %s", fits_path, e)
+                raise HTTPException(status_code=500, detail=f"Thumbnail failed: {e}")
     return Response(
         content=out.read_bytes(),
         media_type="image/png",
@@ -543,17 +862,20 @@ def logs(lines: int = Query(80, le=2000)) -> dict:
 
 
 # --------------------------------------------------------------------------
-# Control (token-gated)
+# Control (Cloudflare Access and/or token)
 # --------------------------------------------------------------------------
 
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
+RFI_MODES = {"conditional", "cflag", "full", "off"}
 
 
 class RunRequest(BaseModel):
-    """Validated parameters for launching scripts/batch_pipeline.py."""
+    """Validated parameters for launching the full flow or science batch."""
 
     date: str
+    flow: str = "batch"
+    rfi_mode: str = "conditional"
     start_hour: int | None = Field(default=None, ge=0, le=23)
     end_hour: int | None = Field(default=None, ge=0, le=23)
     dry_run: bool = True
@@ -563,9 +885,30 @@ class RunRequest(BaseModel):
     photometry_workers: int | None = Field(default=None, ge=1, le=32)
 
 
-def _batch_pipeline_argv(req: RunRequest) -> list[str]:
+def _pipeline_argv(req: RunRequest) -> list[str]:
+    if req.flow not in {"batch", "end_to_end"}:
+        raise HTTPException(status_code=400, detail="flow must be batch or end_to_end")
+    if req.rfi_mode not in RFI_MODES:
+        raise HTTPException(status_code=400, detail=f"rfi_mode must be one of {sorted(RFI_MODES)}")
+    if req.flow == "end_to_end":
+        if req.dry_run:
+            raise HTTPException(status_code=400, detail="end-to-end flow has no dry-run mode")
+        if req.start_hour is not None or req.end_hour is not None:
+            raise HTTPException(
+                status_code=400, detail="hour bounds apply only to science-batch mode"
+            )
+        script = str(REPO_DIR / "scripts" / "auto_pipeline.py")
+        return [
+            PIPELINE_PYTHON,
+            script,
+            "--date",
+            req.date,
+            "--rfi-mode",
+            req.rfi_mode,
+        ]
     script = str(REPO_DIR / "scripts" / "batch_pipeline.py")
     argv = [PIPELINE_PYTHON, script, "--date", req.date]
+    argv += ["--rfi-mode", req.rfi_mode]
     if req.start_hour is not None:
         argv += ["--start-hour", str(req.start_hour)]
     if req.end_hour is not None:
@@ -593,13 +936,50 @@ def _reap(job: dict) -> None:
         job["finished_at"] = _utcnow()
 
 
+@app.get("/api/control/session", response_class=HTMLResponse)
+def control_session(
+    cf_access_email: str | None = Header(default=None, alias="Cf-Access-Authenticated-User-Email"),
+    x_dsa110_token: str | None = Header(default=None),
+) -> HTMLResponse:
+    """Access login landing: establish cookie, then bounce back to /pipeline."""
+    try:
+        who = _require_control_auth(x_dsa110_token, cf_access_email)
+    except HTTPException:
+        who = ""
+    body = (
+        "<!doctype html><meta charset=utf-8>"
+        "<title>Control signed in</title>"
+        "<p>Control auth: <b>"
+        + (who or "pending")
+        + "</b>. <a href=/pipeline>Back to pipeline</a>.</p>"
+        "<script>location.replace('/pipeline')</script>"
+    )
+    return HTMLResponse(body)
+
+
+@app.get("/api/control/whoami")
+def control_whoami(
+    cf_access_email: str | None = Header(default=None, alias="Cf-Access-Authenticated-User-Email"),
+    x_dsa110_token: str | None = Header(default=None),
+) -> dict:
+    """Return the authorized control principal (Access email or token)."""
+    who = _require_control_auth(x_dsa110_token, cf_access_email)
+    return {"ok": True, "principal": who}
+
+
 @app.post("/api/control/run")
-def control_run(req: RunRequest, x_dsa110_token: str | None = Header(default=None)) -> dict:
-    """Launch batch_pipeline.py as a tracked background job (token-gated)."""
-    _require_token(x_dsa110_token)
+def control_run(
+    req: RunRequest,
+    x_dsa110_token: str | None = Header(default=None),
+    cf_access_email: str | None = Header(default=None, alias="Cf-Access-Authenticated-User-Email"),
+) -> dict:
+    """Launch a validated pipeline flow as a tracked background job."""
+    who = _require_control_auth(x_dsa110_token, cf_access_email)
     if not DATE_RE.match(req.date):
         raise HTTPException(status_code=400, detail="Bad date format")
-    argv = _batch_pipeline_argv(req)
+    argv = _pipeline_argv(req)
+    if not Path(argv[1]).is_file():
+        raise HTTPException(status_code=503, detail=f"pipeline entrypoint missing: {argv[1]}")
     JOB_DIR.mkdir(parents=True, exist_ok=True)
     job_id = uuid.uuid4().hex[:12]
     log_path = JOB_DIR / f"{job_id}.log"
@@ -609,7 +989,9 @@ def control_run(req: RunRequest, x_dsa110_token: str | None = Header(default=Non
         proc = subprocess.Popen(argv, stdout=log_f, stderr=subprocess.STDOUT, env=env)
     job = {
         "id": job_id,
-        "kind": "dry-run" if req.dry_run else "batch-run",
+        "kind": (
+            "end-to-end" if req.flow == "end_to_end" else "dry-run" if req.dry_run else "batch-run"
+        ),
         "argv": argv,
         "date": req.date,
         "log": str(log_path),
@@ -617,17 +999,22 @@ def control_run(req: RunRequest, x_dsa110_token: str | None = Header(default=Non
         "pid": proc.pid,
         "status": "running",
         "started_at": _utcnow(),
+        "auth": who,
     }
     with _jobs_lock:
         _jobs[job_id] = job
-    logger.info("job %s started: %s", job_id, " ".join(argv))
+    logger.info("job %s started by %s: %s", job_id, who, " ".join(argv))
     return {k: v for k, v in job.items() if k != "proc"}
 
 
 @app.post("/api/control/clear-quarantine")
-def control_clear_quarantine(req: dict, x_dsa110_token: str | None = Header(default=None)) -> dict:
-    """Zero quarantine failure counts in a date's tile checkpoint (token-gated)."""
-    _require_token(x_dsa110_token)
+def control_clear_quarantine(
+    req: dict,
+    x_dsa110_token: str | None = Header(default=None),
+    cf_access_email: str | None = Header(default=None, alias="Cf-Access-Authenticated-User-Email"),
+) -> dict:
+    """Zero quarantine failure counts in a date's tile checkpoint."""
+    _require_control_auth(x_dsa110_token, cf_access_email)
     date = str(req.get("date", ""))
     if not DATE_RE.match(date):
         raise HTTPException(status_code=400, detail="Bad date format")
@@ -676,10 +1063,14 @@ def job_detail(job_id: str, lines: int = Query(100, le=2000)) -> dict:
     return out
 
 
-@app.post("/api/jobs/{job_id}/kill")
-def job_kill(job_id: str, x_dsa110_token: str | None = Header(default=None)) -> dict:
-    """Terminate a running job (token-gated)."""
-    _require_token(x_dsa110_token)
+@app.post("/api/control/jobs/{job_id}/kill")
+def job_kill(
+    job_id: str,
+    x_dsa110_token: str | None = Header(default=None),
+    cf_access_email: str | None = Header(default=None, alias="Cf-Access-Authenticated-User-Email"),
+) -> dict:
+    """Terminate a running job (Access/token gated; under /api/control)."""
+    _require_control_auth(x_dsa110_token, cf_access_email)
     with _jobs_lock:
         job = _jobs.get(job_id)
         if not job:
@@ -1013,6 +1404,18 @@ def _antpos_cols(columns) -> dict | None:
         ),
         "x": pick("x_m", "x", "east", "east_m", "easting"),
         "y": pick("y_m", "y", "north", "north_m", "northing"),
+        "z": pick(
+            "z_m",
+            "z",
+            "elev",
+            "elevation",
+            "elevation (meters)",
+            "elevation_m",
+            "height",
+            "height_m",
+            "alt",
+            "alt_m",
+        ),
         "lat": pick("lat", "latitude", "lat_deg"),
         "lon": pick("lon", "longitude", "lon_deg", "long"),
     }
@@ -1025,14 +1428,26 @@ def _ant_positions() -> dict[str, dict]:
     """Antenna positions keyed by normalized name, from a best-effort CSV read.
 
     Accepts x/y (m), east/north, or lat/lon columns; lat/lon are projected to
-    local east-north metres about the array centroid. Excel-export CSVs that
-    bury the header under title rows (e.g. DSA110_Station_Coordinates.csv)
+    local east-north metres about the array centroid. Optional elevation/z is
+    returned as ``z_m`` relative to the array mean (metres). Excel-export CSVs
+    that bury the header under title rows (e.g. DSA110_Station_Coordinates.csv)
     are handled by sniffing the first usable header line.
     """
     path = ANTPOS_CSV
     if not path:
         hits = sorted(glob.glob(ANTPOS_GLOB))
         path = hits[0] if hits else ""
+    if not path or not Path(path).exists():
+        # Repo-vendored station table so local consoles still get a layout.
+        vendor = (
+            Path(__file__).resolve().parent.parent
+            / "dsa110_continuum"
+            / "utils"
+            / "antpos_local"
+            / "data"
+            / "DSA110_Station_Coordinates.csv"
+        )
+        path = str(vendor) if vendor.exists() else ""
     if not path or not Path(path).exists():
         return {}
     try:
@@ -1051,12 +1466,16 @@ def _ant_positions() -> dict[str, dict]:
         if sel is None:
             return {}
         name_c = sel["name"]
+        z_c = sel.get("z")
         out: dict[str, dict] = {}
+        elevs: dict[str, float] = {}
         if sel["x"] and sel["y"]:
             df = df.dropna(subset=[sel["x"], sel["y"]])
             for i, (_, row) in enumerate(df.iterrows()):
                 nm = _ant_key(row[name_c]) if name_c else str(i + 1)
                 out[nm] = {"x_m": float(row[sel["x"]]), "y_m": float(row[sel["y"]])}
+                if z_c is not None and pd.notna(row.get(z_c)):
+                    elevs[nm] = float(row[z_c])
         else:
             lat_c, lon_c = sel["lat"], sel["lon"]
             df = df.dropna(subset=[lat_c, lon_c])
@@ -1069,6 +1488,16 @@ def _ant_positions() -> dict[str, dict]:
                     "x_m": (float(row[lon_c]) - lon0) * kx,
                     "y_m": (float(row[lat_c]) - lat0) * 110540.0,
                 }
+                if z_c is not None and pd.notna(row.get(z_c)):
+                    elevs[nm] = float(row[z_c])
+        if elevs:
+            z0 = float(np.mean(list(elevs.values())))
+            for nm, ez in elevs.items():
+                if nm in out:
+                    out[nm]["z_m"] = float(ez - z0)
+        else:
+            for nm in out:
+                out[nm]["z_m"] = 0.0
         return out
     except Exception as e:
         logger.warning("antpos CSV unreadable (%s): %s", path, e)
@@ -1291,6 +1720,13 @@ table{width:100%;border-collapse:collapse}
 .gate{padding:7px 0;border-bottom:1px solid var(--line);font-size:12.5px}
 .gate b{font-weight:600}
 .gate .why{color:var(--mut)}
+.stage-row{display:grid;grid-template-columns:110px 70px 1fr;gap:12px;padding:6px 0;
+  border-bottom:1px solid var(--line);font-size:12px}
+.stage-row .state{font:10.5px var(--mono);letter-spacing:.05em;text-transform:uppercase}
+.stage-row .complete{color:var(--ok)}.stage-row .partial{color:var(--warn)}
+.stage-row .blocked,.stage-row .failed{color:var(--bad)}
+.stage-row .waiting,.stage-row .unknown{color:var(--dim2)}
+.stage-row .detail{color:var(--mut);font:11.5px var(--mono)}
 
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{font:11.5px var(--mono);color:var(--tx);background:var(--card);border:1px solid var(--line2);
@@ -1322,11 +1758,12 @@ pre{background:var(--surface);border:1px solid var(--line);border-radius:10px;pa
 .ctl{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
 .f label{display:block;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--dim2);margin-bottom:5px}
-input[type=text],input[type=number]{background:var(--surface);border:1px solid var(--line2);
+input[type=text],input[type=number],select{background:var(--surface);border:1px solid var(--line2);
   color:var(--tx);border-radius:7px;padding:7px 10px;font:12.5px var(--mono);width:130px;outline:none;
   transition:border-color .12s}
 input:focus{border-color:var(--acc)}
 input.hr{width:64px}
+select{width:260px}
 .toggle{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--mut);
   cursor:pointer;padding:8px 0;user-select:none}
 .toggle input{accent-color:var(--acc)}
@@ -1364,7 +1801,7 @@ button:disabled{opacity:.35;cursor:not-allowed}
   <section>
     <p class="microlabel">Pipeline coverage</p>
     <table class="matrix"><thead><tr>
-      <th>Date</th><th class="l">Stages</th><th>HDF5</th><th>MS</th><th>Cal</th>
+      <th>Date</th><th class="l">Stages</th><th>Raw</th><th>MS ready</th><th>Cal</th>
       <th>Tiles</th><th>Fail</th><th>Mosaics</th><th>Phot</th><th>Verdict</th>
     </tr></thead><tbody id="matrix-body"><tr><td colspan="10" class="z">Loading…</td></tr></tbody></table>
   </section>
@@ -1373,6 +1810,7 @@ button:disabled{opacity:.35;cursor:not-allowed}
     <p class="microlabel" id="detail-title">Detail</p>
     <div class="grid2">
       <div>
+        <div class="subsec" style="margin-top:0"><p class="microlabel">Stage walkthrough</p><div id="detail-stages"></div></div>
         <dl class="kv" id="detail-kv"></dl>
         <div class="subsec"><p class="microlabel">Failures · quarantine</p><div id="detail-failures"></div></div>
         <div class="subsec"><p class="microlabel">QA gates</p><div id="detail-gates"></div></div>
@@ -1390,11 +1828,21 @@ button:disabled{opacity:.35;cursor:not-allowed}
   <div class="rule"></div>
   <section class="grid2">
     <div>
-      <p class="microlabel">Control · batch_pipeline.py</p>
+      <p class="microlabel">Control · validated pipeline entrypoints</p>
       <div class="ctl">
+        <div class="f"><label>Flow</label><select id="c-flow">
+          <option value="batch">Science batch · MS → products</option>
+          <option value="end_to_end">Full flow · raw → science products</option>
+        </select></div>
         <div class="f"><label>Date</label><input type="text" id="c-date" placeholder="YYYY-MM-DD"></div>
         <div class="f"><label>Start</label><input type="number" id="c-sh" min="0" max="23" class="hr"></div>
         <div class="f"><label>End</label><input type="number" id="c-eh" min="0" max="23" class="hr"></div>
+        <div class="f"><label>RFI</label><select id="c-rfi">
+          <option value="conditional">Conditional · production default</option>
+          <option value="cflag">cflag · dynamic amplitude</option>
+          <option value="full">AOFlagger · full chain</option>
+          <option value="off">Off · diagnostic only</option>
+        </select></div>
         <label class="toggle"><input type="checkbox" id="c-dry" checked>dry-run</label>
         <label class="toggle"><input type="checkbox" id="c-retry">retry-failed</label>
         <label class="toggle"><input type="checkbox" id="c-lenient">lenient-QA</label>
@@ -1402,7 +1850,8 @@ button:disabled{opacity:.35;cursor:not-allowed}
         <button class="ghost" id="c-cq">Clear quarantine</button>
       </div>
       <div class="ctl" style="margin-top:14px">
-        <div class="f"><label>Token</label><input type="text" id="c-token" placeholder="X-DSA110-Token"></div>
+        <button class="ghost" type="button" id="c-signin">Sign in to control</button>
+        <span class="quiet" id="c-who"></span>
       </div>
       <div class="note" id="c-note"></div>
     </div>
@@ -1416,37 +1865,53 @@ button:disabled{opacity:.35;cursor:not-allowed}
 <div class="toast" id="toast"></div>
 <script>
 const $=id=>document.getElementById(id);
-let selDate=null, selJob=null, controlEnabled=false;
-const j=async(u,opt)=>{const r=await fetch(u,opt);const d=await r.json().catch(()=>({}));
+let selDate=null, selJob=null, controlEnabled=false, controlWho='';
+const j=async(u,opt)=>{
+  const r=await fetch(u,{credentials:'same-origin',...(opt||{})});
+  if(r.status===401||r.status===403){
+    const d=await r.json().catch(()=>({}));
+    const msg=typeof d.detail==='string'?d.detail:(d.detail||r.status);
+    const err=new Error(msg);err.auth=true;throw err;
+  }
+  if(r.redirected&&r.url.includes('cloudflareaccess.com')){
+    const err=new Error('Sign in required');err.auth=true;throw err;
+  }
+  const d=await r.json().catch(()=>({}));
   if(!r.ok)throw new Error(d.detail||r.status);return d};
 function toast(msg,ok=true){const t=$('toast');t.textContent=msg;
   t.className='toast'+(ok?'':' err');t.style.display='block';
   clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',4200)}
 const fmt=(v,alt='—')=>v==null?alt:v;
 const dim=v=>v?`${v}`:`<span class="z">0</span>`;
+const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function needSignIn(e){
+  if(e&&e.auth){toast('Sign in to control first (email + one-time code)',false);return true}
+  return false}
 
 function verdictCell(v){if(!v)return '<span class="verdict v-none">—</span>';
   return `<span class="verdict v-${v.toLowerCase()}"><span class="dot ${
     v==='CLEAN'?'ok':(v==='DEGRADED'?'warn':'bad')}"></span>${v}</span>`}
 
 function stageGlyph(r){
-  const seg=(state,name)=>`<i class="seg ${state}" title="${name}"></i>`;
-  const inc=r.incoming? (r.incoming.complete_groups>0?'ok':'warn'):'';
-  const cal=(r.cal.bandpass&&r.cal.gain)?'ok':((r.cal.bandpass||r.cal.gain)?'warn':'');
-  const tiles=r.n_tiles? (r.n_quarantine_risk?'bad':(r.n_failures?'warn':'ok')):'';
-  const qa=r.verdict? (r.verdict==='CLEAN'?'good':(r.verdict==='DEGRADED'?'warn':'bad')):'';
-  return `<span class="stages">${seg(inc,'ingest')}${seg(r.n_ms?'ok':'','conversion')}${
-    seg(cal,'calibration')}${seg(tiles,'imaging')}${seg(r.n_mosaics?'ok':'','mosaic')}${
-    seg(qa,'QA')}${seg(r.n_phot?'ok':'','photometry')}</span>`}
+  const cls={complete:'good',partial:'warn',blocked:'bad',failed:'bad',waiting:'',unknown:''};
+  return `<span class="stages">${r.stages.map(s=>
+    `<i class="seg ${cls[s.state]||''}" title="${esc(s.label+': '+s.detail)}"></i>`).join('')}</span>`}
+
+async function refreshWho(){
+  try{const w=await j('/api/control/whoami');controlWho=w.principal||'';
+    $('c-who').textContent=controlWho?('signed in · '+controlWho):'';
+  }catch(e){controlWho='';$('c-who').textContent=''}}
 
 async function loadHealth(){const h=await j('/api/health');controlEnabled=h.control_enabled;
   $('hd-time').textContent=h.time;
   $('hd-ctl').innerHTML=`<span class="dot ${controlEnabled?'ok':'bad'}"></span>control ${
     controlEnabled?'enabled':'disabled'}`;
   $('c-note').textContent=controlEnabled
-    ?'Mutating actions require the control token.'
-    :'DSA110_DASH_TOKEN is unset on the server — control actions are disabled (fail closed).';
-  $('c-go').disabled=$('c-cq').disabled=!controlEnabled}
+    ?'Pages are public. Launch/clear/kill need Cloudflare Access (email + one-time code).'
+    :'Control disabled on server (no Access emails / token configured).';
+  $('c-go').disabled=$('c-cq').disabled=!controlEnabled;
+  if(controlEnabled)refreshWho()}
+$('c-signin').onclick=()=>{location.href='/api/control/session'}
 
 async function loadSystem(){const s=await j('/api/system');
   $('system').innerHTML=Object.entries(s.disk).map(([k,v])=>v.error
@@ -1458,14 +1923,18 @@ async function loadSystem(){const s=await j('/api/system');
 
 async function loadMatrix(){const d=await j('/api/dates');
   $('matrix-body').innerHTML=d.dates.length?d.dates.map(r=>{
-    const inc=r.incoming?`<span class="frac"><b>${r.incoming.complete_groups}</b>/${r.incoming.timestamps}</span>`:'<span class="z">—</span>';
+    const indexedComplete=r.incoming&&r.indexed&&r.indexed.files>=r.incoming.files;
+    const inc=indexedComplete?`<span class="frac"><b>${r.indexed.complete_groups}</b>/${r.indexed.groups}</span>`:
+      (r.incoming?`<span class="frac"><b>${r.incoming.files}</b> files</span>`:'<span class="z">—</span>');
     const cal=(r.cal.bandpass&&r.cal.gain)?`${r.cal.bandpass}B ${r.cal.gain}G`
       :((r.cal.bandpass||r.cal.gain)?`<span class="att">${r.cal.bandpass}B ${r.cal.gain}G</span>`:'<span class="neg">none</span>');
     const fail=r.n_failures?`<span class="${r.n_quarantine_risk?'neg':'att'}">${r.n_failures}${
       r.n_quarantine_risk?'·'+r.n_quarantine_risk+'q':''}</span>`:'<span class="z">0</span>';
+    const expected=(r.indexed&&r.indexed.complete_groups)||(r.incoming&&r.incoming.complete_groups)||0;
+    const ms=expected?`<span class="frac"><b>${r.n_ms}</b>/${expected}</span>`:dim(r.n_ms);
     return `<tr data-d="${r.date}" class="${r.date===selDate?'sel':''}">
       <td>${r.date}</td><td class="l">${stageGlyph(r)}</td><td>${inc}</td>
-      <td>${dim(r.n_ms)}</td><td>${cal}</td><td>${dim(r.n_tiles)}</td><td>${fail}</td>
+      <td>${ms}</td><td>${cal}</td><td>${dim(r.n_tiles)}</td><td>${fail}</td>
       <td>${dim(r.n_mosaics)}</td><td>${dim(r.n_phot)}</td><td>${verdictCell(r.verdict)}</td></tr>`
   }).join('')
   :'<tr><td colspan="10" class="z">No dates found under configured roots.</td></tr>';
@@ -1476,14 +1945,19 @@ async function openDate(date){selDate=date;$('c-date').value=date;
   const d=await j('/api/date/'+date);
   $('detail').style.display='block';
   $('detail-title').textContent='Detail · '+date;
-  const inc=d.incoming?`${d.incoming.files} files · ${d.incoming.complete_groups}/${d.incoming.timestamps} complete groups`:'none visible';
+  const indexCoversRaw=d.incoming&&d.indexed&&d.indexed.files>=d.incoming.files;
+  const inc=d.incoming?`${d.incoming.files} files${indexCoversRaw?` · ${d.indexed.complete_groups}/${d.indexed.groups} complete groups`:''}`:'none visible';
   const man=d.products.manifest||{};
+  $('detail-stages').innerHTML=d.stages.map(s=>`<div class="stage-row">
+    <b>${esc(s.label)}</b><span class="state ${s.state}">${esc(s.state)}</span>
+    <span class="detail">${esc(s.detail)}${s.inferred?' · inferred':''}</span></div>`).join('');
   $('detail-kv').innerHTML=`
     <dt>Incoming HDF5</dt><dd>${inc}</dd>
+    <dt>Pipeline index</dt><dd>${d.indexed?`${d.indexed.files} files · ${d.indexed.complete_groups}/${d.indexed.groups} complete groups`:'unavailable'}</dd>
     <dt>Measurement sets</dt><dd>${d.ms.length}${d.ms.length?' · latest '+d.ms[d.ms.length-1]:''}</dd>
     <dt>Bandpass</dt><dd>${d.cal.bandpass.join(', ')||'—'}</dd>
     <dt>Gain</dt><dd>${d.cal.gain.join(', ')||'—'}</dd>
-    <dt>Tiles imaged</dt><dd>${d.tiles.n_tiles}</dd>
+    <dt>Tiles imaged</dt><dd>${d.tiles.n_tiles} science tiles · ${d.tiles.n_artifacts} FITS artifacts</dd>
     <dt>Run verdict</dt><dd>${man.pipeline_verdict||'—'}${man.gaincal_status?' · gaincal '+man.gaincal_status:''}</dd>`;
   const ck=d.tiles.checkpoint;
   $('detail-failures').innerHTML=(ck&&ck.failed&&ck.failed.length)?
@@ -1510,7 +1984,7 @@ async function openDate(date){selDate=date;$('c-date').value=date;
       :'<span class="qa v-none">NO QA</span>';
     const hour=(m.name.match(/T(\d{2})00_mosaic/)||[])[1];
     return `<div class="mcard"><div class="hd"><span class="name">${hour!=null?hour+':00 UTC':m.name}</span>${qa}</div>
-      <img loading="lazy" src="/api/thumb/${date}/${m.name}.png">
+      <img loading="lazy" src="/api/thumb/${date}/${m.name}.png?v=${m.thumb_version}">
       <div class="ft"><span>peak <b>${fmt(m.peak)}</b> Jy</span><span>rms <b>${fmt(m.rms_mjy)}</b> mJy</span>
       <span>DR <b>${fmt(m.dr)}</b></span><span>wt ${m.weights?'✓':'<span style="color:var(--bad)">✗</span>'}</span></div></div>`
   }).join(''):'<span class="quiet">No epoch mosaics yet.</span>';
@@ -1532,26 +2006,36 @@ async function viewArtifact(path){const v=$('viewer');v.textContent='Loading '+p
     else v.textContent=(d.head||d.tail||[]).join('\n')||'(empty)';
   }catch(e){v.textContent='Error: '+e.message}}
 
-function token(){return $('c-token').value.trim()}
+$('c-flow').onchange=()=>{
+  const full=$('c-flow').value==='end_to_end';
+  $('c-sh').disabled=$('c-eh').disabled=$('c-dry').disabled=
+    $('c-retry').disabled=$('c-lenient').disabled=full;
+  if(full){$('c-sh').value=$('c-eh').value='';$('c-dry').checked=false;
+    $('c-retry').checked=true;$('c-lenient').checked=false}
+  else{$('c-dry').checked=true;$('c-retry').checked=false}
+};
 $('c-go').onclick=async()=>{
-  const body={date:$('c-date').value.trim(),dry_run:$('c-dry').checked,
-    retry_failed:$('c-retry').checked,lenient_qa:$('c-lenient').checked};
+  const body={date:$('c-date').value.trim(),flow:$('c-flow').value,dry_run:$('c-dry').checked,
+    rfi_mode:$('c-rfi').value,retry_failed:$('c-retry').checked,
+    lenient_qa:$('c-lenient').checked};
   if($('c-sh').value!=='')body.start_hour=+$('c-sh').value;
   if($('c-eh').value!=='')body.end_hour=+$('c-eh').value;
-  if(!body.dry_run&&!confirm('Launch a REAL batch run for '+body.date+'?'))return;
+  const label=body.flow==='end_to_end'?'FULL raw-to-products flow':'REAL science batch';
+  if(!body.dry_run&&!confirm('Launch '+label+' for '+body.date+' with strict QA'+
+    (body.lenient_qa?' overridden':'')+'?'))return;
   try{const d=await j('/api/control/run',{method:'POST',
-    headers:{'Content-Type':'application/json','X-DSA110-Token':token()},
+    headers:{'Content-Type':'application/json'},
     body:JSON.stringify(body)});
-    toast(`Job ${d.id} started (${d.kind})`);loadJobs();selJob=d.id;
-  }catch(e){toast('Launch failed: '+e.message,false)}};
+    toast(`Job ${d.id} started (${d.kind})`);loadJobs();selJob=d.id;refreshWho();
+  }catch(e){if(!needSignIn(e))toast('Launch failed: '+e.message,false)}};
 $('c-cq').onclick=async()=>{
   const date=$('c-date').value.trim();
   if(!confirm('Clear quarantine failure counts for '+date+'?'))return;
   try{const d=await j('/api/control/clear-quarantine',{method:'POST',
-    headers:{'Content-Type':'application/json','X-DSA110-Token':token()},
+    headers:{'Content-Type':'application/json'},
     body:JSON.stringify({date})});
     toast(`Cleared ${d.cleared} failure count(s)`);if(selDate)openDate(selDate);
-  }catch(e){toast('Clear failed: '+e.message,false)}};
+  }catch(e){if(!needSignIn(e))toast('Clear failed: '+e.message,false)}};
 
 async function loadJobs(){const d=await j('/api/jobs');
   $('jobs').className=d.jobs.length?'':'quiet';
@@ -1564,8 +2048,7 @@ async function loadJobs(){const d=await j('/api/jobs');
     :'No jobs yet.';
   document.querySelectorAll('.job').forEach(el=>el.onclick=async ev=>{
     if(ev.target.dataset.kill){
-      try{await j('/api/jobs/'+ev.target.dataset.kill+'/kill',{method:'POST',
-        headers:{'X-DSA110-Token':token()}});toast('Kill sent');loadJobs()}
+      try{await j('/api/control/jobs/'+ev.target.dataset.kill+'/kill',{method:'POST'});toast('Kill sent');loadJobs()}
       catch(e){toast('Kill failed: '+e.message,false)}
       return}
     selJob=el.dataset.id;showJobLog()});
@@ -1626,21 +2109,41 @@ section{margin-top:26px}
 .tile .age{font:10.5px var(--mono);color:var(--dim2)}
 
 /* sky map */
-.skywrap{background:var(--surface);border:1px solid var(--line);border-radius:12px;
-  padding:14px 16px 8px}
-.skyhead{display:flex;gap:18px;align-items:baseline;font:11px var(--mono);color:var(--mut);
+.skywrap{background:linear-gradient(180deg,#10151d,#0c1016);border:1px solid var(--line);
+  border-radius:12px;padding:14px 16px 8px;box-shadow:inset 0 1px 0 rgba(255,255,255,.025)}
+.skyhead{display:flex;gap:8px 18px;align-items:baseline;flex-wrap:wrap;font:11px var(--mono);color:var(--mut);
   padding:0 2px 8px}
 .skyhead .spacer{flex:1}
-.legend{display:flex;gap:14px;align-items:center}
+.legend{display:flex;gap:6px 14px;align-items:center;flex-wrap:wrap}
 .legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.skycanvas{position:relative;overflow:hidden;border-radius:8px;background:#07101a}
+#skymap svg{width:100%;display:block}
+.sky-source{cursor:crosshair;outline:none}
+.sky-source .source-halo{fill:var(--source-color);filter:url(#sourceGlow);opacity:.38;
+  pointer-events:none}
+.sky-source .source-core{fill:var(--source-color);stroke:rgba(255,255,255,.14);stroke-width:.7;
+  transition:stroke .12s,stroke-width .12s,opacity .12s}
+.sky-source .source-hit{fill:transparent;pointer-events:all}
+.sky-source:hover .source-core,.sky-source:focus .source-core{stroke:#fff;stroke-width:1.8;opacity:1}
+.sky-source:focus-visible .source-hit{stroke:var(--acc);stroke-width:1;stroke-dasharray:2 2}
+.sky-tip{position:absolute;z-index:4;min-width:178px;max-width:260px;padding:9px 11px;
+  border:1px solid #425269;border-radius:7px;background:rgba(8,12,18,.96);color:var(--tx);
+  box-shadow:0 12px 34px rgba(0,0,0,.42);font:11px/1.45 var(--mono);pointer-events:none;
+  opacity:0;transform:translateY(3px);transition:opacity .1s,transform .1s}
+.sky-tip.show{opacity:1;transform:translateY(0)}
+.sky-tip strong{display:block;font-size:12px;color:#f4f7fb;margin-bottom:2px}
+.sky-tip .source-kind{text-transform:uppercase;letter-spacing:.11em;font-size:9px;color:var(--acc)}
+.sky-tip .source-coords{display:block;color:var(--dim2);margin-top:3px}
 svg text{font:9.5px var(--mono);fill:var(--dim2)}
 svg .lbl{fill:#aab6c9;font-size:10px}
 svg .lbl.big{fill:#dfe6f2;font-size:10.5px}
+@media(prefers-reduced-motion:reduce){.sky-source .source-core,.sky-tip{transition:none}}
 
 /* antennas */
 .antwrap{display:flex;gap:36px;align-items:flex-start;flex-wrap:wrap}
 .antgrid{display:grid;grid-template-columns:repeat(auto-fill,24px);gap:4px}
-#antscatter svg{width:100%;display:block;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+#antscatter{width:100%;min-height:420px;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+#antscatter .js-plotly-plot,#antscatter .plotly{background:transparent!important}
 .ant{width:24px;height:24px;border-radius:4px;background:var(--line2);position:relative;
   display:flex;align-items:center;justify-content:center;
   font:8.5px var(--mono);color:transparent;transition:transform .08s}
@@ -1652,6 +2155,7 @@ svg .lbl.big{fill:#dfe6f2;font-size:10.5px}
 .antside{min-width:200px;font:12px var(--mono);color:var(--mut)}
 .antside .row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)}
 .antside .n{color:var(--tx)}
+.ant-hint{font:11px var(--mono);color:var(--dim2);margin:0 0 8px}
 
 /* overhead list */
 .chips{display:flex;flex-wrap:wrap;gap:8px}
@@ -1681,19 +2185,22 @@ svg .lbl.big{fill:#dfe6f2;font-size:10.5px}
   </div>
 
   <section>
-    <p class="microlabel">Sky over OVRO — meridian is live, sources from master catalogs</p>
+    <p class="microlabel">Simulated 1.4 GHz sky over OVRO — live meridian + catalog overlay</p>
     <div class="skywrap">
       <div class="skyhead">
         <span id="sky-note">—</span><span class="spacer"></span>
         <span class="legend">
           <span><i style="background:var(--sun)"></i>Sun</span>
-          <span><i style="background:var(--bad)"></i>A-team</span>
           <span><i style="background:var(--acc)"></i>calibrator</span>
           <span><i style="background:#aab6c9"></i>source</span>
+          <span><i style="background:#b98760;box-shadow:0 0 6px #b98760"></i>Galactic plane</span>
           <span><i style="background:none;border:1px solid var(--acc);border-radius:2px;width:10px;height:6px"></i>Dec strip</span>
         </span>
       </div>
-      <div id="skymap"></div>
+      <div class="skycanvas">
+        <div id="skymap"></div>
+        <div class="sky-tip" id="sky-tip" role="tooltip" aria-hidden="true"></div>
+      </div>
     </div>
   </section>
 
@@ -1711,12 +2218,14 @@ svg .lbl.big{fill:#dfe6f2;font-size:10.5px}
   <div class="rule"></div>
   <section>
     <p class="microlabel" id="ant-label">Antennas</p>
+    <p class="ant-hint" id="ant-hint" style="display:none">Drag to orbit · scroll to zoom · hover for antenna id / health</p>
     <div class="antwrap">
       <div style="flex:1;min-width:520px"><div id="antscatter" style="display:none"></div><div class="antgrid" id="antgrid"></div></div>
       <div class="antside" id="antside"></div>
     </div>
   </section>
 </main>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.3/plotly.min.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const j=async u=>{const r=await fetch(u);if(!r.ok)throw new Error(r.status);return r.json()};
@@ -1733,17 +2242,94 @@ const hfmt=h=>{const H=Math.floor(h),M=Math.floor((h-H)*60),S=Math.floor(((h-H)*
 const W=1240,H=330,DECMIN=-45,DECMAX=90;
 const X=ra=>(360-ra)/360*W;
 const Y=dec=>(DECMAX-dec)/(DECMAX-DECMIN)*H;
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fluxLabel=f=>f==null?'flux unavailable':(f>=1000?`${(f/1000).toFixed(2)} kJy`:
+  f>=10?`${f.toFixed(1)} Jy`:`${f.toFixed(2)} Jy`);
+
+function galToEq(l,b=0){
+  const lr=l*Math.PI/180,br=b*Math.PI/180,cb=Math.cos(br);
+  const xg=cb*Math.cos(lr),yg=cb*Math.sin(lr),zg=Math.sin(br);
+  const xe=-.0548755604*xg+.4941094279*yg-.8676661490*zg;
+  const ye=-.8734370902*xg-.4448296300*yg-.1980763734*zg;
+  const ze=-.4838350155*xg+.7469822445*yg+.4559837762*zg;
+  return {ra:(Math.atan2(ye,xe)*180/Math.PI+360)%360,
+    dec:Math.asin(Math.max(-1,Math.min(1,ze)))*180/Math.PI}}
+
+function galacticPlanePaths(b=0){
+  const paths=[];let d='',prev=null;
+  for(let l=0;l<=360;l+=2){
+    const q=galToEq(l,b),x=X(q.ra),y=Y(q.dec);
+    if(prev!=null&&Math.abs(x-prev)>W/2){if(d)paths.push(d);d=`M${x.toFixed(1)},${y.toFixed(1)}`}
+    else d+=`${d?' L':'M'}${x.toFixed(1)},${y.toFixed(1)}`;
+    prev=x}
+  if(d)paths.push(d);return paths}
+
+function seededRandom(seed){return function(){seed|=0;seed=seed+0x6D2B79F5|0;
+  let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;
+  return ((t^t>>>14)>>>0)/4294967296}}
+
+let SIM_SKY='';
+function simulatedSky(){
+  const rand=seededRandom(110),dots=[];
+  for(let i=0;i<280;i++){
+    let q,plane=i<165;
+    if(plane){const b=(rand()+rand()+rand()-1.5)*9;q=galToEq(rand()*360,b)}
+    else{const lo=Math.sin(DECMIN*Math.PI/180),hi=Math.sin(DECMAX*Math.PI/180);
+      q={ra:rand()*360,dec:Math.asin(lo+rand()*(hi-lo))*180/Math.PI}}
+    if(q.dec<DECMIN||q.dec>DECMAX)continue;
+    const bright=Math.pow(rand(),5),r=.22+bright*(plane?1.05:.65),op=.12+bright*.38;
+    dots.push(`<circle cx="${X(q.ra).toFixed(1)}" cy="${Y(q.dec).toFixed(1)}" r="${r.toFixed(2)}"
+      fill="${plane?'#d7b08a':'#8fb2cf'}" opacity="${op.toFixed(2)}"/>`)}
+  return `<g class="simulated-sources" pointer-events="none">${dots.join('')}</g>`}
+
+const pathMarkup=(paths,attrs)=>paths.map(d=>`<path d="${d}" ${attrs}/>`).join('');
+function diffuseSky(){
+  const core=galacticPlanePaths(0),north=galacticPlanePaths(9),south=galacticPlanePaths(-9);
+  return pathMarkup(north.concat(south),'fill="none" stroke="#557c99" stroke-width="34" opacity=".08" filter="url(#planeBlur)"')+
+    pathMarkup(core,'fill="none" stroke="#c38d61" stroke-width="46" opacity=".14" filter="url(#planeBlur)"')+
+    pathMarkup(core,'fill="none" stroke="#e0b488" stroke-width="13" opacity=".18" filter="url(#planeSoft)"')+
+    pathMarkup(core,'fill="none" stroke="#e8c39e" stroke-width="1.2" opacity=".28"')}
+
+function sourceMarkup(src){
+  if(src.dec_deg<DECMIN||src.dec_deg>DECMAX)return '';
+  const col={sun:'var(--sun)',ateam:'var(--bad)',cal:'var(--acc)',src:'#b8c6d8',catalog:'#74859b'};
+  const x=X(src.ra_deg),y=Y(src.dec_deg),f=src.flux_jy;
+  const r=src.kind==='sun'?7:Math.max(1.6,Math.min(6.5,1.2+Math.log10(Math.max(f||1,1))*1.9));
+  const name=src.name||'Catalog source',kind=src.kind||'source';
+  const aria=`${name}, ${fluxLabel(f)}, right ascension ${src.ra_deg.toFixed(2)} degrees, declination ${src.dec_deg.toFixed(2)} degrees`;
+  const halo=kind==='catalog'?'':`<circle class="source-halo" cx="${x}" cy="${y}" r="${r*2.1}"/>`;
+  return `<g class="sky-source kind-${esc(kind)}" tabindex="0" role="img" aria-label="${esc(aria)}"
+    data-name="${esc(name)}" data-kind="${esc(kind)}" data-flux="${esc(fluxLabel(f))}"
+    data-ra="${src.ra_deg.toFixed(2)}" data-dec="${src.dec_deg.toFixed(2)}"
+    style="--source-color:${col[kind]||col.src}">${halo}
+    <circle class="source-core" cx="${x}" cy="${y}" r="${r}" opacity="${kind==='catalog'?.62:.94}"/>
+    <circle class="source-hit" cx="${x}" cy="${y}" r="${Math.max(8,r+4)}"/></g>`}
+
+function updateSkyReadout(){if(!SKY)return;const lst=lstHours(),mer=lst*15;
+  $('t-lst').textContent=hfmt(lst);$('t-mer').innerHTML=`${mer.toFixed(1)}<small>°</small>`}
 
 function drawSky(){
   if(!SKY)return;
   const lst=lstHours(), mer=lst*15, strip=SKY.dec_strip_deg;
-  let s=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block">`;
+  if(!SIM_SKY)SIM_SKY=simulatedSky();
+  let s=`<svg viewBox="0 0 ${W} ${H}" aria-label="Simulated 1.4 gigahertz sky in equatorial coordinates">
+    <defs>
+      <linearGradient id="skyBg" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#0b1826"/>
+        <stop offset=".56" stop-color="#08121d"/><stop offset="1" stop-color="#050a11"/></linearGradient>
+      <radialGradient id="gcGlow"><stop stop-color="#d69b68" stop-opacity=".26"/><stop offset="1" stop-color="#d69b68" stop-opacity="0"/></radialGradient>
+      <filter id="planeBlur" x="-25%" y="-60%" width="150%" height="220%"><feGaussianBlur stdDeviation="12"/></filter>
+      <filter id="planeSoft" x="-15%" y="-40%" width="130%" height="180%"><feGaussianBlur stdDeviation="4"/></filter>
+      <filter id="sourceGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="3"/></filter>
+    </defs>
+    <rect width="${W}" height="${H}" fill="url(#skyBg)"/>
+    <ellipse cx="${X(266.4)}" cy="${Y(-29)}" rx="88" ry="54" fill="url(#gcGlow)" filter="url(#planeSoft)"/>
+    ${diffuseSky()}${SIM_SKY}`;
   // graticule
   for(let ra=0;ra<=360;ra+=30){
-    s+=`<line x1="${X(ra)}" y1="0" x2="${X(ra)}" y2="${H}" stroke="#161b22" stroke-width="1"/>`;
+    s+=`<line x1="${X(ra)}" y1="0" x2="${X(ra)}" y2="${H}" stroke="#26364a" stroke-opacity=".38" stroke-width="1"/>`;
     if(ra<360)s+=`<text x="${X(ra)-3}" y="${H-5}" text-anchor="end">${ra/15}h</text>`}
   for(let dec=-30;dec<=60;dec+=30){
-    s+=`<line x1="0" y1="${Y(dec)}" x2="${W}" y2="${Y(dec)}" stroke="#161b22"/>`;
+    s+=`<line x1="0" y1="${Y(dec)}" x2="${W}" y2="${Y(dec)}" stroke="#26364a" stroke-opacity=".38"/>`;
     s+=`<text x="5" y="${Y(dec)-4}">${dec>0?'+':''}${dec}°</text>`}
   // horizon limit (dec < lat-90 never rises)
   const horizon=SKY.site.lat_deg-90;
@@ -1761,21 +2347,9 @@ function drawSky(){
   // meridian
   s+=`<line x1="${X(mer)}" y1="0" x2="${X(mer)}" y2="${H}" stroke="#e7ebf3" opacity=".55" stroke-width="1.2"/>
      <text x="${X(mer)+5}" y="12" class="lbl">meridian ${hfmt(lst)} LST</text>`;
-  // sources
-  const col={sun:'var(--sun)',ateam:'var(--bad)',cal:'var(--acc)',src:'#aab6c9',catalog:'#5a6474'};
-  for(const src of SKY.sources){
-    if(src.dec_deg<DECMIN||src.dec_deg>DECMAX)continue;
-    const x=X(src.ra_deg),y=Y(src.dec_deg);
-    const f=src.flux_jy, r=src.kind==='sun'?7:Math.max(1.6,Math.min(6.5,1.2+Math.log10(Math.max(f,1))*1.9));
-    s+=`<circle cx="${x}" cy="${y}" r="${r}" fill="${col[src.kind]||col.src}"
-        opacity="${src.kind==='catalog'?.55:.92}"><title>${src.name} · ${
-        f!=null?f+' Jy':'—'} · RA ${src.ra_deg.toFixed(2)} Dec ${src.dec_deg.toFixed(2)}</title></circle>`;
-    const label=src.kind==='sun'||src.kind==='ateam'||src.kind==='cal'||f>=40;
-    if(label&&src.name)s+=`<text x="${x+r+3}" y="${y+3}" class="lbl ${f>=200||src.kind==='sun'?'big':''}">${src.name}</text>`}
-  s+='</svg>';
+  s+=SKY.sources.map(sourceMarkup).join('')+'</svg>';
   $('skymap').innerHTML=s;
-  $('t-lst').textContent=hfmt(lst);
-  $('t-mer').innerHTML=`${mer.toFixed(1)}<small>°</small>`;
+  updateSkyReadout();
   // overhead / next-hour chips
   const soon=[],now=[];
   for(const src of SKY.sources){
@@ -1785,9 +2359,34 @@ function drawSky(){
       if(Math.abs(hrs)<=0.25)now.push(src);
       else if(hrs>0&&hrs<=2.0)soon.push([hrs,src])}}
   soon.sort((a,b)=>a[0]-b[0]);
-  $('overhead').innerHTML=(now.map(s2=>`<span class="chip"><b>${s2.name||'src'}</b> <span class="in">on meridian</span></span>`)
-    .concat(soon.slice(0,10).map(([hq,s2])=>`<span class="chip">${s2.name||'src'} <span class="in">in ${Math.round(hq*60)}m</span></span>`)))
+  $('overhead').innerHTML=(now.map(s2=>`<span class="chip"><b>${esc(s2.name||'src')}</b> <span class="in">on meridian</span></span>`)
+    .concat(soon.slice(0,10).map(([hq,s2])=>`<span class="chip">${esc(s2.name||'src')} <span class="in">in ${Math.round(hq*60)}m</span></span>`)))
     .join('')||'<span class="quiet">Nothing notable in the strip this hour.</span>'}
+
+const skyTip=$('sky-tip'),skyCanvas=document.querySelector('.skycanvas');
+const kindLabel={sun:'solar system',ateam:'very bright radio source',cal:'calibrator',src:'bright source',catalog:'catalog source'};
+const skySource=e=>e.target.closest?e.target.closest('.sky-source'):null;
+function placeSkyTip(source,event){
+  const canvas=skyCanvas.getBoundingClientRect(),box=source.getBoundingClientRect();
+  const x=event?.clientX!=null?event.clientX-canvas.left:box.left+box.width/2-canvas.left;
+  const y=event?.clientY!=null?event.clientY-canvas.top:box.top-canvas.top;
+  const left=Math.max(8,Math.min(canvas.width-skyTip.offsetWidth-8,x+13));
+  const top=Math.max(8,Math.min(canvas.height-skyTip.offsetHeight-8,y-skyTip.offsetHeight-12));
+  skyTip.style.left=`${left}px`;skyTip.style.top=`${top}px`}
+function showSkyTip(source,event){
+  skyTip.innerHTML=`<strong>${esc(source.dataset.name)}</strong>
+    <span class="source-kind">${esc(kindLabel[source.dataset.kind]||source.dataset.kind)}</span>
+    <span> · ${esc(source.dataset.flux)}</span>
+    <span class="source-coords">RA ${esc(source.dataset.ra)}° · Dec ${esc(source.dataset.dec)}°</span>`;
+  skyTip.classList.add('show');skyTip.setAttribute('aria-hidden','false');placeSkyTip(source,event)}
+function hideSkyTip(){skyTip.classList.remove('show');skyTip.setAttribute('aria-hidden','true')}
+$('skymap').addEventListener('pointerover',e=>{const source=skySource(e);if(source)showSkyTip(source,e)});
+$('skymap').addEventListener('pointermove',e=>{const source=skySource(e);if(source)placeSkyTip(source,e)});
+$('skymap').addEventListener('pointerout',e=>{const source=skySource(e);
+  if(source&&!source.contains(e.relatedTarget))hideSkyTip()});
+$('skymap').addEventListener('focusin',e=>{const source=skySource(e);if(source)showSkyTip(source)});
+$('skymap').addEventListener('focusout',hideSkyTip);
+skyCanvas.addEventListener('pointerleave',hideSkyTip);
 
 async function loadSky(){SKY=await j('/api/sky');
   $('t-dec').innerHTML=`${SKY.dec_strip_deg}<small>°</small>`;
@@ -1803,6 +2402,82 @@ async function loadSky(){SKY=await j('/api/sky');
   else{$('t-fresh').textContent='none';$('obs-note').textContent='No incoming HDF5 visible under the configured root.'}
   drawSky()}
 
+const ANT_COLORS={good:'#3ecf8e',warn:'#e6b84d',bad:'#e35d6a',unknown:'#39414d'};
+
+function renderAnt3D(ants){
+  if(typeof Plotly==='undefined'){
+    $('antscatter').innerHTML='<p class="quiet" style="padding:12px">Plotly failed to load — falling back unavailable.</p>';
+    return}
+  const xs=ants.map(a=>a.x_m), ys=ants.map(a=>a.y_m);
+  const zsRaw=ants.map(a=>a.z_m!=null?a.z_m:0);
+  const x0=Math.min(...xs), x1=Math.max(...xs);
+  const y0=Math.min(...ys), y1=Math.max(...ys);
+  const xSpan=Math.max(x1-x0,1), ySpan=Math.max(y1-y0,1);
+  const zSpan=Math.max(...zsRaw)-Math.min(...zsRaw);
+  // Site is nearly planar; mild Z exaggeration keeps relief readable in orbit view.
+  const xy=Math.max(xSpan,ySpan);
+  const zEx=(zSpan>0&&zSpan<0.08*xy)?Math.min(8,0.08*xy/zSpan):1;
+  const zs=zsRaw.map(z=>z*zEx);
+  const z0=Math.min(...zs), z1=Math.max(...zs);
+  // Pad axis ranges so the camera center is the array centroid and nothing
+  // sits on the clip planes (default eye looks at range-box center).
+  const pad=0.14*xy;
+  const zMid=0.5*(z0+z1);
+  const zHalf=Math.max(0.5*(z1-z0),0.18*xy);
+  const colors=ants.map(a=>ANT_COLORS[a.status]||ANT_COLORS.unknown);
+  const text=ants.map(a=>{
+    const ff=a.flag_frac!=null?` · flagged ${(a.flag_frac*100).toFixed(0)}%`:'';
+    const zr=a.z_m!=null?a.z_m:0;
+    return `ant ${a.name} · ${a.status}${ff}<br>E ${a.x_m.toFixed(1)} m · N ${a.y_m.toFixed(1)} m · Δz ${zr.toFixed(2)} m`;
+  });
+  const trace={
+    type:'scatter3d', mode:'markers',
+    x:xs, y:ys, z:zs, text, hoverinfo:'text',
+    marker:{size:5, color:colors, opacity:0.95, line:{width:0}}
+  };
+  const axis=(title, range)=>({
+    title:{text:title,font:{size:11,color:'#8b95a7',family:'ui-monospace,SF Mono,Menlo,monospace'}},
+    backgroundcolor:'#0f1216', gridcolor:'#1d222b', zerolinecolor:'#262d38',
+    showbackground:true, color:'#8b95a7', tickfont:{size:10,color:'#5a6474'},
+    range, autorange:false
+  });
+  const layout={
+    margin:{l:0,r:0,t:8,b:0}, height:420, autosize:true,
+    paper_bgcolor:'#0f1216', plot_bgcolor:'#0f1216',
+    showlegend:false,
+    font:{color:'#e7ebf3',family:'ui-monospace,SF Mono,Menlo,monospace'},
+    scene:{
+      xaxis:axis('east (m)',[x0-pad,x1+pad]),
+      yaxis:axis('north (m)',[y0-pad,y1+pad]),
+      zaxis:axis(zEx>1.01?`Δ elev ×${zEx.toFixed(1)} (m)`:'Δ elev (m)',[zMid-zHalf,zMid+zHalf]),
+      // Keep E/N proportional; give Z a fixed share so a flat site still frames.
+      aspectmode:'manual',
+      aspectratio:{x:Math.max(xSpan/xy,0.35), y:Math.max(ySpan/xy,0.35), z:0.42},
+      camera:{
+        center:{x:0,y:0,z:-0.05},
+        eye:{x:1.15,y:-1.45,z:0.95},
+        up:{x:0,y:0,z:1}
+      },
+      bgcolor:'#0f1216'
+    }
+  };
+  const opts={
+    displayModeBar:true, displaylogo:false, responsive:true,
+    modeBarButtonsToRemove:['toImage','resetCameraLastSave3d']
+  };
+  Plotly.react('antscatter',[trace],layout,opts).then(()=>{
+    // Re-assert camera after first paint (Plotly sometimes ignores it when the
+    // container was just un-hidden) and resize to the laid-out box.
+    Plotly.relayout('antscatter',{
+      'scene.camera':layout.scene.camera,
+      'scene.xaxis.range':layout.scene.xaxis.range,
+      'scene.yaxis.range':layout.scene.yaxis.range,
+      'scene.zaxis.range':layout.scene.zaxis.range
+    });
+    Plotly.Plots.resize('antscatter');
+  });
+}
+
 async function loadAnts(){const a=await j('/api/antennas');
   const good=a.counts.good||0;
   $('t-ant').innerHTML=`${good}<small>/${a.n}</small>`;
@@ -1811,22 +2486,11 @@ async function loadAnts(){const a=await j('/api/antennas');
   const withPos=a.antennas.filter(x=>x.x_m!=null&&x.y_m!=null);
   if(a.has_positions&&withPos.length>=3){
     $('antgrid').style.display='none';$('antscatter').style.display='block';
-    const xs=withPos.map(x=>x.x_m),ys=withPos.map(x=>x.y_m);
-    const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
-    const W2=1180,H2=380,pad=34;
-    const sc=Math.min((W2-2*pad)/Math.max(x1-x0,1),(H2-2*pad)/Math.max(y1-y0,1));
-    const px=v=>pad+(v-x0)*sc+((W2-2*pad)-(x1-x0)*sc)/2;
-    const py=v=>H2-pad-(v-y0)*sc-((H2-2*pad)-(y1-y0)*sc)/2;
-    const cmap={good:'var(--ok)',warn:'var(--warn)',bad:'var(--bad)',unknown:'#39414d'};
-    $('antscatter').innerHTML=`<svg viewBox="0 0 ${W2} ${H2}">`+
-      `<text x="${W2-12}" y="${H2-10}" text-anchor="end">east →</text>`+
-      `<text x="14" y="18">north ↑</text>`+
-      withPos.map(x=>`<circle cx="${px(x.x_m)}" cy="${py(x.y_m)}" r="5" fill="${cmap[x.status]||cmap.unknown}"
-        opacity=".92"><title>ant ${x.name} · ${x.status}${
-        x.flag_frac!=null?' · flagged '+(x.flag_frac*100).toFixed(0)+'%':''} · E ${x.x_m.toFixed(0)} m, N ${x.y_m.toFixed(0)} m</title></circle>`).join('')+
-      '</svg>';
+    $('ant-hint').style.display='block';
+    renderAnt3D(withPos);
   }else{
     $('antscatter').style.display='none';$('antgrid').style.display='grid';
+    $('ant-hint').style.display='none';
     $('antgrid').innerHTML=a.antennas.map(x=>
       `<div class="ant ${x.status}" title="ant ${x.name} · ${x.status}${
        x.flag_frac!=null?' · flagged '+(x.flag_frac*100).toFixed(0)+'%':''}">${x.name}</div>`).join('');
@@ -1840,9 +2504,10 @@ async function loadAnts(){const a=await j('/api/antennas');
 async function loadHealth(){try{const h=await j('/api/health');
   $('hd-ctl').innerHTML=`<span class="dot ${h.control_enabled?'ok':'bad'}"></span>control ${h.control_enabled?'enabled':'disabled'}`}catch(e){}}
 
-function tick(){$('hd-utc').textContent=new Date().toISOString().slice(0,19)+'Z';if(SKY)drawSky()}
+function tick(){$('hd-utc').textContent=new Date().toISOString().slice(0,19)+'Z';updateSkyReadout()}
 loadSky();loadAnts();loadHealth();
 setInterval(tick,1000);
+setInterval(drawSky,60000);
 setInterval(loadSky,300000);setInterval(loadAnts,120000);
 </script></body></html>"""
 
@@ -1911,6 +2576,8 @@ table{border-collapse:collapse}
 .var tbody tr.sel{background:var(--surface);box-shadow:inset 2px 0 0 var(--acc)}
 #lcpanel svg{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:10px}
 #lcpanel .t{font:12px var(--mono);color:var(--mut);margin-bottom:8px}
+#lcpanel iframe{width:100%;height:360px;border:1px solid var(--line);border-radius:10px;background:#0b0d10;color-scheme:dark;overflow:hidden}
+#lcpanel .panel-tag{font:10.5px var(--mono);color:var(--dim2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
 </style></head><body>
 <header>
   <div class="mark">DSA-110 <span>/ science products</span></div>
@@ -1959,12 +2626,20 @@ async function load(){const d=await j('/api/science');
       ${phot?'<div style="margin-top:12px">'+phot+'</div>':''}` }).join('<div class="rule"></div>')
     :'<span class="quiet">No products found.</span>'}
 
-let VAR=null,selSrc=null;
+let VAR=null,selSrc=null,PANEL=false,PANEL_PATH='/panel/lightcurves';
 function spark(f){const w=96,h=22,mn=Math.min(...f),mx=Math.max(...f),rng=(mx-mn)||1;
   const pts=f.map((v,i)=>`${(i/Math.max(f.length-1,1))*w},${h-2-((v-mn)/rng)*(h-4)}`).join(' ');
   return `<svg width="${w}" height="${h}" style="vertical-align:middle"><polyline points="${pts}"
     fill="none" stroke="var(--acc)" stroke-width="1.3"/></svg>`}
 function drawLC(row){selSrc=row.source_id;
+  if(PANEL){
+    const src=PANEL_PATH+'?source='+encodeURIComponent(row.source_id);
+    $('lcpanel').className='';
+    $('lcpanel').innerHTML=`<div class="panel-tag">Panel · HoloViews</div>
+      <div class="t"><b style="color:var(--tx)">${row.source_id}</b>
+      · ${row.n_epochs} epochs · ⟨S⟩ ${row.mean_flux_jy} Jy · V ${row.v} · η ${row.eta}</div>
+      <iframe title="interactive lightcurve" src="${src}"></iframe>`;
+    renderVar();return}
   const W=640,H=230,padL=54,padR=14,padT=16,padB=44;
   const f=row.flux_jy,e=row.flux_err_jy,n=f.length;
   const lo=Math.min(...f.map((v,i)=>v-e[i])),hi=Math.max(...f.map((v,i)=>v+e[i]));
@@ -2005,8 +2680,10 @@ function renderVar(){if(!VAR)return;
     const row=VAR.sources.find(x=>x.source_id===tr.dataset.s);if(row)drawLC(row)})}
 async function loadVar(){try{VAR=await j('/api/variability');renderVar();
   if(VAR.sources.length&&!selSrc)drawLC(VAR.sources[0])}catch(e){$('vartable').textContent='—'}}
+async function loadPanelFlag(){try{const h=await j('/api/health');PANEL=!!h.panel_enabled;
+  if(h.panel_path)PANEL_PATH=h.panel_path}catch(e){PANEL=false}}
 
-load();loadVar();
+load();loadPanelFlag().then(loadVar);
 setInterval(loadVar,120000);
 setInterval(()=>{$('hd-utc').textContent=new Date().toISOString().slice(0,19)+'Z'},1000);
 setInterval(load,60000);
@@ -2014,8 +2691,9 @@ setInterval(load,60000);
 
 
 @app.get("/", response_class=HTMLResponse)
+@app.get("/telescope", response_class=HTMLResponse)
 def index() -> HTMLResponse:
-    """Serve the telescope-status home page."""
+    """Serve the telescope-status home page (also at /telescope)."""
     return HTMLResponse(HOME_PAGE)
 
 

@@ -126,6 +126,9 @@ def test_health_reports_control_enabled(console):
     d = client.get("/api/health").json()
     assert d["status"] == "ok"
     assert d["control_enabled"] is True
+    # Panel mount is opt-in (DSA110_DASH_PANEL); default stays SVG lightcurves.
+    assert d["panel_enabled"] is False
+    assert d["panel_path"] is None
 
 
 def test_dates_matrix_aggregates_all_stages(console):
@@ -184,7 +187,7 @@ def test_thumbnail_renders_png(console):
     assert client.get(f"/api/thumb/{DATE}/nope.fits.png").status_code == 404
 
 
-def test_control_requires_token(console):
+def test_control_requires_auth(console):
     _, client = console
     r = client.post("/api/control/run", json={"date": DATE})
     assert r.status_code == 403
@@ -192,9 +195,21 @@ def test_control_requires_token(console):
     assert r.status_code == 403
 
 
-def test_control_disabled_when_token_unset(console, monkeypatch):
+def test_control_accepts_access_email(console):
+    _, client = console
+    r = client.post(
+        "/api/control/run",
+        json={"date": DATE, "dry_run": True},
+        headers={"Cf-Access-Authenticated-User-Email": "jfaber@caltech.edu"},
+    )
+    assert r.status_code == 200
+    assert r.json()["auth"] == "jfaber@caltech.edu"
+
+
+def test_control_disabled_when_no_auth_configured(console, monkeypatch):
     mod, client = console
     monkeypatch.setattr(mod, "DASH_TOKEN", "")
+    monkeypatch.setattr(mod, "ACCESS_EMAILS", set())
     r = client.post("/api/control/run", json={"date": DATE}, headers={"X-DSA110-Token": ""})
     assert r.status_code == 403
     assert "disabled" in r.json()["detail"].lower()
@@ -319,6 +334,14 @@ def test_three_pages_served(console):
         assert marker in r.text
 
 
+def test_telescope_page_embeds_ant3d(console):
+    _, client = console
+    html = client.get("/").text
+    assert "scatter3d" in html
+    assert "plotly.js-dist-min" in html
+    assert "renderAnt3D" in html
+
+
 def test_antenna_positions_from_csv(console, tmp_path, monkeypatch):
     mod, client = console
     csv = tmp_path / "antpos.csv"
@@ -386,6 +409,19 @@ def test_antenna_positions_station_coordinates_export(console, tmp_path, monkeyp
     assert set(pos) == {"1", "2", "3"}
     assert pos["2"]["x_m"] > pos["1"]["x_m"]  # east positive
     assert pos["3"]["y_m"] > pos["1"]["y_m"]  # north positive
+    # Elevation is recentered on the array mean → flat site → z_m ≈ 0
+    assert all(abs(pos[k]["z_m"]) < 1e-9 for k in pos)
+
+
+def test_antenna_positions_elevation_relative(console, tmp_path, monkeypatch):
+    mod, _ = console
+    csv = tmp_path / "antpos_z.csv"
+    csv.write_text("ant_id,east_m,north_m,elevation_m\n1,0,0,100\n2,10,0,110\n3,0,10,90\n")
+    monkeypatch.setattr(mod, "ANTPOS_CSV", str(csv))
+    pos = mod._ant_positions()
+    assert abs(pos["1"]["z_m"]) < 1e-9  # mean elev = 100
+    assert abs(pos["2"]["z_m"] - 10.0) < 1e-9
+    assert abs(pos["3"]["z_m"] + 10.0) < 1e-9
 
 
 def test_variability_accepts_forced_phot_schema(console):
