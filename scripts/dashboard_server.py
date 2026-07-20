@@ -1277,11 +1277,19 @@ def _ant_from_caltable() -> dict | None:
     """Per-antenna health from the newest bandpass table's solution flags."""
     if not MS_DIR.exists():
         return None
-    tables = sorted(MS_DIR.glob("*.b"), key=lambda p: p.stat().st_mtime)
-    if not tables:
-        return None
-    bp = tables[-1]
     try:
+        # Skip dangling symlinks / vanished paths under /stage (common on H17).
+        tables = []
+        for p in MS_DIR.glob("*.b"):
+            try:
+                mtime = p.stat().st_mtime
+            except OSError:
+                continue
+            tables.append((mtime, p))
+        if not tables:
+            return None
+        tables.sort(key=lambda t: t[0])
+        bp = tables[-1][1]
         from dsa110_continuum.adapters.casa_tables import table as _table
 
         recs: dict[int, list[float]] = {}
