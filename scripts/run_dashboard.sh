@@ -5,12 +5,15 @@
 #   ./scripts/run_dashboard.sh            # background, logs to state dir
 #   ./scripts/run_dashboard.sh --fg       # foreground
 #
-# The control token is read from $DSA110_DASH_TOKEN, else from the token file,
-# else generated once and persisted (0600). Without a token the server still
-# runs but all mutating control routes are disabled (fail closed).
+# Optional automation token: $DSA110_DASH_TOKEN, else token file, else generate
+# once (0600). Public host uses Cloudflare Access on /api/control (email +
+# one-time code). Origin also accepts Cf-Access-Authenticated-User-Email in
+# DSA110_ACCESS_EMAILS. Token remains for tests/local/automation.
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DASH_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PIPELINE_REPO="${DSA110_PIPELINE_REPO:-/data/dsa110-continuum}"
+[ -d "$PIPELINE_REPO" ] || PIPELINE_REPO="$DASH_REPO"
 PY="${DSA110_PYTHON:-/opt/miniforge/envs/casa6/bin/python}"
 [ -x "$PY" ] || PY="$(command -v python3)"
 
@@ -29,18 +32,21 @@ if [ -z "${DSA110_DASH_TOKEN:-}" ]; then
   export DSA110_DASH_TOKEN="$(cat "$TOKEN_FILE")"
 fi
 
-export PYTHONPATH="${PYTHONPATH:-$REPO_DIR}"
+# Pipeline package first (photometry metrics, optional Panel mount), dash repo for local overrides.
+export PYTHONPATH="$PIPELINE_REPO:$DASH_REPO${PYTHONPATH:+:$PYTHONPATH}"
 export CASA_LOG_DIR="${CASA_LOG_DIR:-$STATE_DIR/casa-logs}"
-export DSA110_REPO_DIR="$REPO_DIR"
+export DSA110_REPO_DIR="$PIPELINE_REPO"
 # H17 station coordinates (Excel export; header sniffed). Harmless if absent.
 export DSA110_ANTPOS_CSV="${DSA110_ANTPOS_CSV:-/data/dsa110-antpos/antpos/data/DSA110_Station_Coordinates.csv}"
 
 LOG="$STATE_DIR/dashboard_$(date -u +%Y%m%dT%H%M%S).log"
-CMD=("$PY" "$REPO_DIR/scripts/dashboard_server.py")
+CMD=("$PY" "$DASH_REPO/scripts/dashboard_server.py")
 
 echo "Console : http://$(hostname):8766/  (telescope · /pipeline · /science)"
+echo "Public  : https://dsa110-continuum.jakobtfaber.com/  (pages open; /api/control via Access)"
 echo "Python  : $PY"
-echo "Token   : \$DSA110_DASH_TOKEN (from ${TOKEN_FILE})"
+echo "Pipeline: $PIPELINE_REPO"
+echo "Token   : \$DSA110_DASH_TOKEN (automation; from ${TOKEN_FILE})"
 if [ "${1:-}" = "--fg" ]; then
   exec "${CMD[@]}"
 else
